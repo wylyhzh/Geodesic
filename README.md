@@ -62,7 +62,7 @@ For a local checkout, add a line such as
 
 to the thorn list file; for this repository on GitHub,
 
-    Geodesic=https://github.com/<github-username>/Geodesic@master
+    Geodesic=https://github.com/wylyhzh/Geodesic@main
 
 Then build as usual, e.g.
 
