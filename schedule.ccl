@@ -1,0 +1,28 @@
+# schedule.ccl for thorn Geodesic
+# Licence : GPLv2+ (see COPYING)
+
+#implements: Geodesic
+
+#inherits: grid
+#inherits: admbase
+#inherits: hydrobase
+#inherits: coordgauge
+
+# Initialization: set initial particle state from parameters
+schedule Geodesics_init at CCTK_INITIAL
+{
+  LANG: C
+} "Initialize particle tracker"
+
+# Main integration step: advance particles each iteration
+schedule geodesics_integrate at CCTK_POSTSTEP
+{
+  LANG: C
+} "Integrate particle geodesic motion (u^mu normalization, respawn)"
+
+if (particle_n)
+{
+  STORAGE:particle_arrays
+}
+
+

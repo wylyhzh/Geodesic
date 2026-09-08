@@ -1,0 +1,6 @@
+# Configuration definitions for thorn Geodesic
+# Licence : GPLv2+ (see COPYING)
+# $Header$
+
+REQUIRES GSL
+

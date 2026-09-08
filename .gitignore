@@ -1,0 +1,13 @@
+# build artifacts
+build/
+*.o
+*.so
+
+# editor / OS cruft
+*~
+.*.swp
+.DS_Store
+
+# Cactus runtime output
+*.out
+*.err

@@ -1,0 +1,24 @@
+# interface.ccl for thorn Geodesic
+# Licence : GPLv2+ (see COPYING)
+
+implements: Geodesic
+
+inherits: Grid
+inherits: ADMBase
+inherits: CoordGauge
+
+public:
+
+# Per-particle evolved state arrays
+CCTK_REAL particle_arrays TYPE=ARRAY DIM=1 TIMELEVELS=1 SIZE=particle_n_total GHOSTSIZE=0 DISTRIB=DEFAULT tags='checkpoint="no"'
+{
+  particle_ttw    # accumulated proper time tau
+  particle_tt     # coordinate time t
+  particle_tx     # x
+  particle_ty     # y
+  particle_tz     # z
+  particle_ttv    # u^t = dt/dtau
+  particle_txv    # u^x = dx/dtau
+  particle_tyv    # u^y = dy/dtau
+  particle_tzv    # u^z = dz/dtau
+} "Particle tracking arrays"

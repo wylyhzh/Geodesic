@@ -1,0 +1,139 @@
+# param.ccl for thorn Geodesic (pure geodesic integrator)
+# Licence : GPLv2+ (see COPYING)
+
+shares: ADMBase
+USES KEYWORD initial_data
+
+shares: KerrSchild
+USES CCTK_REAL M
+USES CCTK_REAL a
+
+private:
+
+# ------------------ number of particles ------------------
+INT particle_n "Number of fixed particles. 0 disables particle evolution."
+{
+  0:100 :: "Allowed range"
+} 0
+
+INT particle_n_total  "Number of total particles. 0 disables particle evolution. particle_n_total >= particle_n"
+{
+  0:10000 :: "Allowed range"
+} 0
+
+# ------------------ initial coordinates ------------------
+REAL particle_x[100] "Initial particle x coordinate"
+{
+  *:* :: "Any value"
+} 1.0
+
+REAL particle_y[100] "Initial particle y coordinate"
+{
+  *:* :: "Any value"
+} 1.0
+
+REAL particle_z[100] "Initial particle z coordinate"
+{
+  *:* :: "Any value"
+} 1.0
+
+# ------------------ initial 4-velocity u^mu = dx^mu / dtau ------------------
+REAL particle_xv[100] "Initial particle u^x = dx/dtau (Eulerian 3-velocity V^x)"
+{
+  *:* :: "Any value"
+} 0.0
+
+REAL particle_yv[100] "Initial particle u^y = dy/dtau (Eulerian 3-velocity V^y)"
+{
+  *:* :: "Any value"
+} 0.0
+
+REAL particle_zv[100] "Initial particle u^z = dz/dtau (Eulerian 3-velocity V^z)"
+{
+  *:* :: "Any value"
+} 0.0
+
+REAL particle_tv[100] "Initial particle u^t = dt/dtau (auto-corrected)"
+{
+  *:* :: "Any value"
+} 1.0
+
+# ------------------ integration ------------------
+REAL step "Coordinate time step used for each Cactus iteration"
+{
+  0.0:* :: "0.0 uses cctk_delta_time"
+} 0.0
+
+# Exact=yes: metric/Christoffel use exact Kerr-Schild analytic values;
+# Exact=no: metric/Christoffel from grid (ADMBase) via 27-point polynomial fit.
+BOOLEAN Exact "Use exact Kerr-Schild metric (analytic, no grid needed)"
+{
+} "no"
+
+BOOLEAN gverbose "Print verbose messages"
+{
+} "no"
+
+BOOLEAN rverbose "Print Runge-Kutta messages"
+{
+} "no"
+
+# Dump full particle state (t x y z u^t u^x u^y u^z tau) to
+# geodesic_particles.txt in the working directory, once every
+# particle_dump_every iterations.  0 disables.  Diagnostic only.
+INT particle_dump_every "Dump period for geodesic_particles.txt (0 = off)"
+{
+  0:* :: "0 disables"
+} 0
+
+# ------------------ random particle generation ------------------
+INT particle_rand_seed "random seed"
+{
+  0:* :: "0 uses 123456789"
+} 0
+
+REAL particle_rand_xmin "Random x min"
+{
+  *:* :: "Any value"
+} -1e+10
+
+REAL particle_rand_xmax "Random x max"
+{
+  *:* :: "Any value"
+} 1e+10
+
+REAL particle_rand_ymin "Random y min"
+{
+  *:* :: "Any value"
+} -1e+10
+
+REAL particle_rand_ymax "Random y max"
+{
+  *:* :: "Any value"
+} 1e+10
+
+REAL particle_rand_zmin "Random z min"
+{
+  *:* :: "Any value"
+} -1e+10
+
+REAL particle_rand_zmax "Random z max"
+{
+  *:* :: "Any value"
+} 1e+10
+
+REAL particle_middle_sp "Minimum |z| for respawn"
+{
+  0.0:1.0
+} 1.0
+
+# ------------------ boundary / respawn ------------------
+CCTK_REAL initial_radius "Initial radius for particle"
+{
+  0.0:* :: "non-negative"
+} 6.0
+
+CCTK_REAL excised_radius "Euclidean excision radius for particle respawn"
+{
+  0.0:* :: "non-negative"
+} 3.0
