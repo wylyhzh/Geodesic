@@ -1,0 +1,7 @@
+# Main make.code.defn file for thorn Geodesic
+
+# Source files in this directory
+SRCS = ParamCheck.c Geodesic_init.c Geodesic_integrate.c
+
+# Subdirectories containing source files
+SUBDIRS = 
