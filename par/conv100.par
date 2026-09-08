@@ -1,0 +1,243 @@
+#------------------------------------------------------------------------------
+# Geodesic paper run: CONVERGENCE (conv100)
+#   P0 circular orbit (r=10), Exact=no (dx = 0.5), 1500 steps (t=150.1).
+#   Purpose: grid convergence of the geodesic integrator over ~1 period.
+#   Data: particle_dump_every=100 -> geodesic_particles.txt.
+#------------------------------------------------------------------------------
+Cactus::cctk_run_title = "Geodesic paper: convergence 100^3 (dx=0.5)"
+Cactus::cctk_full_warnings         = "yes"
+
+Cactus::terminate        = "iteration"
+Cactus::cctk_itlast      =  1500
+Time::timestep_method    = "given"
+Time::timestep           =  0.1
+
+#------------------------------------------------------------------------------
+# Activate all necessary thorns:
+#------------------------------------------------------------------------------
+
+ActiveThorns = "Boundary CartGrid3D CoordBase Fortran InitBase LocalReduce SymBase Time"
+ActiveThorns = "AEILocalInterp LocalInterp"
+ActiveThorns = "MoL Periodic Slab SpaceMask"
+ActiveThorns = "Carpet CarpetInterp CarpetIOASCII CarpetIOHDF5 CarpetIOScalar CarpetLib CarpetIOBasic CarpetReduce CarpetSlab LoopControl"
+ActiveThorns = "IOUtil Formaline"
+ActiveThorns = "NaNChecker TerminationTrigger TimerReport"
+ActiveThorns = "ADMbase ADMcoupling ADMmacros CoordGauge StaticConformal"
+ActiveThorns = "Constants TmunuBase HydroBase KerrSchild SPHERICALSURFACE Minkowski"
+ActiveThorns = "EOS_Omni"
+ActiveThorns = "HDF5"
+ActiveThorns = "SystemStatistics  Geodesic"
+
+#------------------------------------------------------------------------------
+# Diagnostic parameters:
+#------------------------------------------------------------------------------
+
+Carpet::output_timers_every = 1024
+Carpet::output_timer_tree_every = 1024
+Carpet::output_initialise_timer_tree = "yes"
+Carpet::storage_verbose   = "no"
+Carpet::verbose           = "no"
+Carpet::veryverbose       = "no"
+
+CarpetLib::output_bboxes  = "no"
+CarpetLib::print_memstats_every     = 1024
+CarpetLib::memstat_file    = "carpetlib-memory-statistics.asc"
+
+CarpetReduce::verbose    = "no"
+
+TimerReport::out_every    = 1024
+TimerReport::out_filename = "TimerReport"
+TimerReport::n_top_timers = 40
+
+#------------------------------------------------------------------------------
+# Utility parameters:
+#------------------------------------------------------------------------------
+
+NaNChecker::check_every   =  64
+NaNChecker::check_vars = "
+            HydroBase::rho 
+            HydroBase::eps 
+            HydroBase::press 
+            HydroBase::vel
+"
+NaNChecker::action_if_found = "just warn"
+
+TerminationTrigger::max_walltime          =  24.0   # hours
+TerminationTrigger::on_remaining_walltime = 10.0   # minutes
+TerminationTrigger::termination_from_file   = "yes"
+TerminationTrigger::create_termination_file = "yes"
+TerminationTrigger::termination_file        = "../TERMINATE"
+
+#------------------------------------------------------------------------------
+# Run parameters:
+#------------------------------------------------------------------------------
+
+#------
+# Grid:
+#------
+
+Time::dtfac = 0.125
+MoL::ODE_Method             = "rk4"
+MoL::MoL_Intermediate_Steps = 4
+MoL::MoL_Num_Scratch_Levels = 1
+
+CartGrid3D::type         = "coordbase"
+CartGrid3D::domain       = "full"
+CartGrid3D::avoid_origin = "no"
+
+CoordBase::domainsize       = "minmax"
+CoordBase::spacing          = "numcells"
+
+CoordBase::xmin =  -25.0
+CoordBase::ymin =  -25.0
+CoordBase::zmin =  -25.0
+CoordBase::xmax =   25.0
+CoordBase::ymax =   25.0
+CoordBase::zmax =   25.0
+CoordBase::ncells_x   = 100
+CoordBase::ncells_y   = 100
+CoordBase::ncells_z   = 100
+
+CoordBase::boundary_size_x_lower        = 3
+CoordBase::boundary_size_y_lower        = 3
+CoordBase::boundary_size_z_lower        = 3
+CoordBase::boundary_size_x_upper        = 3
+CoordBase::boundary_size_y_upper        = 3
+CoordBase::boundary_size_z_upper        = 3
+CoordBase::boundary_shiftout_x_lower    = 0
+CoordBase::boundary_shiftout_y_lower    = 0
+CoordBase::boundary_shiftout_z_lower    = 0
+CoordBase::boundary_shiftout_x_upper    = 0
+CoordBase::boundary_shiftout_y_upper    = 0
+CoordBase::boundary_shiftout_z_upper    = 0
+CoordBase::boundary_staggered_x_lower   = "yes"
+CoordBase::boundary_staggered_y_lower   = "yes"
+CoordBase::boundary_staggered_z_lower   = "yes"
+CoordBase::boundary_staggered_x_upper   = "yes"
+CoordBase::boundary_staggered_y_upper   = "yes"
+CoordBase::boundary_staggered_z_upper   = "yes"
+
+Driver::ghost_size                      = 4
+
+Periodic::periodic = "no"
+Periodic::periodic_x = "no"
+Periodic::periodic_y = "no"
+Periodic::periodic_z = "no"
+
+# General Carpet parameters:
+Carpet::domain_from_coordbase        = "yes"
+Carpet::enable_all_storage           = "no"
+Carpet::schedule_barriers            = "no"
+
+ADMBase::lapse_timelevels  = 3
+ADMBase::shift_timelevels  = 3
+ADMBase::metric_timelevels = 3
+
+CarpetLib::poison_new_memory         = "no"
+CarpetLib::poison_value              = 114
+CarpetLib::check_bboxes              = "no"
+CarpetLib::interleave_communications = "yes"
+CarpetLib::combine_sends             = "yes"
+
+CarpetInterp::tree_search = "yes"
+CarpetInterp::check_tree_search = "no"
+
+#------
+# MODEL:
+#------
+
+ADMBase::initial_data                = "KerrSchild"
+ADMBase::initial_lapse               = "KerrSchild"
+ADMBase::initial_shift               = "KerrSchild"
+ADMBase::initial_dtlapse             = "KerrSchild"
+ADMBase::initial_dtshift             = "KerrSchild"
+
+#----------
+# Numerics:
+#----------
+
+TmunuBase::stress_energy_storage = "yes"
+TmunuBase::stress_energy_at_RHS  = "yes"
+TmunuBase::timelevels            =  1
+TmunuBase::prolongation_type     = "none"
+
+HydroBase::timelevels            = 3
+
+SpaceMask::use_mask      = "yes"
+
+#-----------
+# Evolution:
+#-----------
+
+KerrSchild::M = 2.0
+KerrSchild::a = 0.50
+
+Geodesic::excised_radius         = 8
+Geodesic::initial_radius         = 35.0
+Geodesic::particle_rand_xmin     = -35.5
+Geodesic::particle_rand_xmax     = 35.5
+Geodesic::particle_rand_ymin     = -35.5
+Geodesic::particle_rand_ymax     = 35.5
+Geodesic::particle_rand_zmin     = -35.0
+Geodesic::particle_rand_zmax     = 35.0
+Geodesic::particle_middle_sp     = 0.0
+
+Geodesic::Exact                  = "no"
+Geodesic::rverbose               = "yes"
+Geodesic::particle_dump_every   = 100
+Geodesic::step                   = 0.0
+Geodesic::particle_n_total       = 1
+Geodesic::particle_n             = 1
+
+Geodesic::particle_x[0]          = 10
+Geodesic::particle_y[0]          = 0.0
+Geodesic::particle_z[0]          = 0.0
+Geodesic::particle_tv[0] = 1.534278146349868
+Geodesic::particle_xv[0] = 0
+Geodesic::particle_yv[0] = 0.6723763507576922
+Geodesic::particle_zv[0] = 0
+
+#------------------------------------------------------------------------------
+# Output:
+#------------------------------------------------------------------------------
+
+IO::out_dir = $parfile
+
+IOBasic::outInfo_every = 4
+IOBasic::outInfo_vars  = "
+ Carpet::physical_time_per_hour
+ HydroBase::press
+ HydroBase::rho
+ HydroBase::vel
+"
+
+IOScalar::outScalar_every      = 102400
+IOScalar::one_file_per_group   = "yes"
+IOScalar::outScalar_reductions = "minimum maximum average norm1 norm2"
+
+CarpetIOHDF5::one_file_per_group             = "yes"
+CarpetIOHDF5::open_one_input_file_at_a_time  = "yes"
+
+CarpetIOHDF5::output_symmetry_points         = "yes"
+CarpetIOHDF5::output_ghost_points            = "yes"
+CarpetIOHDF5::output_boundary_points         = "yes"
+CarpetIOHDF5::output_buffer_points           = "yes"
+
+CarpetIOHDF5::out3D_every = 100000
+CarpetIOHDF5::out3D_vars  = "
+ Geodesic::particle_tt
+ Geodesic::particle_tx
+ Geodesic::particle_ty
+ Geodesic::particle_tz
+ Geodesic::particle_ttv
+ Geodesic::particle_txv
+ Geodesic::particle_tyv
+ Geodesic::particle_tzv
+"
+
+#------------------------------------------------------------------------------
+# Checkpoint/Recovery:
+#------------------------------------------------------------------------------
+IOHDF5::checkpoint                  = "no"
+IO::checkpoint_dir                  = $parfile
+IO::checkpoint_on_terminate         = "no"
