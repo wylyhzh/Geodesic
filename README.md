@@ -49,8 +49,11 @@ Two metric sources are supported:
   against `g(u,u) = -1`: normalized input is used unchanged (the check
   is idempotent); otherwise `u^0` is re-solved from the metric for a
   future-directed timelike vector and the correction is logged.
-- Particles leaving the safe region (or with a bad norm) are respawned
-  in a random safe location with zero spatial velocity.
+- Particles leaving the safe region (or with a bad norm) are handled by
+  a run-time selectable loss policy (`particle_loss_policy`):
+  `drop` (default; state set to NaN, particle no longer tracked),
+  `flag` (frozen at its last state), or `respawn` (legacy: random safe
+  re-placement with zero spatial velocity).
 
 ## Required thorns
 
@@ -73,8 +76,10 @@ Kerr--Schild formulas used by `Exact = yes` are built in.  Activate
 - Single refinement level only (Carpet level 0); AMR support was
   intentionally not developed.
 - The particle arrays are replicated on every MPI rank
-  (`DISTRIB=CONSTANT`); runs with more than one MPI process are not
-  validated.
+  (`DISTRIB=CONSTANT`) and the integration runs on a single rank;
+  multi-process runs are supported and validated
+  (`test/circ_orbit_mpi`, 2 ranks, bit-identical to the single-rank
+  result), but they do not distribute the particles across ranks.
 - The interpolation mode assumes a stationary metric
   (`dt(g) = 0`); see the `Exact = no` entry above.
 
@@ -141,9 +146,11 @@ that provides the ADMBase grid fields.
 | `step` | coordinate-time advance per Cactus iteration; 0 uses `cctk_delta_time` |
 | `Exact` | metric source: `no` = grid (27-point interpolation), `yes` = analytic Kerr--Schild |
 | `M` / `a` | Kerr mass and spin used by `Exact = yes` (built-in analytic formulas) |
-| `initial_radius` / `excised_radius` | respawn shell: outside `initial_radius`, inside `excised_radius` is rejected |
-| `particle_rand_seed`, `particle_rand_*min/max`, `particle_middle_sp` | random (re)placement controls |
-| `particle_dump_every` | dump full particle state to `geodesic_particles.txt` every k iterations (0 = off; rank 0 only) |
+| `initial_radius` / `excised_radius` | safe shell for the `respawn` policy: outside `initial_radius`, inside `excised_radius` is rejected |
+| `particle_loss_policy` | what to do with lost particles: `drop` (default), `flag`, `respawn` |
+| `particle_rand_seed`, `particle_rand_*min/max`, `particle_middle_sp` | random (re)placement controls (respawn policy) |
+| `particle_dump_every` | dump full particle state to `particle_dump_file` every k iterations (0 = off; rank 0 only) |
+| `particle_dump_file` | dump file name, relative to the working directory (default `geodesic_particles.txt`; parent directories are created as needed) |
 | `gverbose` / `rverbose` | diagnostics |
 
 ## Output
@@ -153,9 +160,33 @@ in the `particle_*` arrays declared in `interface.ccl`; save them with
 the Einstein Toolkit's standard output thorns (HDF5, Checkpoint, ...)
 like any other grid function.  With `particle_dump_every = k > 0` the
 thorn additionally writes a plain-text dump (`t, x, y, z, u^t..u^z,
-tau` per particle) to `geodesic_particles.txt` in the working
-directory, starting with the initial state and then one block of rows
-every k iterations.
+tau` per particle) to the file given by `particle_dump_file` (default
+`geodesic_particles.txt`, relative to the working directory; parent
+directories are created as needed), starting with the initial state and
+then one block of rows every k iterations.
+
+## Tests
+
+The thorn ships a Cactus testsuite in `test/` (run with
+`gmake sim-testsuite` from the Cactus root, or
+`CCTK_TESTSUITE_RUN_TESTS="Geodesic/circ_orbit Geodesic/circ_orbit_conserved Geodesic/circ_orbit_mpi"
+gmake sim-testsuite` to run only these three tests):
+
+- `circ_orbit` integrates a prograde equatorial circular orbit
+  (r = 11.989, M = 2, a = 0.5, `Exact = yes`) and compares the full
+  particle state dump against reference data row by row.
+- `circ_orbit_conserved` runs the same dump through
+  `util/check_conserved`, which prints the Kerr constants of motion
+  (E, L_z) for every row, and compares them against the reference.
+  On a correct run both are constant to about nine digits over the
+  whole orbit; a broken integrator shows up as a drift of E / L_z.
+- `circ_orbit_mpi` is the `circ_orbit` run with 2 MPI ranks (requires
+  `mpirun`); the integration runs on a single rank, so the dump must be
+  bit-identical to the single-rank reference.
+
+`util/check_conserved` is plain C (libc + libm) and can be rebuilt
+with `cc -O2 -o check_conserved check_conserved.c -lm` on any
+machine.
 
 ## Notes
 

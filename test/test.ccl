@@ -1,0 +1,47 @@
+# Geodesic thorn testsuite configuration.
+#
+# Three tests, all integrating the same prograde equatorial circular
+# orbit (r = 11.989, M = 2, a = 0.5, Exact = yes, 32 Cactus steps of
+# 100 coordinate-time units, one particle):
+#
+#   circ_orbit           compares the full particle state dump
+#                        (t x y z u^t u^x u^y u^z tau) against the
+#                        reference data row by row; any change of the
+#                        trajectory fails the test.
+#
+#   circ_orbit_conserved runs the same dump through util/check_conserved,
+#                        which prints the Kerr constants of motion
+#                        (E, L_z) for every row, and compares those two
+#                        columns against the reference; a broken
+#                        integrator shows up as a drift of E / L_z.
+#
+#   circ_orbit_mpi       the same run with 2 MPI ranks.  The
+#                        OPTIONS:global integration runs on a single
+#                        rank, so the dump must be bit-identical to the
+#                        single-rank reference.
+#
+# The reference files (test/circ_orbit/geodesic_particles.txt,
+# test/circ_orbit_conserved/geodesic_particles.txt and
+# test/circ_orbit_mpi/geodesic_particles.txt) are the raw dumps of one
+# verified run.
+
+EXTENSIONS txt
+
+TEST circ_orbit
+{
+  RELTOL 1e-12
+  NPROCS 1
+}
+
+TEST circ_orbit_conserved
+{
+  POSTPROC check_conserved
+  RELTOL 1e-8
+  NPROCS 1
+}
+
+TEST circ_orbit_mpi
+{
+  RELTOL 1e-12
+  NPROCS 2
+}

@@ -87,6 +87,11 @@ typedef struct PARTICLEGEODESIC
   CCTK_INT  freeze_warn;   /* tau-loop iteration cap hit */
   CCTK_REAL rl_last;       /* last computed u_mu u^mu (diagnostic) */
 
+  /* persistent across steps (NOT reset by the per-step flag reset):
+     set by the loss policy when the particle is dropped or flagged;
+     a dead particle is skipped by the integration loop forever */
+  CCTK_INT  dead;
+
 } ParticleGeodesic;
 
 /* -------------------- Per-step ODE parameters for func_ode -------------------- */

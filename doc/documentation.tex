@@ -1,0 +1,258 @@
+% *======================================================================*
+%  Cactus Thorn template for ThornGuide documentation
+%  Author: Ian Kelley
+%  Date: Sun Jun 02, 2002
+%  $Header$
+%
+%  Thorn documentation in the latex file doc/documentation.tex
+%  will be included in ThornGuides built with the Cactus make system.
+%  The scripts employed by the make system automatically include
+%  pages about variables, parameters and scheduling parsed from the
+%  relevant thorn CCL files.
+%
+% *======================================================================*
+
+% If you are using CVS use this line to give version information
+% $Header$
+
+\documentclass{article}
+
+% Use the Cactus ThornGuide style file
+% (Automatically used from Cactus distribution, if you have a
+%  thorn without the Cactus Flesh download this from the Cactus
+%  homepage at www.cactuscode.org)
+\usepackage{../../../../doc/latex/cactus}
+
+\begin{document}
+
+% The author of the documentation
+\author{Yuhua Li \textless liyhts@yeah.net\textgreater}
+
+% The title of the document (not necessarily the name of the Thorn)
+\title{Geodesic}
+
+% the date your document was last changed
+\date{September 9 2026}
+
+\maketitle
+
+% Do not delete next line
+% START CACTUS THORNGUIDE
+
+% Add all definitions used in this documentation here
+%   \def\mydef etc
+
+% Add an abstract for this thorn's documentation
+\begin{abstract}
+\texttt{Geodesic} is a pure geodesic particle tracker for Cactus and the
+Einstein Toolkit.  It integrates the geodesic equation for an ensemble of
+test particles in a fixed spacetime, using either the analytic Kerr--Schild
+metric and Christoffel symbols built into the thorn (\texttt{Exact = yes})
+or a metric read from the \texttt{ADMBase} grid, reconstructed by 27-point
+local Lagrange polynomial interpolation (\texttt{Exact = no}).  Each
+particle is integrated independently in proper time with the adaptive
+GSL \texttt{rkf45} integrator; the 4-velocity is renormalized to
+$u_\mu u^\mu = -1$ (future-directed) at every step; particles that
+leave the domain are handled by a run-time selectable loss policy
+(drop, flag, or respawn).  Because the interpolation is local to
+each particle, the particles are embarrassingly parallel and are
+advanced with OpenMP.
+\end{abstract}
+
+% The following sections are suggestive only.
+% Remove them or add your own.
+
+\section{Introduction}
+
+\texttt{Geodesic} tracks test particles on a prescribed, fixed background
+spacetime.  It is a pure geodesic integrator: the particles feel gravity
+only, there is no electromagnetic or any other force, and the metric is
+not evolved.  This makes the thorn useful as a controlled diagnostic
+tool, for example to study how freely falling test particles move in a
+Kerr background, to verify geodesic integrators against analytic
+orbits, or to generate particle trajectories for visualization.
+
+The thorn is deliberately minimal.  It runs inside a standard Cactus
+build (Carpet driver, \texttt{CartGrid3D} grid), reads the metric either
+analytically or from the grid, and advances one particle system per
+Cactus iteration.
+
+\section{Physical System}
+
+The particles follow the geodesic equation
+\begin{equation}
+\frac{d^2 x^\mu}{d\tau^2} + \Gamma^\mu_{\alpha\beta}
+\, u^\alpha u^\beta = 0,
+\label{EinsteinAnalysis_Geodesic_geodesic_eq}
+\end{equation}
+where $\tau$ is the proper time and
+$u^\mu = dx^\mu/d\tau$ is the 4-velocity, which satisfies the
+normalization constraint
+\begin{equation}
+g_{\mu\nu} u^\mu u^\nu = -1,
+\label{EinsteinAnalysis_Geodesic_norm}
+\end{equation}
+with the future-directed branch selected.  Equation
+(\ref{EinsteinAnalysis_Geodesic_geodesic_eq}) is integrated as a first
+order system for $(x^\mu, u^\mu)$.
+
+The default background is the Kerr metric in Kerr--Schild Cartesian
+coordinates, specified by the mass $M$ and spin $a$ (parameters
+\texttt{M}, \texttt{a}).  The coordinates are the standard Cartesian
+$(t, x, y, z)$ of the \texttt{CartGrid3D} grid, so particle positions
+can be compared directly with grid coordinates.
+
+\section{Numerical Implementation}
+
+\subsection{Metric and Christoffel symbols}
+
+Two modes are available, selected by the \texttt{Exact} parameter:
+
+\begin{itemize}
+\item \texttt{Exact = yes}: the metric components and all Christoffel
+  symbols are evaluated from the analytic Kerr--Schild formulas built
+  into the thorn.  No grid data is read, so the result is independent
+  of the grid resolution; the grid is only needed by the driver.
+\item \texttt{Exact = no}: the metric ($g_{ij}$, lapse $\alpha$, shift
+  $\beta^i$) is read from the \texttt{ADMBase} grid, and the
+  Christoffel symbols are assembled at each particle position by
+  \emph{27-point local Lagrange interpolation}: a $3 \times 3 \times 3$
+  stencil of grid values around the particle is fit by a local
+  polynomial, of which the required derivatives are taken analytically.
+  The interpolation is local to each particle (no global polynomial is
+  ever fit), so the cost per particle is independent of the particle
+  number and the particles are fully independent.
+\end{itemize}
+
+\subsection{Time integration}
+
+Each particle is integrated in proper time $\tau$ with the adaptive
+GSL integrator \texttt{rkf45} (runge--kutta--fehlbert).  One Cactus
+iteration advances the coordinate time by the fixed increment
+\texttt{step} (or by \texttt{cctk\_delta\_time} if \texttt{step} = 0);
+inside it, the integrator takes its own adaptive $\tau$ sub-steps until
+the target coordinate time is reached.
+
+After each Cactus step the 4-velocity of every particle is
+renormalized: $u^0$ is solved from the quadratic equation
+(\ref{EinsteinAnalysis_Geodesic_norm}), and the future-directed root is
+selected.  Inside the ergosphere the quadratic has two positive roots;
+the thorn selects the one continuous with the previous step's value.
+Particles that leave the domain, or for which no future-directed
+solution exists, are handled by the \texttt{particle\_loss\_policy}
+keyword: \texttt{drop} (the default) sets their state to NaN and stops
+tracking them; \texttt{flag} freezes them at their last state;
+\texttt{respawn} (legacy) re-places them at a random position inside a
+safe box (outside the excision sphere, inside the initial shell) with
+zero spatial velocity, and the next renormalization step then assigns
+them a valid $u^0$.
+
+\subsection{Parallelism and output}
+
+Because both metric evaluations are local to each particle, the
+particle loop is parallelized with OpenMP
+(\texttt{\#pragma omp parallel for}) over the particle index.  The
+thorn is a unigrid tool: the particle arrays are stored with
+\texttt{DISTRIB=CONSTANT} (replicated on every MPI rank) and the
+functions are scheduled \texttt{global}, so in a multi-process run the
+integration is executed once, on a single rank; the other ranks idle
+during the particle step (verified bit-identical against the
+single-rank result).  Multi-level (AMR) runs are not supported.
+
+The evolved state is kept in the \texttt{particle\_arrays} group
+($\tau$, $t$, $x, y, z$, $u^t, u^x, u^y, u^z$), which is a regular
+Cactus group: checkpointable, and readable by any output thorn.
+With \texttt{particle\_dump\_every} $= k > 0$ the thorn additionally
+writes a plain-text dump of the full particle state to
+\texttt{particle\_dump\_file} (default
+\texttt{geodesic\_particles.txt}, parent directories are created as
+needed) every $k$ iterations, starting with the initial state.  This
+dump is intended for quick visualization and for the testsuite.
+
+\section{Using This Thorn}
+
+\subsection{Obtaining This Thorn}
+
+The thorn is part of the \texttt{EinsteinAnalysis} arrangement, in the
+directory \texttt{arrangements/EinsteinAnalysis/Geodesic}.  It is
+available on GitHub at
+\url{https://github.com/wylyhzh/Geodesic}.
+
+\subsection{A Minimal Run}
+
+A complete minimal parameter file is
+\texttt{par/example.par}: one particle on a prograde equatorial
+circular orbit (radius 11.989) in a Kerr background with $M = 2$,
+$a = 0.5$, \texttt{Exact = yes}, on a $50^3$ grid, 32 iterations.
+The essential lines are
+\begin{verbatim}
+ActiveThorns = "Boundary CartGrid3D CoordBase SymBase Time"
+ActiveThorns = "Carpet CarpetLib CarpetReduce"
+ActiveThorns = "IOUtil"
+ActiveThorns = "ADMBase KerrSchild"
+ActiveThorns = "Geodesic"
+...
+Geodesic::M          = 2.0
+Geodesic::a          = 0.50
+Geodesic::Exact      = "yes"
+Geodesic::step       = 100.0
+Geodesic::particle_n_total = 1
+Geodesic::particle_n       = 1
+Geodesic::particle_x[0] = 11.989
+Geodesic::particle_tv[0] = 1.392812583392655
+Geodesic::particle_yv[0] = 0.5600648870761632
+Geodesic::particle_dump_every = 1
+\end{verbatim}
+The \texttt{particle\_tv/xv/yv/zv} parameters are the contravariant
+4-velocity components $u^\mu = (u^t, u^x, u^y, u^z)$ in Kerr--Schild
+coordinates (not a 3-velocity); the thorn checks
+$g_{\mu\nu}u^\mu u^\nu = -1$ at initialization and uses the given
+values if they are normalized.
+
+\subsection{Tests}
+
+The thorn ships a testsuite in \texttt{test/} with three tests, all
+integrating the same prograde equatorial circular orbit
+($r = 11.989$, $M = 2$, $a = 0.5$, \texttt{Exact = yes}, 32
+iterations of 100 coordinate-time units):
+
+\begin{itemize}
+\item \texttt{circ\_orbit} compares the full particle state dump
+  against reference data row by row; any change of the trajectory
+  fails the test.
+\item \texttt{circ\_orbit\_conserved} runs the dump through the
+  postprocessor \texttt{util/check\_conserved}, which prints the two
+  Kerr constants of motion $E$ and $L_z$ for every row, and compares
+  them against the reference; a broken integrator shows up as a drift
+  of $E$ / $L_z$.  On a correct run both are constant to about nine
+  digits over the whole orbit.
+\item \texttt{circ\_orbit\_mpi} is the \texttt{circ\_orbit} run with
+  2 MPI ranks (requires \texttt{mpirun}); the integration runs on a
+  single rank, so the dump must be bit-identical to the single-rank
+  reference.
+\end{itemize}
+
+Run the testsuite with
+\begin{verbatim}
+cd <cactus>
+CCTK_TESTSUITE_RUN_TESTS="Geodesic/circ_orbit Geodesic/circ_orbit_conserved \
+Geodesic/circ_orbit_mpi" gmake sim-testsuite
+\end{verbatim}
+
+\subsection{Interaction With Other Thorns}
+
+\texttt{Geodesic} requires \texttt{Carpet} (the only thorn in this
+build providing Cactus group storage, which is needed by the
+\texttt{particle\_arrays} variable) and auto-activates \texttt{GSL}.
+In \texttt{Exact = no} mode the metric is read from the
+\texttt{ADMBase} grid (the \texttt{schedule.ccl} declares the
+corresponding \texttt{READS} dependencies), so any thorn that
+provides the \texttt{ADMBase} variables can be used as the metric
+source, with \texttt{KerrSchild} the standard choice.  No
+hydrodynamics or other evolution thorn is needed; in
+\texttt{Exact = yes} mode the grid content is not used at all.
+
+% Do not delete next line
+% END CACTUS THORNGUIDE
+
+\end{document}

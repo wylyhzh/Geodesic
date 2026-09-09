@@ -24,7 +24,8 @@
      - single-grid data acquisition (grid-function pointers + geometry)
      - particle geodesic integration (GSL rkf45 in proper time)
      - 4-velocity renormalization (u_mu u^mu = -1, future-directed)
-     - respawn of out-of-bounds / bad-norm particles
+     - loss policy for out-of-bounds / bad-norm particles
+       (drop / flag / respawn, selectable at run time)
    ============================================================================================ */
 
 #include "cctk.h"
@@ -43,6 +44,9 @@
 #include <stdbool.h>
 #include <time.h>
 #include <sys/time.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <errno.h>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -109,6 +113,7 @@ static CCTK_INT  lsh[3];
 #include "derivative.h"
 
 ParticleGeodesic * pgeodesic;
+static int pgeodesic_capacity = 0;   /* slots allocated in pgeodesic */
 
 
 bool sexact;
@@ -781,8 +786,9 @@ static int build_gup_from_gdn(const double gdn[4][4],
 
    Returns 1 on success (*u0_out filled); returns 0 on failure (no valid
    future-directed solution -- the caller should flag the particle, e.g.
-   pgeodesic[m].norm_bad = 1, and trigger respawn/warning rather than
-   filling in an arbitrary magic number).
+   pgeodesic[m].norm_bad = 1, and let the loss policy (drop / flag /
+   respawn) handle it with a warning rather than filling in an arbitrary
+   magic number).
    ============================================================================================ */
 static int solve_u0_future_directed(const double gdn[4][4],
                                      const double u_spatial[3],
@@ -869,7 +875,8 @@ int func_ode (double t, const double y[], double f[], void *params)
 
   /* --------- out-of-bounds / refit check (both branches) ---------
      Once a particle leaves the SAFE region (7-cell margin) it is marked
-     outbd and respawned (same behavior in both branches). */
+     outbd and handled by the loss policy after the step (same behavior
+     in both branches). */
   if ((y[1] != 0.0 && (!isnormal(y[1]))) || (y[2] != 0.0 && (!isnormal(y[2]))) || (y[3] != 0.0 && (!isnormal(y[3]))))
   {
     pgeodesic[m].outbd = 1;
@@ -998,9 +1005,38 @@ int func_ode (double t, const double y[], double f[], void *params)
   return GSL_SUCCESS;
 }
 
+/* Create the parent directories of a file path, best effort.
+   Used for the particle dump file, which may be given as
+   "some/dir/geodesic_particles.txt".  Already-existing components
+   are skipped; any other failure (permissions, ...) is ignored --
+   the fopen below will report the problem. */
+static void geodesic_mkdir_parents(const char *path)
+{
+  char buf[4096];
+  size_t len;
+  size_t i;
+
+  len = strlen(path);
+  if (len == 0 || len >= sizeof(buf))
+    return;
+  memcpy(buf, path, len + 1);
+
+  for (i = 1; i < len; i++)
+  {
+    if (buf[i] == '/')
+    {
+      buf[i] = '\0';
+      if (mkdir(buf, 0755) != 0 && errno != EEXIST)
+        return;            /* give up quietly; fopen reports the error */
+      buf[i] = '/';
+    }
+  }
+}
+
 /* ------------------------------------------------------------------------------------------------
      geodesics_integrate: acquire the single-grid data, integrate all
-     particles, respawn out-of-bounds / bad-norm particles.
+     particles, and apply the loss policy to out-of-bounds / bad-norm
+     particles.
 ------------------------------------------------------------------------------------------------- */
 
 void geodesics_integrate (CCTK_ARGUMENTS)
@@ -1008,7 +1044,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   DECLARE_CCTK_ARGUMENTS
   DECLARE_CCTK_PARAMETERS
 
-  int i, mi;
+  int i, mi, loss_policy;
 
   /* must be set before the acquire block below (which branches on it) */
   sexact = Exact;
@@ -1069,10 +1105,20 @@ void geodesics_integrate (CCTK_ARGUMENTS)
 
   /* ==================== integrate particles ==================== */
 
-  /* ---------------- per-step particle cache ---------------- */
-  pgeodesic = (ParticleGeodesic * ) calloc(particle_n_total, sizeof(ParticleGeodesic));
-  if (!pgeodesic)
-    CCTK_WARN(CCTK_WARN_ABORT, "Error: calloc(pgeodesic) failed.");
+  /* ---------------- particle cache ----------------
+     Allocated once for particle_n_total slots and reused at every
+     Cactus step; the per-step fields (flag, outbd, norm_bad, the
+     renorm/freeze diagnostics) are reset in the loop below.  The old
+     per-step calloc/free churned hundreds of MB of allocation traffic
+     per iteration at 10^4 particles. */
+  if (pgeodesic == NULL || pgeodesic_capacity < particle_n_total)
+  {
+    free(pgeodesic);
+    pgeodesic = (ParticleGeodesic * ) calloc(particle_n_total, sizeof(ParticleGeodesic));
+    if (!pgeodesic)
+      CCTK_WARN(CCTK_WARN_ABORT, "Error: calloc(pgeodesic) failed.");
+    pgeodesic_capacity = particle_n_total;
+  }
 
   /* ---------------- set run flags / parameters ---------------- */
   sgverbose = gverbose;
@@ -1081,15 +1127,29 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   ksa = a;
   sinitial_radius = initial_radius;
 
+  /* particle loss policy: 0 = drop, 1 = flag, 2 = respawn
+     (param.ccl validates the keyword; drop is the default) */
+  if (strcmp(particle_loss_policy, "drop") == 0)
+    loss_policy = 0;
+  else if (strcmp(particle_loss_policy, "flag") == 0)
+    loss_policy = 1;
+  else
+    loss_policy = 2;
+
   /* default: use the grid time step */
   if (step == 0.0) sstep = cctk_delta_time;
   else             sstep = step;
 
-  /* ---------------- init particle flags ---------------- */
+  /* ---------------- reset per-step particle fields ----------------
+     (dead is persistent: it survives across steps) */
   for (mi=0; mi<particle_n_total; mi++)
   {
-    pgeodesic[mi].flag  = 0;
-    pgeodesic[mi].outbd = 0;
+    pgeodesic[mi].flag        = 0;
+    pgeodesic[mi].outbd       = 0;
+    pgeodesic[mi].norm_bad    = 0;
+    pgeodesic[mi].renorm_warn = 0;
+    pgeodesic[mi].freeze_warn = 0;
+    pgeodesic[mi].rl_last     = 0.0;
   }
 
   /* ================================================================
@@ -1204,16 +1264,18 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   }
 
   /* ==================================================================
-     Diagnostic dump file geodesic_particles.txt (see the dump block
-     after the particle loop): when particle_dump_every > 0, open the
-     file at the first iteration and record the initial state (t=0)
-     BEFORE any integration step, so the file's first data row is the
-     parfile input (after the init check above).
+     Diagnostic dump file (see the dump block after the particle
+     loop): when particle_dump_every > 0, open the file named by
+     particle_dump_file at the first iteration and record the initial
+     state (t=0) BEFORE any integration step, so the file's first data
+     row is the parfile input (after the init check above).  Parent
+     directories are created as needed.
      ================================================================== */
   static FILE *dfp = NULL;
   if (particle_dump_every > 0 && cctk_iteration == 0)
   {
-    dfp = fopen("geodesic_particles.txt", "w");
+    geodesic_mkdir_parents(particle_dump_file);
+    dfp = fopen(particle_dump_file, "w");
     if (dfp)
     {
       fprintf(dfp, "# t x y z ut ux uy uz tau\n");
@@ -1228,7 +1290,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     }
     else
       CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                 "Geodesic: cannot open geodesic_particles.txt for writing");
+                 "Geodesic: cannot open %s for writing", particle_dump_file);
   }
 
   /* ---------------- ODE system ---------------- */
@@ -1246,6 +1308,10 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     hstart = 1.0e-8;
     epsabs = 1.0e-8;
     epsrel = 0.0;
+
+    /* particles dropped/flagged by the loss policy are no longer tracked */
+    if (pgeodesic[mi].dead)
+      continue;
 
     /* out-of-bounds quick check */
     if ( (particle_tx[mi] != 0.0 && (!isnormal(particle_tx[mi]))) ||
@@ -1352,7 +1418,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
         else
         {
           pgeodesic[mi].norm_bad = 1;   /* aggregated after the loop */
-          pgeodesic[mi].outbd = 1;   /* let the respawn logic below regenerate this particle */
+          pgeodesic[mi].outbd = 1;   /* let the loss policy below handle this particle */
         }
       }
       u[0] = ys[4]; u[1] = ys[5]; u[2] = ys[6]; u[3] = ys[7];
@@ -1593,10 +1659,15 @@ void geodesics_integrate (CCTK_ARGUMENTS)
      ================================================================== */
   {
     int n_renorm = 0, n_normbad = 0, n_freeze = 0;
+    int n_outbd = 0;
     int first_renorm[5] = { -1, -1, -1, -1, -1 };
     int n_first = 0;
     double rl_min = 0.0, rl_max = 0.0;
     int rl_have = 0;
+    const char *loss_txt =
+      (loss_policy == 0) ? "dropped (state set to NaN)" :
+      (loss_policy == 1) ? "flagged (frozen at their last state)" :
+                           "respawned";
     for (mi = 0; mi < particle_n_total; mi++)
     {
       if (pgeodesic[mi].renorm_warn)
@@ -1607,6 +1678,12 @@ void geodesics_integrate (CCTK_ARGUMENTS)
       }
       if (pgeodesic[mi].norm_bad)    n_normbad++;
       if (pgeodesic[mi].freeze_warn) n_freeze++;
+      /* "pure" out-of-bounds losses (safe region, excised sphere, ODE
+         failure) have no other diagnostic; report them so that a
+         dropped/flagged particle is never silent */
+      if (pgeodesic[mi].outbd && !pgeodesic[mi].norm_bad &&
+          !pgeodesic[mi].renorm_warn && !pgeodesic[mi].freeze_warn)
+        n_outbd++;
       if (pgeodesic[mi].rl_last != 0.0)
       {
         if (!rl_have)
@@ -1623,30 +1700,34 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     }
     if (n_renorm)
       CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                 "Geodesic: %d particle(s) could not be renormalized (u.u >= 0 or non-finite) and will be respawned; first: %d %d %d %d %d",
-                 n_renorm, first_renorm[0], first_renorm[1], first_renorm[2], first_renorm[3], first_renorm[4]);
+                 "Geodesic: %d particle(s) could not be renormalized (u.u >= 0 or non-finite) and will be %s; first: %d %d %d %d %d",
+                 n_renorm, loss_txt, first_renorm[0], first_renorm[1], first_renorm[2], first_renorm[3], first_renorm[4]);
     if (n_normbad)
       CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                 "Geodesic: %d particle(s) had no future-directed u^0 solution (possibly superluminal spatial velocity) and will be respawned",
-                 n_normbad);
+                 "Geodesic: %d particle(s) had no future-directed u^0 solution (possibly superluminal spatial velocity) and will be %s",
+                 n_normbad, loss_txt);
     if (n_freeze)
       CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                 "Geodesic: %d particle(s) hit the tau-loop iteration cap and will be respawned",
-                 n_freeze);
+                 "Geodesic: %d particle(s) hit the tau-loop iteration cap and will be %s",
+                 n_freeze, loss_txt);
+    if (n_outbd)
+      CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+                 "Geodesic: %d particle(s) left the safe region or failed the ODE step and will be %s",
+                 n_outbd, loss_txt);
     if (srverbose && rl_have)
       CCTK_VInfo(CCTK_THORNSTRING, "rl: min:%18.15G max:%18.15G", rl_min, rl_max);
   }
 
   /* ==================================================================
      Diagnostic dump: append the full particle state
-     (t, x, y, z, u^t, u^x, u^y, u^z, tau) to geodesic_particles.txt
-     in the working directory, once every particle_dump_every
-     iterations (0 disables).  The file was opened and seeded with the
-     t=0 initial state before the first integration step (see above).
-     Runs after the parallel particle loop, single-threaded (this build
-     is single-process: the particle array lives in the one Cactus
-     process, parallelism is OpenMP inside it); purely diagnostic, no
-     effect on the integration.
+     (t, x, y, z, u^t, u^x, u^y, u^z, tau) to the file named by
+     particle_dump_file, once every particle_dump_every iterations
+     (0 disables).  The file was opened and seeded with the t=0
+     initial state before the first integration step (see above).
+     Runs after the parallel particle loop, single-threaded (this
+     build is single-process: the particle array lives in the one
+     Cactus process, parallelism is OpenMP inside it); purely
+     diagnostic, no effect on the integration.
      ================================================================== */
   if (particle_dump_every > 0 &&
       (cctk_iteration % particle_dump_every == 0))
@@ -1654,7 +1735,8 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     if (dfp == NULL)
     {
       /* defensive fallback (e.g. the initial open failed earlier) */
-      dfp = fopen("geodesic_particles.txt", "w");
+      geodesic_mkdir_parents(particle_dump_file);
+      dfp = fopen(particle_dump_file, "w");
       if (dfp)
         fprintf(dfp, "# t x y z ut ux uy uz tau\n");
     }
@@ -1672,11 +1754,18 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   }
 
   /* ==================================================================
-     Respawn: particles that left the domain or failed normalization are
-     reset to a random position inside the safe box (rejecting the polar
-     axis, the excision sphere, and the region outside the initial shell)
-     with a u^t placeholder (u^i = 0); the per-iteration re-solve
-     normalizes u^mu to u_mu u^mu = -1 on the next step.
+     Loss policy: particles that left the domain or failed
+     normalization are handled according to particle_loss_policy:
+       drop    -- state is set to NaN and the particle is no longer
+                  tracked (t / tau are kept as "when it was lost")
+       flag    -- state is frozen at its last valid values and the
+                  particle is no longer tracked
+       respawn -- (legacy Monte-Carlo tracer behavior) the particle is
+                  re-placed at a random position inside the safe box
+                  (rejecting the polar axis, the excision sphere, and
+                  the region outside the initial shell) with a u^t
+                  placeholder (u^i = 0); the per-iteration re-solve
+                  normalizes u^mu to u_mu u^mu = -1 on the next step
      ================================================================== */
   for (mi=0; mi<particle_n_total; mi++)
   {
@@ -1686,40 +1775,60 @@ void geodesics_integrate (CCTK_ARGUMENTS)
 
     if (pgeodesic[mi].outbd || pgeodesic[mi].norm_bad)
     {
-      particle_ttw[mi] = 0.0;
-      /* particle_tt[mi]  = 0.0; */
-
-      double er;
-      long int i1 = 0;
-      do
+      if (loss_policy == 2)
       {
-        particle_tx[mi]  = urand_range(&seed, xmin_safe, xmax_safe);
-        particle_ty[mi]  = urand_range(&seed, ymin_safe, ymax_safe);
-        particle_tz[mi]  = urand_range(&seed, zmin_safe, zmax_safe);
-        er = particle_tx[mi]*particle_tx[mi] + particle_ty[mi]*particle_ty[mi] + particle_tz[mi]*particle_tz[mi];
-        i1++;
-      }while ((fabs(particle_tz[mi]) < particle_middle_sp || er < (excised_radius + 1.5)*(excised_radius + 1.5) || er > sinitial_radius*sinitial_radius) && i1 < 100000);
+        particle_ttw[mi] = 0.0;
+        /* particle_tt[mi]  = 0.0; */
 
-      if (i1 >= 100000)
-      {
-        CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: respawn rejection loop exhausted "
-                  "(check excised_radius/initial_radius/rand box geometry).");
+        double er;
+        long int i1 = 0;
+        do
+        {
+          particle_tx[mi]  = urand_range(&seed, xmin_safe, xmax_safe);
+          particle_ty[mi]  = urand_range(&seed, ymin_safe, ymax_safe);
+          particle_tz[mi]  = urand_range(&seed, zmin_safe, zmax_safe);
+          er = particle_tx[mi]*particle_tx[mi] + particle_ty[mi]*particle_ty[mi] + particle_tz[mi]*particle_tz[mi];
+          i1++;
+        }while ((fabs(particle_tz[mi]) < particle_middle_sp || er < (excised_radius + 1.5)*(excised_radius + 1.5) || er > sinitial_radius*sinitial_radius) && i1 < 100000);
+
+        if (i1 >= 100000)
+        {
+          CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: respawn rejection loop exhausted "
+                    "(check excised_radius/initial_radius/rand box geometry).");
+        }
+
+        /* u^t placeholder (u^i = 0); the per-iteration re-solve normalizes
+           u^mu to u_mu u^mu = -1 on the next step */
+        particle_ttv[mi] = 1.0;
+        particle_txv[mi] = 0.0;
+        particle_tyv[mi] = 0.0;
+        particle_tzv[mi] = 0.0;
+        pgeodesic[mi].dead = 0;
       }
-
-      /* u^t placeholder (u^i = 0); the per-iteration re-solve normalizes
-         u^mu to u_mu u^mu = -1 on the next step */
-      particle_ttv[mi] = 1.0;
-      particle_txv[mi] = 0.0;
-      particle_tyv[mi] = 0.0;
-      particle_tzv[mi] = 0.0;
+      else if (loss_policy == 0)
+      {
+        /* drop: wipe the state and stop tracking the particle */
+        particle_tx[mi]  = NAN;
+        particle_ty[mi]  = NAN;
+        particle_tz[mi]  = NAN;
+        particle_ttv[mi] = NAN;
+        particle_txv[mi] = NAN;
+        particle_tyv[mi] = NAN;
+        particle_tzv[mi] = NAN;
+        pgeodesic[mi].dead = 1;
+      }
+      else
+      {
+        /* flag: keep the last valid state, stop tracking */
+        pgeodesic[mi].dead = 1;
+      }
       pgeodesic[mi].outbd = 0;
       pgeodesic[mi].norm_bad = 0;
     }
   }
 
-  /* free per-step cache */
-  free(pgeodesic);
-  pgeodesic = NULL;
+  /* the per-particle cache (pgeodesic) is kept and reused at the next
+     Cactus step; it is reclaimed by the OS at the end of the run */
 }
 
 

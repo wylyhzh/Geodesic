@@ -89,13 +89,33 @@ BOOLEAN rverbose "Print Runge-Kutta messages"
 {
 } "no"
 
-# Dump full particle state (t x y z u^t u^x u^y u^z tau) to
-# geodesic_particles.txt in the working directory, once every
-# particle_dump_every iterations.  0 disables.  Diagnostic only.
-INT particle_dump_every "Dump period for geodesic_particles.txt (0 = off)"
+# Dump full particle state (t x y z u^t u^x u^y u^z tau) to the file
+# given by particle_dump_file (relative to the working directory),
+# once every particle_dump_every iterations.  0 disables.
+# Diagnostic only.
+INT particle_dump_every "Dump period for the particle state dump (0 = off)"
 {
   0:* :: "0 disables"
 } 0
+
+STRING particle_dump_file "File name for the particle state dump (parent directories are created as needed)"
+{
+  ".+" :: "A valid file name"
+} "geodesic_particles.txt"
+
+# Policy for particles that leave the domain or fail the 4-velocity
+# renormalization:
+#   drop    -- set the particle state to NaN and stop tracking it
+#   flag    -- freeze the particle at its last state and stop tracking
+#              it (the dump keeps the last valid position)
+#   respawn -- randomly re-place the particle (legacy Monte-Carlo
+#              tracer behavior; not recommended for science runs)
+KEYWORD particle_loss_policy "How to handle particles that leave the domain or fail normalization: drop, flag, or respawn"
+{
+  "drop"    :: "set state to NaN, stop tracking"
+  "flag"    :: "freeze at last state, stop tracking"
+  "respawn" :: "randomly re-place (legacy)"
+} "drop"
 
 # ------------------ random particle generation ------------------
 INT particle_rand_seed "random seed"

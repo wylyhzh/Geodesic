@@ -32,7 +32,7 @@ schedule geodesics_integrate at CCTK_POSTSTEP
   LANG: C
   OPTIONS: global
   READS: ADMBase::gxx ADMBase::gxy ADMBase::gxz ADMBase::gyy ADMBase::gyz ADMBase::gzz ADMBase::alp ADMBase::betax ADMBase::betay ADMBase::betaz
-} "Integrate particle geodesic motion (u^mu renormalization, respawn)"
+} "Integrate particle geodesic motion (u^mu renormalization, loss policy)"
 
 # Storage follows the total particle count: the arrays are sized by
 # particle_n_total, so random-only runs (particle_n = 0) need storage too.

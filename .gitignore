@@ -11,3 +11,12 @@ build/
 # Cactus runtime output
 *.out
 *.err
+
+# testsuite helper binary
+util/check_conserved
+
+# ThornGuide build artifacts
+doc/*.aux
+doc/*.log
+doc/*.out
+doc/documentation.pdf

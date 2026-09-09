@@ -1,0 +1,139 @@
+#------------------------------------------------------------------------------
+# Testsuite parfile: Geodesic/circ_orbit
+#
+# Prograde equatorial circular orbit at radius 11.989 (M = 2, a = 0.5),
+# Exact = yes, one particle, 32 Cactus steps of 100 coordinate-time
+# units.  The full particle state is dumped every iteration to
+# circ_orbit/geodesic_particles.txt (relative to the test run
+# directory); the testsuite compares it with the reference data in
+# test/circ_orbit/.
+#
+# Keep in sync with circ_orbit_conserved.par (same orbit; only the
+# dump file name differs).
+#------------------------------------------------------------------------------
+Cactus::cctk_run_title = "Geodesic test circ_orbit"
+Cactus::cctk_full_warnings         = "yes"
+
+Cactus::terminate        = "iteration"
+Cactus::cctk_itlast      =  32
+Time::timestep_method    = "given"
+Time::timestep           =  0.1
+
+ActiveThorns = "Boundary CartGrid3D CoordBase SymBase Time"
+ActiveThorns = "Carpet CarpetLib CarpetReduce"
+ActiveThorns = "IOUtil"
+ActiveThorns = "ADMBase KerrSchild"
+ActiveThorns = "Geodesic"
+
+Carpet::output_timers_every = -1
+Carpet::output_timer_tree_every = 0
+Carpet::output_initialise_timer_tree = "no"
+Carpet::storage_verbose   = "no"
+Carpet::verbose           = "no"
+Carpet::veryverbose       = "no"
+
+CarpetLib::output_bboxes  = "no"
+CarpetLib::print_memstats_every     = -1
+CarpetLib::memstat_file    = "carpetlib-memory-statistics.asc"
+
+#------
+# Grid:
+#------
+
+Time::dtfac = 0.125
+
+CartGrid3D::type         = "coordbase"
+CartGrid3D::domain       = "full"
+CartGrid3D::avoid_origin = "no"
+
+CoordBase::domainsize       = "minmax"
+CoordBase::spacing          = "numcells"
+
+CoordBase::xmin =  -25.0
+CoordBase::ymin =  -25.0
+CoordBase::zmin =  -25.0
+CoordBase::xmax =   25.0
+CoordBase::ymax =   25.0
+CoordBase::zmax =   25.0
+CoordBase::ncells_x   = 50
+CoordBase::ncells_y   = 50
+CoordBase::ncells_z   = 50
+
+CoordBase::boundary_size_x_lower        = 3
+CoordBase::boundary_size_y_lower        = 3
+CoordBase::boundary_size_z_lower        = 3
+CoordBase::boundary_size_x_upper        = 3
+CoordBase::boundary_size_y_upper        = 3
+CoordBase::boundary_size_z_upper        = 3
+CoordBase::boundary_shiftout_x_lower    = 0
+CoordBase::boundary_shiftout_y_lower    = 0
+CoordBase::boundary_shiftout_z_lower    = 0
+CoordBase::boundary_shiftout_x_upper    = 0
+CoordBase::boundary_shiftout_y_upper    = 0
+CoordBase::boundary_shiftout_z_upper    = 0
+CoordBase::boundary_staggered_x_lower   = "yes"
+CoordBase::boundary_staggered_y_lower   = "yes"
+CoordBase::boundary_staggered_z_lower   = "yes"
+CoordBase::boundary_staggered_x_upper   = "yes"
+CoordBase::boundary_staggered_y_upper   = "yes"
+CoordBase::boundary_staggered_z_upper   = "yes"
+
+Driver::ghost_size                      = 4
+
+Carpet::domain_from_coordbase        = "yes"
+Carpet::enable_all_storage           = "no"
+Carpet::schedule_barriers            = "no"
+
+ADMBase::lapse_timelevels  = 3
+ADMBase::shift_timelevels  = 3
+ADMBase::metric_timelevels = 3
+
+CarpetLib::poison_new_memory         = "no"
+CarpetLib::poison_value              = 114
+CarpetLib::check_bboxes              = "no"
+CarpetLib::interleave_communications = "yes"
+CarpetLib::combine_sends             = "yes"
+
+#------
+# MODEL:
+#------
+
+ADMBase::initial_data                = "KerrSchild"
+ADMBase::initial_lapse               = "KerrSchild"
+ADMBase::initial_shift               = "KerrSchild"
+ADMBase::initial_dtlapse             = "KerrSchild"
+ADMBase::initial_dtshift             = "KerrSchild"
+
+#----------
+# Numerics:
+#----------
+
+KerrSchild::M = 2.0
+KerrSchild::a = 0.50
+
+Geodesic::M                          = 2.0
+Geodesic::a                          = 0.50
+
+Geodesic::excised_radius         = 4
+Geodesic::initial_radius         = 35.0
+
+Geodesic::Exact                  = "yes"
+Geodesic::rverbose               = "no"
+Geodesic::gverbose               = "no"
+Geodesic::step                   = 100.0
+Geodesic::particle_n_total       = 1
+Geodesic::particle_n             = 1
+
+# prograde equatorial circular orbit at radius 11.989 (M=2, a=0.5);
+# u^mu are the exact circular-orbit 4-velocity values.
+Geodesic::particle_x[0]          = 11.989
+Geodesic::particle_y[0]          = 0.0
+Geodesic::particle_z[0]          = 0.0
+Geodesic::particle_tv[0]         = 1.392812583392655
+Geodesic::particle_xv[0]         = 0.0
+Geodesic::particle_yv[0]         = 0.5600648870761632
+Geodesic::particle_zv[0]         = 0.0
+
+# --- particle dump (the test data) ---
+Geodesic::particle_dump_every = 1
+Geodesic::particle_dump_file = "circ_orbit/geodesic_particles.txt"

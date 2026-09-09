@@ -189,6 +189,9 @@ Geodesic::particle_rand_zmin     = -35.0
 Geodesic::particle_rand_zmax     = 35.0
 Geodesic::particle_middle_sp     = 0.0
 Geodesic::particle_rand_seed     = 123456789
+# legacy random respawn (this par file predates the drop/flag policies;
+# the paper's scaling numbers were produced with the random respawn)
+Geodesic::particle_loss_policy   = "respawn"
 
 Geodesic::Exact                  = "no"
 Geodesic::rverbose               = "no"
