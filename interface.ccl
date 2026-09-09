@@ -5,12 +5,19 @@ implements: Geodesic
 
 inherits: Grid
 inherits: ADMBase
-inherits: CoordGauge
 
 public:
 
-# Per-particle evolved state arrays
-CCTK_REAL particle_arrays TYPE=ARRAY DIM=1 TIMELEVELS=1 SIZE=particle_n_total GHOSTSIZE=0 DISTRIB=DEFAULT tags='checkpoint="no"'
+# Per-particle evolved state.
+#
+# DISTRIB=CONSTANT: the complete arrays are replicated on every MPI
+# rank.  The C code addresses particle 0 .. particle_n_total-1 locally
+# on each process (the thorn is a unigrid tool; see the README
+# "Limitations" section).
+#
+# The arrays are checkpointable (no checkpoint="no" tag) so that the
+# particle state survives a restart.
+CCTK_REAL particle_arrays TYPE=ARRAY DIM=1 TIMELEVELS=1 SIZE=particle_n_total GHOSTSIZE=0 DISTRIB=CONSTANT
 {
   particle_ttw    # accumulated proper time tau
   particle_tt     # coordinate time t

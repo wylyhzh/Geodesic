@@ -1,7 +1,7 @@
 
 /*
   Geodesic -- pure geodesic particle tracker (Cactus/Einstein Toolkit thorn)
-  Copyright (C) 2026  Youhua Li
+  Copyright (C) 2026  Yuhua Li
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by

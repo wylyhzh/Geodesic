@@ -1,6 +1,6 @@
 /*
   Geodesic -- pure geodesic particle tracker (Cactus/Einstein Toolkit thorn)
-  Copyright (C) 2026  Youhua Li
+  Copyright (C) 2026  Yuhua Li
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -17,12 +17,11 @@
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 */
 
-////////////////////////////////////////////////////////////////////////////////////////////////
-// Geodesic_init.c  (pure geodesic integrator)
-// - initializes particle state arrays from param.ccl arrays
-// - fills particle_n ... particle_n_total with random initial conditions
-//
-////////////////////////////////////////////////////////////////////////////////////////////////
+/* ============================================================================================
+   Geodesic_init.c  (pure geodesic integrator)
+   - initializes particle state arrays from param.ccl arrays
+   - fills particle_n ... particle_n_total with random initial conditions
+   ============================================================================================ */
 
 #include "cctk.h"
 #include "cctk_Arguments.h"

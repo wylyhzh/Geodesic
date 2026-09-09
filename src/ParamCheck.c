@@ -1,6 +1,6 @@
 /*
   Geodesic -- pure geodesic particle tracker (Cactus/Einstein Toolkit thorn)
-  Copyright (C) 2026  Youhua Li
+  Copyright (C) 2026  Yuhua Li
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -20,7 +20,7 @@
 /*@@
    @file      ParamCheck.c
    @date      July 2026
-   @author    Youhua Li
+   @author    Yuhua Li
    @desc
               Check parameters for Geodesic
    @enddesc
@@ -46,10 +46,9 @@ void Geodesic_ParamCheck(CCTK_ARGUMENTS)
   DECLARE_CCTK_ARGUMENTS
   DECLARE_CCTK_PARAMETERS
 
-  if (Exact && !CCTK_EQUALS(initial_data, "KerrSchild"))
-  {
-     CCTK_PARAMWARN("Exact only use with ADMBase::initial_data = KerrSchild");
-  }
+  /* NOTE: Exact = yes uses the built-in analytic Kerr-Schild metric
+     (parameters M and a of this thorn), so there is no dependency on
+     the ADMBase::initial_data parameter here. */
   if (particle_n > particle_n_total)
   {
      CCTK_PARAMWARN("particle_n is larger then particle_n_total.");

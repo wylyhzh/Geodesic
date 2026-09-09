@@ -1,14 +1,25 @@
 # param.ccl for thorn Geodesic (pure geodesic integrator)
 # Licence : GPLv2+ (see COPYING)
 
-shares: ADMBase
-USES KEYWORD initial_data
-
-shares: KerrSchild
-USES CCTK_REAL M
-USES CCTK_REAL a
+# NOTE: no `shares:` clauses -- the thorn is self-contained:
+#   - the exact Kerr-Schild metric of Exact=yes mode is built in
+#     (parameters M and a below, no dependency on the KerrSchild thorn);
+#   - the grid metric of Exact=no mode is fetched from ADMBase through
+#     the schedule READS (see schedule.ccl), not through shared
+#     parameters.
 
 private:
+
+# ------------------ Kerr parameters (used when Exact = yes) ------------------
+REAL M "Kerr black-hole mass (used when Exact = yes)"
+{
+  0.0:* :: "non-negative"
+} 1.0
+
+REAL a "Kerr black-hole spin (used when Exact = yes)"
+{
+  -1.0:1.0 :: "|a| <= 1"
+} 0.0
 
 # ------------------ number of particles ------------------
 INT particle_n "Number of fixed particles. 0 disables particle evolution."
@@ -38,17 +49,17 @@ REAL particle_z[100] "Initial particle z coordinate"
 } 1.0
 
 # ------------------ initial 4-velocity u^mu = dx^mu / dtau ------------------
-REAL particle_xv[100] "Initial particle u^x = dx/dtau (Eulerian 3-velocity V^x)"
+REAL particle_xv[100] "Initial particle u^x = dx/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
 {
   *:* :: "Any value"
 } 0.0
 
-REAL particle_yv[100] "Initial particle u^y = dy/dtau (Eulerian 3-velocity V^y)"
+REAL particle_yv[100] "Initial particle u^y = dy/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
 {
   *:* :: "Any value"
 } 0.0
 
-REAL particle_zv[100] "Initial particle u^z = dz/dtau (Eulerian 3-velocity V^z)"
+REAL particle_zv[100] "Initial particle u^z = dz/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
 {
   *:* :: "Any value"
 } 0.0

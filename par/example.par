@@ -1,31 +1,50 @@
 #------------------------------------------------------------------------------
-# Cactus parameters:
+# Example parameter file for the Geodesic thorn:
+# Kerr--Schild metric M = 2, a = 0.5 on a 50^3 Cartesian grid, one particle
+# on a prograde equatorial circular orbit, Exact = yes.
+#
+#   cd <cactus> && ./simfactory/bin/sim run --parfile .../Geodesic/par/example.par
+#
+# The particle state is dumped to geodesic_particles.txt every iteration
+# (particle_dump_every = 1).
 #------------------------------------------------------------------------------
 Cactus::cctk_run_title = "simplest Geodesic"
 Cactus::cctk_full_warnings         = "yes"
 
 Cactus::terminate        = "iteration"
 Cactus::cctk_itlast      =  32
-Time::timestep_method    = "given"  
-Time::timestep           =  0.1    
+Time::timestep_method    = "given"
+Time::timestep           =  0.1
 
 #------------------------------------------------------------------------------
-# Activate all necessary thorns:
+# Activate the necessary thorns (minimal verified set):
+#
+#   Boundary    boundary condition implementation for the grid
+#   CartGrid3D  3D Cartesian grid
+#   CoordBase   grid coordinates and boundary handling
+#   SymBase     symmetry table (required by the grid)
+#   Time        time integration
+#   Carpet      AMR driver; in this build it is also the only thorn
+#               implementing Cactus group storage, which is required
+#               for the particle_arrays variable and for ADMBase
+#   CarpetLib   Carpet library
+#   CarpetReduce reduction operators (e.g. for timer statistics)
+#   IOUtil      IO helpers (required by LoopControl)
+#   ADMBase     metric data on the grid, used when Exact = no
+#   KerrSchild  Kerr--Schild initial data; auto-activates GenericFD
+#               and LoopControl
+#   Geodesic    this thorn; auto-activates GSL
+#
+# Nothing else is needed: Fortran, InitBase, LocalReduce, Periodic, Slab,
+# SpaceMask, Constants, CarpetSlab, TerminationTrigger and TimerReport
+# can all be omitted without warnings.
 #------------------------------------------------------------------------------
 
-ActiveThorns = "Boundary CartGrid3D CoordBase Fortran InitBase LocalReduce SymBase Time"
-ActiveThorns = "AEILocalInterp LocalInterp"
-ActiveThorns = "MoL Periodic Slab SpaceMask"
-ActiveThorns = "Carpet CarpetInterp CarpetIOASCII CarpetIOHDF5 CarpetIOScalar CarpetLib CarpetIOBasic CarpetReduce CarpetSlab LoopControl"
-#ActiveThorns = "Formaline NaNChecker TerminationTrigger TimerReport PUGH"
-ActiveThorns = "IOUtil Formaline"
-ActiveThorns = "NaNChecker TerminationTrigger TimerReport"
-ActiveThorns = "ADMbase ADMcoupling ADMmacros CoordGauge StaticConformal"
-ActiveThorns = "Constants TmunuBase HydroBase KerrSchild SPHERICALSURFACE Minkowski"
-#ActiveThorns = "AHFinderDirect"
-ActiveThorns = "EOS_Omni"
-ActiveThorns = "HDF5"
-ActiveThorns = "SystemStatistics  Geodesic"
+ActiveThorns = "Boundary CartGrid3D CoordBase SymBase Time"
+ActiveThorns = "Carpet CarpetLib CarpetReduce"
+ActiveThorns = "IOUtil"
+ActiveThorns = "ADMBase KerrSchild"
+ActiveThorns = "Geodesic"
 
 #------------------------------------------------------------------------------
 # Diagnostic parameters:
@@ -42,34 +61,6 @@ CarpetLib::output_bboxes  = "no"
 CarpetLib::print_memstats_every     = 1024
 CarpetLib::memstat_file    = "carpetlib-memory-statistics.asc"
 
-CarpetReduce::verbose    = "no"
-
-TimerReport::out_every    = 1024
-TimerReport::out_filename = "TimerReport"
-TimerReport::n_top_timers = 40
-
-#------------------------------------------------------------------------------
-# Utility parameters:
-#------------------------------------------------------------------------------
-
-NaNChecker::check_every   =  64
-NaNChecker::check_vars = "
-            HydroBase::rho 
-            HydroBase::eps 
-            HydroBase::press 
-            HydroBase::vel
-#            HydroBase::w_lorentz
-"
-NaNChecker::action_if_found = "just warn" #"terminate", "just warn", "abort"
-
-#TerminationTrigger::max_walltime          =  0.0   # hours
-TerminationTrigger::max_walltime          =  24.0   # hours
-TerminationTrigger::on_remaining_walltime = 10.0   # minutes
-TerminationTrigger::termination_from_file   = "yes"
-TerminationTrigger::create_termination_file = "yes"
-TerminationTrigger::termination_file        = "../TERMINATE"
-
-
 #------------------------------------------------------------------------------
 # Run parameters:
 #------------------------------------------------------------------------------
@@ -79,12 +70,6 @@ TerminationTrigger::termination_file        = "../TERMINATE"
 #------
 
 Time::dtfac = 0.125
-#Time::dtfac = 0.25
-#MoL::ODE_Method             = "rk2"
-#MoL::MoL_Intermediate_Steps = 2
-MoL::ODE_Method             = "rk4"
-MoL::MoL_Intermediate_Steps = 4
-MoL::MoL_Num_Scratch_Levels = 1
 
 CartGrid3D::type         = "coordbase"
 CartGrid3D::domain       = "full"
@@ -99,13 +84,9 @@ CoordBase::zmin =  -25.0
 CoordBase::xmax =   25.0
 CoordBase::ymax =   25.0
 CoordBase::zmax =   25.0
-#CoordBase::dx   =   0.0625 # 0.0078125  # dx or ncells_x
-#CoordBase::dy   =   0.0625 # 0.0078125  # dy or ncells_y
-#CoordBase::dz   =   0.0625 # 0.0078125  # dz or ncells_z
-CoordBase::ncells_x   = 50 #80  #64   
-CoordBase::ncells_y   = 50 #80  #64
-CoordBase::ncells_z   = 50 #80  #64
-
+CoordBase::ncells_x   = 50
+CoordBase::ncells_y   = 50
+CoordBase::ncells_z   = 50
 
 CoordBase::boundary_size_x_lower        = 3
 CoordBase::boundary_size_y_lower        = 3
@@ -128,11 +109,6 @@ CoordBase::boundary_staggered_z_upper   = "yes"
 
 Driver::ghost_size                      = 4
 
-Periodic::periodic = "no"
-Periodic::periodic_x = "no"
-Periodic::periodic_y = "no"
-Periodic::periodic_z = "no"
-
 # General Carpet parameters:
 Carpet::domain_from_coordbase        = "yes"
 Carpet::enable_all_storage           = "no"
@@ -142,22 +118,18 @@ ADMBase::lapse_timelevels  = 3
 ADMBase::shift_timelevels  = 3
 ADMBase::metric_timelevels = 3
 
-
 CarpetLib::poison_new_memory         = "no"
 CarpetLib::poison_value              = 114
 CarpetLib::check_bboxes              = "no"
 CarpetLib::interleave_communications = "yes"
-#CarpetLib::vary_tags                 = "yes" # git version only!
 CarpetLib::combine_sends             = "yes"
-#CarpetLib::reduce_mpi_waitall        = "yes" # git version only!
-
-CarpetInterp::tree_search = "yes"
-CarpetInterp::check_tree_search = "no"
 
 #------
 # MODEL:
 #------
 
+# Kerr--Schild initial data on the ADMBase grid (static background;
+# needed so that Exact = no runs have a grid to read).
 ADMBase::initial_data                = "KerrSchild"
 ADMBase::initial_lapse               = "KerrSchild"
 ADMBase::initial_shift               = "KerrSchild"
@@ -168,27 +140,21 @@ ADMBase::initial_dtshift             = "KerrSchild"
 # Numerics:
 #----------
 
-TmunuBase::stress_energy_storage = "yes"
-#TmunuBase::stress_energy_at_RHS  = "no"
-TmunuBase::stress_energy_at_RHS  = "yes"
-TmunuBase::timelevels            =  1
-TmunuBase::prolongation_type     = "none"
-
-#HydroBase::timelevels            = 2
-HydroBase::timelevels            = 3
-
-SpaceMask::use_mask      = "yes"
-
-#-----------
-# Evolution:
-#-----------
-
 KerrSchild::M = 2.0
 KerrSchild::a = 0.50
 
+#-----------
+# Geodesic:
+#-----------
 
-Geodesic::excised_radius         = 4     #4.7
-Geodesic::initial_radius         = 35.0  #25.0
+# The analytic Kerr--Schild formulas used by Exact = yes are built into
+# the thorn; its mass and spin are Geodesic::M / Geodesic::a (they must
+# match the KerrSchild initial data if you also want Exact = no to agree).
+Geodesic::M                          = 2.0
+Geodesic::a                          = 0.50
+
+Geodesic::excised_radius         = 4
+Geodesic::initial_radius         = 35.0
 Geodesic::particle_rand_xmin     = -35.5
 Geodesic::particle_rand_xmax     = 35.5
 Geodesic::particle_rand_ymin     = -35.5
@@ -199,18 +165,17 @@ Geodesic::particle_middle_sp     = 0.0
 
 Geodesic::Exact                  = "yes"
 Geodesic::rverbose               = "yes"
-Geodesic::step                   = 100.0  # quick-look: 100 coord-time units per Cactus step
-Geodesic::particle_n_total       = 1 
+Geodesic::step                   = 100.0  # 100 coord-time units per Cactus step
+Geodesic::particle_n_total       = 1
 Geodesic::particle_n             = 1
 
 # prograde equatorial circular orbit at grid radius 11.989 (M=2, a=0.5);
-# orbit found by the user; u^mu = exact grid-circular values computed
-# from the thorn's exact Kerr-Schild metric (see
-# geodesic_paper/analysis/circ_orbit.c).
+# orbit found by the user; u^mu = exact circular-orbit values computed
+# from the thorn's exact Kerr--Schild metric.
 # particle_tv/xv/yv/zv are the contravariant 4-velocity components
-# u^mu = (u^t, u^x, u^y, u^z) in Kerr-Schild coordinates (NOT a 3-velocity);
-# the thorn checks g(u,u) = -1 and, if normalized, uses them unchanged.
-# See geodesic_paper/analysis/check_new_run.py for the derivation.
+# u^mu = (u^t, u^x, u^y, u^z) in Kerr--Schild coordinates (NOT a
+# 3-velocity); the thorn checks g(u,u) = -1 and, if normalized, uses
+# them unchanged.
 Geodesic::particle_x[0]          = 11.989
 Geodesic::particle_y[0]          = 0.0
 Geodesic::particle_z[0]          = 0.0
@@ -224,54 +189,8 @@ Geodesic::particle_zv[0]         = 0.0
 #------------------------------------------------------------------------------
 
 IO::out_dir = $parfile
-#IO::out_fileinfo           = "none"
-
-IOBasic::outInfo_every = 4
-#IOBasic::outInfo_reductions = "maximum"
-IOBasic::outInfo_vars  = "
- Carpet::physical_time_per_hour
- HydroBase::press
- HydroBase::rho
- HydroBase::vel
-"
-
-#IOScalar::outScalar_every      = 1024
-IOScalar::outScalar_every      = 102400   #t=0.25
-IOScalar::one_file_per_group   = "yes"
-IOScalar::outScalar_reductions = "minimum maximum average norm1 norm2"
-
-
-CarpetIOHDF5::one_file_per_group             = "yes"
-CarpetIOHDF5::open_one_input_file_at_a_time  = "yes"
-
-CarpetIOHDF5::output_symmetry_points         = "yes"
-CarpetIOHDF5::output_ghost_points            = "yes"
-CarpetIOHDF5::output_boundary_points         = "yes"
-CarpetIOHDF5::output_buffer_points           = "yes"
-
-
-CarpetIOHDF5::out3D_every = 64  #t=5 = (1 loop)
-CarpetIOHDF5::out3D_vars  = "
- HydroBase::eps
- HydroBase::press
- HydroBase::rho
- HydroBase::vel
- HydroBase::w_lorentz
-"
-
-#------------------------------------------------------------------------------
-# Analysis:
-#------------------------------------------------------------------------------
-
-#------------------------------------------------------------------------------
-# Checkpoint/Recovery:
-#------------------------------------------------------------------------------
-IOHDF5::checkpoint                  = "no"
 IO::checkpoint_dir                  = $parfile
 IO::checkpoint_on_terminate         = "no"
 
-
-
-
-# --- 3D particle dump for visualization ---
+# --- particle dump for visualization ---
 Geodesic::particle_dump_every = 1

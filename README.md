@@ -27,12 +27,17 @@ Two metric sources are supported:
   from the ADMBase grid (`gxx..gzz`, `alp`, `betax..betaz`) at the 27
   points of a local stencil and interpolated with a 27-term Lagrange
   polynomial (6th-order finite differences for metric derivatives).
-  Works with **any** numerical GR grid; no analytic form of the metric
-  is assumed.
+  No analytic form of the metric is assumed.  The connection is built
+  from a single time slice with the time derivatives of the metric set
+  to zero, so the mode is exact for stationary metrics and an
+  approximation for time-dependent spacetimes (the omitted `dt(g)`
+  terms of `Gamma^mu_{00}` and `Gamma^mu_{0 nu}` scale with the rate of
+  change of the metric).
 - `Exact = yes`: the metric and Christoffel symbols are the exact
-  analytic Kerr--Schild solution of mass `M` and spin `a` (KerrSchild
-  thorn), independent of the grid.  Useful as a reference/verification
-  mode; no grid data are needed for the metric itself.
+  analytic Kerr--Schild solution of mass `M` and spin `a`
+  (`Geodesic::M`, `Geodesic::a`; the formulas are built into the thorn),
+  independent of the grid.  Useful as a reference/verification mode;
+  no grid data are needed for the metric itself.
 
 ## Features
 
@@ -49,9 +54,29 @@ Two metric sources are supported:
 
 ## Required thorns
 
-- `ADMBase` (3+1 metric), `GSL`
-- `KerrSchild` (only for `Exact = yes`)
-- `Carpet` (recommended)
+- `ADMBase` — always required (the schedule reads its fields); for
+  `Exact = yes` only the grid geometry (dimensions, spacing, origin,
+  ghost zones) is used, the metric values are ignored
+- `GSL` (Runge--Kutta integrator)
+- `Carpet` (required in current Einstein Toolkit builds: it is the
+  only thorn implementing Cactus group storage, which `particle_arrays`
+  and `ADMBase` need; the thorn has been validated on a single
+  refinement level)
+
+The `KerrSchild` thorn is **not** required: the analytic
+Kerr--Schild formulas used by `Exact = yes` are built in.  Activate
+`KerrSchild` only if you want a Kerr--Schild *initial grid* for
+`Exact = no` runs.
+
+## Limitations
+
+- Single refinement level only (Carpet level 0); AMR support was
+  intentionally not developed.
+- The particle arrays are replicated on every MPI rank
+  (`DISTRIB=CONSTANT`); runs with more than one MPI process are not
+  validated.
+- The interpolation mode assumes a stationary metric
+  (`dt(g) = 0`); see the `Exact = no` entry above.
 
 ## Building
 
@@ -87,6 +112,8 @@ included, so all reported results can be reproduced directly:
 The Geodesic-specific part of the example file is:
 
     Geodesic::Exact                  = "yes"
+    Geodesic::M                      = 2
+    Geodesic::a                      = 0.5
     Geodesic::particle_n             = 1
     Geodesic::particle_n_total       = 1
     Geodesic::particle_x[0]          = 11.989
@@ -113,6 +140,7 @@ that provides the ADMBase grid fields.
 | `particle_tv/xv/yv/zv[0..99]` | initial 4-velocity `u^mu` (see above) |
 | `step` | coordinate-time advance per Cactus iteration; 0 uses `cctk_delta_time` |
 | `Exact` | metric source: `no` = grid (27-point interpolation), `yes` = analytic Kerr--Schild |
+| `M` / `a` | Kerr mass and spin used by `Exact = yes` (built-in analytic formulas) |
 | `initial_radius` / `excised_radius` | respawn shell: outside `initial_radius`, inside `excised_radius` is rejected |
 | `particle_rand_seed`, `particle_rand_*min/max`, `particle_middle_sp` | random (re)placement controls |
 | `particle_dump_every` | dump full particle state to `geodesic_particles.txt` every k iterations (0 = off; rank 0 only) |

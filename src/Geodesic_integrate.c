@@ -1,7 +1,7 @@
 
 /*
   Geodesic -- pure geodesic particle tracker (Cactus/Einstein Toolkit thorn)
-  Copyright (C) 2026  Youhua Li
+  Copyright (C) 2026  Yuhua Li
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -18,14 +18,14 @@
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 */
 
-////////////////////////////////////////////////////////////////////////////////////////////////
-// Geodesic_integrate.c
-// Main driver of the Geodesic thorn:
-//   - single-grid data acquisition (grid-function pointers + geometry)
-//   - particle geodesic integration (GSL rkf45 in proper time)
-//   - 4-velocity renormalization (u_mu u^mu = -1, future-directed)
-//   - respawn of out-of-bounds / bad-norm particles
-////////////////////////////////////////////////////////////////////////////////////////////////
+/* ============================================================================================
+   Geodesic_integrate.c
+   Main driver of the Geodesic thorn:
+     - single-grid data acquisition (grid-function pointers + geometry)
+     - particle geodesic integration (GSL rkf45 in proper time)
+     - 4-velocity renormalization (u_mu u^mu = -1, future-directed)
+     - respawn of out-of-bounds / bad-norm particles
+   ============================================================================================ */
 
 #include "cctk.h"
 #include "cctk_Parameters.h"
@@ -43,7 +43,9 @@
 #include <stdbool.h>
 #include <time.h>
 #include <sys/time.h>
+#ifdef _OPENMP
 #include <omp.h>
+#endif
 #include <string.h>
 #include "Geodesic.h"
 
@@ -112,7 +114,7 @@ ParticleGeodesic * pgeodesic;
 bool sexact;
 bool sgverbose;
 bool srverbose;
-bool check_velocity;                    // particle velocity
+bool check_velocity; /* particle velocity */
 unsigned int seed = 123456789u;
 int dispno = -10;
 
@@ -295,7 +297,7 @@ void cf2_grid (int m, int i1, int i2, int i3)
   i5 = i2;
   i6 = i3;
 
-  /* absolute grid indices (1-based in your code) 
+  /* absolute grid indices (1-based in your code)
    below[i] = origin + (point[i]-1)*dx, so the stencil must start
    at point-1 to match the polynomial basis at normalized coords 0,1,2. */
   i1 = i1 + pgeodesic[m].point[1] - 1;
@@ -445,16 +447,20 @@ int cf2_fitting (int m, const double y[])
   /* threshold for "constant field" detection */
   const double rel_eps = 1e-8;
 
-  /* ---------------- domain check: the 3x3x3 stencil must fit inside the grid ----------------
-     tpoint[i] is the 1-based cell number of the stencil's upper corner; the
-     stencil spans 0-based cells tpoint[i]-2 .. tpoint[i], so we require
-     2 <= tpoint[i] <= lsh[i-1]-1 in every dimension. */
+  /* ---------------- domain check: the 3x3x3 stencil plus the 6th-order
+     finite-difference padding must fit inside the grid ----------------
+     tpoint[i] is the 1-based cell number of the stencil's upper corner;
+     the stencil spans 0-based cells tpoint[i]-2 .. tpoint[i], and the
+     6th-order FD (ndg4dn) needs +/-3 more cells around each stencil
+     cell, so the whole window [tpoint[i]-5, tpoint[i]+3] must lie in
+     the grid: 5 <= tpoint[i] <= lsh[i-1]-4 in every dimension
+     (consistent with the 7-cell safe margin in geodesics_integrate). */
   CCTK_INT tpoint[4];
   tpoint[0] = 0;
   for (i=1; i<4; i++)
   {
     tpoint[i] = lrint (floor ((y[i] - origin_space[i-1]) * delta_inv[i-1] + 0.5));
-    if (tpoint[i] < 2 || tpoint[i] > lsh[i-1] - 1)
+    if (tpoint[i] < 5 || tpoint[i] > lsh[i-1] - 4)
     {
       pgeodesic[m].outbd = 1;
       return 0;
@@ -896,78 +902,27 @@ int func_ode (double t, const double y[], double f[], void *params)
     tz = y[3];
     for(j1=0; j1<4; j1++)
       for(j2=j1; j2<4; j2++)
-        tgd[j1][j2] = tg4dn(0, tx, ty, tz, j1, j2);      // tg4dn(double t, double x, double y, double z, int j1, int j2)
+        tgd[j1][j2] = tg4dn(0, tx, ty, tz, j1, j2); /* tg4dn(double t, double x, double y, double z, int j1, int j2) */
 
     for(j1=1; j1<4; j1++)
       for(j2=0; j2<j1; j2++)
         tgd[j1][j2] = tgd[j2][j1];
 
-    /* ---------- invert the 4x4 metric by Gauss-Jordan elimination ---------- */
-    double aug[4][8];          /* augmented matrix [A | I] */
-    int i, j, k, row;
-    double pivot, factor, tmp;
-
-    /* 1. build the augmented matrix */
-    for (i = 0; i < 4; i++) {
-        for (j = 0; j < 4; j++) {
-            aug[i][j] = tgd[i][j];
-            aug[i][j+4] = (i == j) ? 1.0 : 0.0;
-        }
+    /* invert g_{mu nu} -> g^{mu nu} via the 3+1 (lapse/shift)
+       decomposition: build_gup_from_gdn checks the spatial-metric
+       determinant and alpha^2 and reports failure, instead of skipping
+       singular pivots and returning a garbage inverse. */
+    double beta_up[3], gamma_dn[3][3], gamma_up[3][3];
+    if (!build_gup_from_gdn(tgd, NULL, beta_up, gamma_dn, gamma_up, tg4up))
+    {
+      pgeodesic[m].outbd = 1;
+      return GSL_EBADFUNC;
     }
-
-    /* 2. Gauss-Jordan elimination with partial pivoting */
-    for (i = 0; i < 4; i++) {
-        /* pivot: largest |entry| in column i, rows i..3 */
-        pivot = fabs(aug[i][i]);
-        row = i;
-        for (k = i+1; k < 4; k++) {
-            if (fabs(aug[k][i]) > pivot) {
-                pivot = fabs(aug[k][i]);
-                row = k;
-            }
-        }
-        /* pivot ~ 0 => singular matrix (not handled here; the code
-           assumes the metric is invertible) */
-        if (pivot < 1e-15) continue;
-
-        /* swap the current row with the pivot row */
-        if (row != i) {
-            for (j = 0; j < 8; j++) {
-                tmp = aug[i][j];
-                aug[i][j] = aug[row][j];
-                aug[row][j] = tmp;
-            }
-        }
-
-        /* normalize the pivot row */
-        pivot = aug[i][i];
-        for (j = 0; j < 8; j++) {
-            aug[i][j] /= pivot;
-        }
-
-        /* eliminate column i from all other rows */
-        for (k = 0; k < 4; k++) {
-            if (k != i) {
-                factor = aug[k][i];
-                for (j = 0; j < 8; j++) {
-                    aug[k][j] -= factor * aug[i][j];
-                }
-            }
-        }
-    }
-
-    /* 3. extract the inverse (right-hand 4 columns) */
-    for (i = 0; i < 4; i++) {
-        for (j = 0; j < 4; j++) {
-            tg4up[i][j] = aug[i][j+4];
-        }
-    }
-    /* ---------- end of Gauss-Jordan inversion ---------- */
 
     for(j1=0; j1<4; j1++)
       for(j2=0; j2<4; j2++)
         for(j3=j2; j3<4; j3++)
-          tdgd[j1][j2][j3] = gdn_derivatives(j1, tx, ty, tz, j2, j3);         // gdn_derivatives(int d, double x, double y, double z, int j1, int j2);
+          tdgd[j1][j2][j3] = gdn_derivatives(j1, tx, ty, tz, j2, j3); /* gdn_derivatives(int d, double x, double y, double z, int j1, int j2); */
 
     for(j1=0; j1<4; j1++)
       for(j2=1; j2<4; j2++)
@@ -998,7 +953,7 @@ int func_ode (double t, const double y[], double f[], void *params)
           for (j4=0; j4<4; j4++)
             cf2[j1][j2][j3] += tg4up[j1][j4] * tcf1[j4][j2][j3];
 
-  }else 
+  }else
   /* non-exact: interpolate cf2 */
   {
     for (j1=0; j1<4; j1++)
@@ -1025,7 +980,7 @@ int func_ode (double t, const double y[], double f[], void *params)
   f[7] = 0.0;
 
   /* ---------------- geodesic acceleration term: -Gamma^mu_{ab} u^a u^b ---------------- */
-//  if (!sexact)
+  /* if (!sexact) */
   {
     for (j1=0; j1<4; j1++)
       for (j2=0; j2<4; j2++)
@@ -1055,6 +1010,9 @@ void geodesics_integrate (CCTK_ARGUMENTS)
 
   int i, mi;
 
+  /* must be set before the acquire block below (which branches on it) */
+  sexact = Exact;
+
   /* ================================================================================
      Single-grid acquire phase (called once per iteration at CCTK_POSTSTEP).
 
@@ -1066,32 +1024,47 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   {
     for (i=0; i<3; i++)
     {
-      if (cctk_nghostzones[i] < 4)
-        CCTK_ERROR("The ghost_size less 4 (need at least 4 for 6th-order FD).");
-
       lsh[i]          = cctk_lsh[i];
       origin_space[i] = cctk_origin_space[i];
       delta_space[i]  = cctk_delta_space[i];
       delta_inv[i]    = 1.0 / cctk_delta_space[i];
 
-      /* 7-cell safe margin: the 3x3x3 stencil plus 6th-order FD padding
-         must stay inside the grid */
+      /* 7-cell safe margin: the 3x3x3 stencil plus 6th-order FD
+         padding must stay inside the grid (used by the particle
+         safe-region check in both the exact and the interpolated
+         branch). */
       r_lbnd[i]  = cctk_origin_space[i] + 7*cctk_delta_space[i];
       r_ubnd[i]  = cctk_origin_space[i] + (cctk_lsh[i]-8)*cctk_delta_space[i];
     }
 
-    /* ---------------- pointers to ADMBase ---------------- */
-    sGH    = cctkGH;
-    sgxx   = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::gxx")));
-    sgxy   = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::gxy")));
-    sgxz   = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::gxz")));
-    sgyy   = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::gyy")));
-    sgyz   = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::gyz")));
-    sgzz   = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::gzz")));
-    salp   = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::alp")));
-    sbetax = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::betax")));
-    sbetay = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::betay")));
-    sbetaz = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::betaz")));
+    /* ---------------- pointers to ADMBase ----------------
+       Fetched only for the interpolated branch (Exact = no): the
+       exact branch uses the built-in analytic Kerr-Schild metric
+       and never reads the grid metric. The variables are still
+       declared as READS in schedule.ccl, so ADMBase must be
+       present in the run either way (see README, "Required
+       thorns"). */
+    if (!sexact)
+    {
+      if (cctk_nghostzones[0] < 4 || cctk_nghostzones[1] < 4 || cctk_nghostzones[2] < 4)
+        CCTK_ERROR("The ghost_size less 4 (need at least 4 for 6th-order FD).");
+
+      sGH    = cctkGH;
+      sgxx   = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::gxx")));
+      sgxy   = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::gxy")));
+      sgxz   = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::gxz")));
+      sgyy   = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::gyy")));
+      sgyz   = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::gyz")));
+      sgzz   = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::gzz")));
+      salp   = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::alp")));
+      sbetax = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::betax")));
+      sbetay = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::betay")));
+      sbetaz = (double *)(CCTK_VarDataPtrI(cctkGH,0,CCTK_VarIndex("ADMBASE::betaz")));
+
+      if (!sgxx || !sgxy || !sgxz || !sgyy || !sgyz || !sgzz ||
+          !salp || !sbetax || !sbetay || !sbetaz)
+        CCTK_ERROR("Geodesic (Exact=no): ADMBase metric/lapse/shift not stored; check the run configuration.");
+    }
   }
 
   /* ==================== integrate particles ==================== */
@@ -1102,7 +1075,6 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     CCTK_WARN(CCTK_WARN_ABORT, "Error: calloc(pgeodesic) failed.");
 
   /* ---------------- set run flags / parameters ---------------- */
-  sexact   = Exact;
   sgverbose = gverbose;
   srverbose= rverbose;
   ksm = M;
@@ -1364,8 +1336,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
 
       if (!isfinite(rl) || rl >= 0.0)
       {
-        CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                   "Particle %d: cannot renormalize u (u.u=%g). X=%g Y=%g Z=%g", mi, rl, ys[1], ys[2], ys[3]);
+        pgeodesic[mi].renorm_warn = 1;   /* aggregated after the loop */
       }
       else
       {
@@ -1380,12 +1351,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
         }
         else
         {
-          pgeodesic[mi].norm_bad = 1;
-          CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
-               "Particle %d: no future-directed u^0 solution at init "
-               "(possibly superluminal spatial velocity). X=%g Y=%g Z=%g "
-               "u^i=[%g,%g,%g]",
-               mi, ys[1], ys[2], ys[3], ys[5], ys[6], ys[7]);
+          pgeodesic[mi].norm_bad = 1;   /* aggregated after the loop */
           pgeodesic[mi].outbd = 1;   /* let the respawn logic below regenerate this particle */
         }
       }
@@ -1397,10 +1363,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
       rl = 0.0;
       for (int mu=0; mu<4; ++mu) rl += u_cov[mu]*u[mu];
 
-      if (srverbose)
-      {
-        CCTK_VInfo(CCTK_THORNSTRING, "rl:%18.15G ", rl);
-      }
+      pgeodesic[mi].rl_last = rl;   /* reported after the loop */
     }
 
     ts = particle_ttw[mi];
@@ -1465,13 +1428,13 @@ void geodesics_integrate (CCTK_ARGUMENTS)
 
       if (retc != GSL_SUCCESS)
       {
-        // CCTK_VInfo(CCTK_THORNSTRING,
-        //         "Iteration %d Particle %d: gsl_odeiv2_evolve_apply failed (code=%d) X=%g Y=%g Z=%g dt=%g dx=%g dy=%g dz=%g\n", cctk_iteration, mi, retc, ys[1], ys[2], ys[3], ys[4], ys[5], ys[6], ys[7]);
+        /* CCTK_VInfo(CCTK_THORNSTRING,
+                 "Iteration %d Particle %d: gsl_odeiv2_evolve_apply failed (code=%d) X=%g Y=%g Z=%g dt=%g dx=%g dy=%g dz=%g\n", cctk_iteration, mi, retc, ys[1], ys[2], ys[3], ys[4], ys[5], ys[6], ys[7]); */
         pgeodesic[mi].outbd = 1;
         ys[0] = t_target;
         break;
       }
-      
+
       const double r2 = ys[1]*ys[1] + ys[2]*ys[2] + ys[3]*ys[3];
       if (r2 < excised_radius * excised_radius)
       {
@@ -1480,7 +1443,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
 
       if (pgeodesic[mi].outbd)
       {
-        // CCTK_VInfo(CCTK_THORNSTRING, "particle %d cross the boundary.", mi);
+        /* CCTK_VInfo(CCTK_THORNSTRING, "particle %d cross the boundary.", mi); */
         ys[0] = t_target;
         break;
       }
@@ -1562,8 +1525,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
         if (!isfinite(rl) || rl >= 0.0)
         {
           pgeodesic[mi].outbd = 1;
-          CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                     "Particle %d: cannot renormalize u (u.u=%g). X=%g Y=%g Z=%g", mi, rl, ys[1], ys[2], ys[3]);
+          pgeodesic[mi].renorm_warn = 1;   /* aggregated after the loop */
         }
         else
         {
@@ -1577,12 +1539,8 @@ void geodesics_integrate (CCTK_ARGUMENTS)
           }
           else
           {
-            pgeodesic[mi].norm_bad = 1;
+            pgeodesic[mi].norm_bad = 1;   /* aggregated after the loop */
             pgeodesic[mi].outbd = 1;
-            CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                 "Particle %d: renormalization failed mid-step "
-                 "(no future-directed u^0). tau=%g X=%g Y=%g Z=%g u^i=[%g,%g,%g]",
-                 mi, ts, ys[1], ys[2], ys[3], ys[5], ys[6], ys[7]);
           }
         }
 
@@ -1598,13 +1556,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
         for (int mu=0; mu<4; ++mu)
           rl += u_cov[mu] * u[mu];
 
-        if (srverbose)
-        {
-          CCTK_VInfo(CCTK_THORNSTRING,
-                     "m:%5i rl:%18.15G ys[0]:%18.15G vp:(%18.15G, %18.15G, %18.15G)",
-                     mi, rl, ys[0],
-                     ys[5]/ys[4], ys[6]/ys[4], ys[7]/ys[4]);
-        }
+        pgeodesic[mi].rl_last = rl;   /* reported after the loop */
       }
 
       if (fabs(ys[0] - t_target) < 1e-13 * fmax(1.0, fabs(t_target)))
@@ -1612,9 +1564,8 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     }
     if (max_iter > 100000)
     {
-      pgeodesic[mi].outbd = 1;      
-      CCTK_VInfo(CCTK_THORNSTRING,
-                 "Iteration freeze Particle %d: X=%g Y=%g Z=%g dt=%g dx=%g dy=%g dz=%g\n", mi, ys[1], ys[2], ys[3], ys[4], ys[5], ys[6], ys[7]);
+      pgeodesic[mi].outbd = 1;
+      pgeodesic[mi].freeze_warn = 1;   /* aggregated after the loop */
     }
 
     /* write back particle state */
@@ -1631,6 +1582,59 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     gsl_odeiv2_evolve_free(evolve);
     gsl_odeiv2_control_free(control);
     gsl_odeiv2_step_free(gstep);
+  }
+
+  /* ==================================================================
+     Post-loop warning aggregation.  CCTK_VWarn / CCTK_VInfo must not
+     be called from many OpenMP threads at once (interleaved output,
+     undefined behavior), so the per-particle flags set inside the
+     loop above are collected here (single-threaded, after the
+     implicit parallel barrier) and reported as a few summary lines.
+     ================================================================== */
+  {
+    int n_renorm = 0, n_normbad = 0, n_freeze = 0;
+    int first_renorm[5] = { -1, -1, -1, -1, -1 };
+    int n_first = 0;
+    double rl_min = 0.0, rl_max = 0.0;
+    int rl_have = 0;
+    for (mi = 0; mi < particle_n_total; mi++)
+    {
+      if (pgeodesic[mi].renorm_warn)
+      {
+        n_renorm++;
+        if (n_first < 5) first_renorm[n_first] = mi;
+        n_first++;
+      }
+      if (pgeodesic[mi].norm_bad)    n_normbad++;
+      if (pgeodesic[mi].freeze_warn) n_freeze++;
+      if (pgeodesic[mi].rl_last != 0.0)
+      {
+        if (!rl_have)
+        {
+          rl_min = rl_max = pgeodesic[mi].rl_last;
+          rl_have = 1;
+        }
+        else
+        {
+          if (pgeodesic[mi].rl_last < rl_min) rl_min = pgeodesic[mi].rl_last;
+          if (pgeodesic[mi].rl_last > rl_max) rl_max = pgeodesic[mi].rl_last;
+        }
+      }
+    }
+    if (n_renorm)
+      CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+                 "Geodesic: %d particle(s) could not be renormalized (u.u >= 0 or non-finite) and will be respawned; first: %d %d %d %d %d",
+                 n_renorm, first_renorm[0], first_renorm[1], first_renorm[2], first_renorm[3], first_renorm[4]);
+    if (n_normbad)
+      CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+                 "Geodesic: %d particle(s) had no future-directed u^0 solution (possibly superluminal spatial velocity) and will be respawned",
+                 n_normbad);
+    if (n_freeze)
+      CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+                 "Geodesic: %d particle(s) hit the tau-loop iteration cap and will be respawned",
+                 n_freeze);
+    if (srverbose && rl_have)
+      CCTK_VInfo(CCTK_THORNSTRING, "rl: min:%18.15G max:%18.15G", rl_min, rl_max);
   }
 
   /* ==================================================================
@@ -1683,7 +1687,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     if (pgeodesic[mi].outbd || pgeodesic[mi].norm_bad)
     {
       particle_ttw[mi] = 0.0;
-      // particle_tt[mi]  = 0.0;
+      /* particle_tt[mi]  = 0.0; */
 
       double er;
       long int i1 = 0;

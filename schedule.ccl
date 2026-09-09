@@ -1,28 +1,42 @@
 # schedule.ccl for thorn Geodesic
 # Licence : GPLv2+ (see COPYING)
 
-#implements: Geodesic
+# Parameter validation (runs at Cactus start-up)
+schedule Geodesic_ParamCheck at CCTK_PARAMCHECK
+{
+  LANG: C
+} "Check Geodesic parameters"
 
-#inherits: grid
-#inherits: admbase
-#inherits: hydrobase
-#inherits: coordgauge
-
-# Initialization: set initial particle state from parameters
+# Initialization: set the initial particle state from the parameters.
+# OPTIONS: global => run once on the global component, not once per
+# grid component / refinement level.
 schedule Geodesics_init at CCTK_INITIAL
 {
   LANG: C
+  OPTIONS: global
 } "Initialize particle tracker"
 
-# Main integration step: advance particles each iteration
+# Main integration step: advance all particles once per Cactus iteration.
+#
+# OPTIONS: global => the C function is called once per iteration on the
+# global component, no matter how many grid components or refinement
+# levels exist.  Without it, a Carpet run would call the function once
+# per local component and advance the same particles once per patch.
+#
+# READS: the metric fields are fetched from the driver (unigrid) grid in
+# Exact=no mode; the dependencies are declared so that the schedule,
+# PreSync and the mixed-error control know about them.  Grid access is
+# currently unigrid-only; see the README "Limitations" section.
 schedule geodesics_integrate at CCTK_POSTSTEP
 {
   LANG: C
-} "Integrate particle geodesic motion (u^mu normalization, respawn)"
+  OPTIONS: global
+  READS: ADMBase::gxx ADMBase::gxy ADMBase::gxz ADMBase::gyy ADMBase::gyz ADMBase::gzz ADMBase::alp ADMBase::betax ADMBase::betay ADMBase::betaz
+} "Integrate particle geodesic motion (u^mu renormalization, respawn)"
 
-if (particle_n)
+# Storage follows the total particle count: the arrays are sized by
+# particle_n_total, so random-only runs (particle_n = 0) need storage too.
+if (particle_n_total)
 {
   STORAGE:particle_arrays
 }
-
-
