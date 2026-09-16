@@ -28,12 +28,14 @@ Two metric sources are supported:
   Three spatial samplers are available
   (`Geodesic::metric_interp`): `local27` (default) fits a 27-term
   (3x3x3) Lagrange polynomial of the metric and of the Christoffel
-  symbols around the particle; `aei` and `carpet` instead sample each
-  grid field at the 27 stencil points with the `AEILocalInterp` /
-  `CarpetInterp` interpolators (which honour ghost zones and
-  prolongation) and build the Christoffel symbols from the sampled
-  fields with 6th-order finite differences.  No analytic form of the
-  metric is assumed.  The connection includes the `dt(g)` terms of
+  symbols around the particle; `aei` evaluates a fourth-order pointwise
+  Lagrange interpolant (the `AEILocalInterp` thorn) of the ten 3+1
+  fields and their first spatial derivatives at the particle position,
+  and `carpet` (named after the original `CarpetInterp`-based
+  implementation) evaluates a self-contained quadratic pointwise
+  Lagrange interpolant on a 3x3x3 stencil around the particle; both
+  build the Christoffel symbols pointwise from the sampled fields and
+  derivatives.  No analytic form of the metric is assumed.  The connection includes the `dt(g)` terms of
   `Gamma^mu_{00}` and `Gamma^mu_{0 nu}`.  With the default
   `Geodesic::time_interp = off` the metric value is taken from time
   level 0 and the time derivative is the 2nd-order backward
@@ -175,7 +177,7 @@ that provides the ADMBase grid fields.
 | `particle_tv/xv/yv/zv[0..99]` | initial 4-velocity `u^mu` (see above) |
 | `step` | coordinate-time advance per Cactus iteration; 0 uses `cctk_delta_time` |
 | `Exact` | metric source: `no` = grid, `yes` = analytic Kerr--Schild |
-| `metric_interp` | grid-mode sampler: `local27` (default, 27-point Lagrange fit), `aei` (AEILocalInterp), `carpet` (CarpetInterp, single process) |
+| `metric_interp` | grid-mode sampler: `local27` (default, 27-point Lagrange fit), `aei` (fourth-order pointwise, AEILocalInterp), `carpet` (quadratic pointwise, self-contained) |
 | `time_interp` | grid-mode time handling: `off` (default, level-0 value + 2nd-order dt(g)) or `linear` (blend of the two stored levels + 1st-order dt(g)) |
 | `geodesic_amr_levels` | number of Carpet refinement levels used for the stencil (1-4, default 3); must equal `Carpet::refinement_levels` for an AMR run |
 | `M` / `a` | Kerr mass and spin used by `Exact = yes` (built-in analytic formulas) |
