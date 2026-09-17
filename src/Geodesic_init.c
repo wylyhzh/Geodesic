@@ -35,14 +35,6 @@
 
 #include "Geodesic.h"
 
-extern unsigned int seed;
-extern double xmin_safe;
-extern double xmax_safe;
-extern double ymin_safe;
-extern double ymax_safe;
-extern double zmin_safe;
-extern double zmax_safe;
-
 void Geodesics_init(CCTK_ARGUMENTS);
 
 /* ============================================================================================
@@ -77,7 +69,7 @@ void Geodesics_init(CCTK_ARGUMENTS)
 
   if (particle_rand_seed)
   {
-    seed = particle_rand_seed;
+    gstate.seed = particle_rand_seed;
   }
 
   /* ==========================================================================================
@@ -87,20 +79,20 @@ void Geodesics_init(CCTK_ARGUMENTS)
   {
     const double margin = 7.0;
 
-    xmin_safe = cctk_origin_space[0] + margin * cctk_delta_space[0];
-    xmax_safe = cctk_origin_space[0] + (cctk_ubnd[0] - cctk_lbnd[0] - margin) * cctk_delta_space[0];
-    if (xmin_safe < particle_rand_xmin && particle_rand_xmin < xmax_safe && particle_rand_xmin <= particle_rand_xmax) xmin_safe = particle_rand_xmin;
-    if (xmax_safe > particle_rand_xmax && particle_rand_xmax > xmin_safe && particle_rand_xmin <= particle_rand_xmax) xmax_safe = particle_rand_xmax;
+    gstate.xmin_safe = cctk_origin_space[0] + margin * cctk_delta_space[0];
+    gstate.xmax_safe = cctk_origin_space[0] + (cctk_ubnd[0] - cctk_lbnd[0] - margin) * cctk_delta_space[0];
+    if (gstate.xmin_safe < particle_rand_xmin && particle_rand_xmin < gstate.xmax_safe && particle_rand_xmin <= particle_rand_xmax) gstate.xmin_safe = particle_rand_xmin;
+    if (gstate.xmax_safe > particle_rand_xmax && particle_rand_xmax > gstate.xmin_safe && particle_rand_xmin <= particle_rand_xmax) gstate.xmax_safe = particle_rand_xmax;
 
-    ymin_safe = cctk_origin_space[1] + margin * cctk_delta_space[1];
-    ymax_safe = cctk_origin_space[1] + (cctk_ubnd[1] - cctk_lbnd[1] - margin) * cctk_delta_space[1];
-    if (ymin_safe < particle_rand_ymin && particle_rand_ymin < ymax_safe && particle_rand_ymin <= particle_rand_ymax) ymin_safe = particle_rand_ymin;
-    if (ymax_safe > particle_rand_ymax && particle_rand_ymax > ymin_safe && particle_rand_ymin <= particle_rand_ymax) ymax_safe = particle_rand_ymax;
+    gstate.ymin_safe = cctk_origin_space[1] + margin * cctk_delta_space[1];
+    gstate.ymax_safe = cctk_origin_space[1] + (cctk_ubnd[1] - cctk_lbnd[1] - margin) * cctk_delta_space[1];
+    if (gstate.ymin_safe < particle_rand_ymin && particle_rand_ymin < gstate.ymax_safe && particle_rand_ymin <= particle_rand_ymax) gstate.ymin_safe = particle_rand_ymin;
+    if (gstate.ymax_safe > particle_rand_ymax && particle_rand_ymax > gstate.ymin_safe && particle_rand_ymin <= particle_rand_ymax) gstate.ymax_safe = particle_rand_ymax;
 
-    zmin_safe = cctk_origin_space[2] + margin * cctk_delta_space[2];
-    zmax_safe = cctk_origin_space[2] + (cctk_ubnd[2] - cctk_lbnd[2] - margin) * cctk_delta_space[2];
-    if (zmin_safe < particle_rand_zmin && particle_rand_zmin < zmax_safe && particle_rand_zmin <= particle_rand_zmax) zmin_safe = particle_rand_zmin;
-    if (zmax_safe > particle_rand_zmax && particle_rand_zmax > zmin_safe && particle_rand_zmin <= particle_rand_zmax) zmax_safe = particle_rand_zmax;
+    gstate.zmin_safe = cctk_origin_space[2] + margin * cctk_delta_space[2];
+    gstate.zmax_safe = cctk_origin_space[2] + (cctk_ubnd[2] - cctk_lbnd[2] - margin) * cctk_delta_space[2];
+    if (gstate.zmin_safe < particle_rand_zmin && particle_rand_zmin < gstate.zmax_safe && particle_rand_zmin <= particle_rand_zmax) gstate.zmin_safe = particle_rand_zmin;
+    if (gstate.zmax_safe > particle_rand_zmax && particle_rand_zmax > gstate.zmin_safe && particle_rand_zmin <= particle_rand_zmax) gstate.zmax_safe = particle_rand_zmax;
 
     /* fixed seed => reproducible runs
        if you want different random values every run, replace with:
@@ -141,9 +133,9 @@ void Geodesics_init(CCTK_ARGUMENTS)
       long int i1 = 0;
       do
       {
-        particle_tx[i]  = urand_range(&seed, xmin_safe, xmax_safe);
-        particle_ty[i]  = urand_range(&seed, ymin_safe, ymax_safe);
-        particle_tz[i]  = urand_range(&seed, zmin_safe, zmax_safe);
+        particle_tx[i]  = urand_range(&gstate.seed, gstate.xmin_safe, gstate.xmax_safe);
+        particle_ty[i]  = urand_range(&gstate.seed, gstate.ymin_safe, gstate.ymax_safe);
+        particle_tz[i]  = urand_range(&gstate.seed, gstate.zmin_safe, gstate.zmax_safe);
         er = particle_tx[i]*particle_tx[i] + particle_ty[i]*particle_ty[i] + particle_tz[i]*particle_tz[i];
         i1++;
       }while ((fabs(particle_tz[i]) < particle_middle_sp || er < (excised_radius + 1.5)*(excised_radius + 1.5) || er > initial_radius*initial_radius) && i1 < 100000);

@@ -24,7 +24,7 @@ REAL a "Kerr black-hole spin (used when Exact = yes)"
 # ------------------ number of particles ------------------
 INT particle_n "Number of fixed particles. 0 disables particle evolution."
 {
-  0:100 :: "Allowed range"
+  0:1000 :: "Allowed range"
 } 0
 
 INT particle_n_total  "Number of total particles. 0 disables particle evolution. particle_n_total >= particle_n"
@@ -33,46 +33,46 @@ INT particle_n_total  "Number of total particles. 0 disables particle evolution.
 } 0
 
 # ------------------ initial coordinates ------------------
-REAL particle_x[100] "Initial particle x coordinate"
+REAL particle_x[1000] "Initial particle x coordinate"
 {
   *:* :: "Any value"
 } 1.0
 
-REAL particle_y[100] "Initial particle y coordinate"
+REAL particle_y[1000] "Initial particle y coordinate"
 {
   *:* :: "Any value"
 } 1.0
 
-REAL particle_z[100] "Initial particle z coordinate"
+REAL particle_z[1000] "Initial particle z coordinate"
 {
   *:* :: "Any value"
 } 1.0
 
 # ------------------ initial 4-velocity u^mu = dx^mu / dtau ------------------
-REAL particle_xv[100] "Initial particle u^x = dx/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
+REAL particle_xv[1000] "Initial particle u^x = dx/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
 {
   *:* :: "Any value"
 } 0.0
 
-REAL particle_yv[100] "Initial particle u^y = dy/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
+REAL particle_yv[1000] "Initial particle u^y = dy/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
 {
   *:* :: "Any value"
 } 0.0
 
-REAL particle_zv[100] "Initial particle u^z = dz/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
+REAL particle_zv[1000] "Initial particle u^z = dz/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
 {
   *:* :: "Any value"
 } 0.0
 
-REAL particle_tv[100] "Initial particle u^t = dt/dtau (auto-corrected)"
+REAL particle_tv[1000] "Initial particle u^t = dt/dtau (auto-corrected)"
 {
   *:* :: "Any value"
 } 1.0
 
 # ------------------ integration ------------------
-REAL step "Coordinate time step used for each Cactus iteration"
+REAL step "Coordinate time step of the particle integration per Cactus iteration (0.0 = cctk_delta_time)"
 {
-  0.0:* :: "0.0 uses cctk_delta_time"
+  0.0:* :: "0.0 uses cctk_delta_time; capped to the grid dt when the grid metric is time-varying"
 } 0.0
 
 # Exact=yes: metric/Christoffel use exact Kerr-Schild analytic values;
@@ -168,3 +168,73 @@ CCTK_REAL excised_radius "Euclidean excision radius for particle respawn"
 {
   0.0:* :: "non-negative"
 } 3.0
+
+# ------------------ AMR ------------------
+# Number of Carpet refinement levels to use for the particle grid
+# (1 = plain unigrid; must equal Carpet::refinement_levels for an AMR
+# run).  Levels beyond this value are ignored.
+CCTK_INT geodesic_amr_levels "Number of Carpet refinement levels (max 4)"
+{
+  1:4 :: "between 1 and 4 (must equal Carpet::refinement_levels)"
+} 3
+
+# ------------------ spatial metric interpolation (grid mode, Exact=no) ------------------
+# How the particle samples the grid metric / Christoffel symbols:
+#   local27 -- the default: a 27-point (3x3x3) Lagrange polynomial fit
+#              of the metric and Christoffel symbols around the particle
+#              (the historical behavior; bit-identical to previous runs).
+#   aei     -- point-wise Lagrange interpolation via AEILocalInterp
+#              (order-4 tensor-product), evaluated at the particle
+#              position; the 4-metric and its derivatives are composed
+#              from the interpolated 3+1 fields and the Christoffel
+#              symbols are evaluated point-wise.
+#   carpet  -- point-wise interpolation via CarpetInterp
+#              (CCTK_InterpGridArrays -> DriverInterpolate).  Single-process
+#              only (the particle loop is run serially).
+# Ignored when Exact = yes (the analytic Kerr-Schild metric is used).
+KEYWORD metric_interp "Spatial metric/Christoffel sampler: local27, aei, or carpet"
+{
+  "local27" :: "27-point Lagrange polynomial fit (default)"
+  "aei"     :: "AEILocalInterp point-wise Lagrange (order 4)"
+  "carpet"  :: "CarpetInterp point-wise (single process)"
+} "local27"
+
+# ------------------ time interpolation of the grid metric ------------------
+# Whether the grid metric is interpolated between the two stored time
+# levels during the particle step (grid mode, Exact=no):
+#   off    -- the default: the metric value is taken from time level 0
+#             (the grid's current time) and the time derivative from the
+#             stored time levels (2nd-order backward difference; 0 for a
+#             stationary metric).  The historical behavior.
+#   linear -- the metric value is linearly interpolated between time
+#             level 1 (t - dt) and time level 0 (t) using the particle's
+#             fractional coordinate time within the step, and the time
+#             derivative is the 1st-order difference (g0 - g1)/dt.  The
+#             Christoffel symbols are then evaluated point-wise from the
+#             interpolated metric.  (For a time-varying metric the two
+#             stored time levels must be readable, e.g. Carpet::init_fill_timelevels
+#             = "yes"; with a static metric the two levels coincide.)
+# Ignored when Exact = yes or metric_interp = carpet.
+KEYWORD time_interp "Time interpolation of the grid metric: off or linear"
+{
+  "off"    :: "metric from time level 0, 2nd-order time derivative (default)"
+  "linear" :: "linear blend of the two time levels, 1st-order time derivative"
+} "off"
+
+# ------------------ smoke test for the time-varying code path ------------------
+# The two stored ADMBase time levels coincide in a static-metric run, so
+# time_interp = linear and the (g0 - g1)/dt derivative are exact no-ops and
+# cannot be exercised.  This hook multiplies the OLDER (t - dt) level's
+# sampled values (metric samples and, for local27, the pointwise Christoffel
+# samples) by (1 - smoke_timedep_eps) inside the Geodesic interpolators,
+# WITHOUT touching the grid arrays (no persistence through ADMBase_Static).
+# 0.0 (default) is a strict no-op: the runs are bit-identical to the
+# un-hooked build.  With a small positive eps the two levels differ, so a
+# static run can smoke-test the linear path: no crash / no NaN,
+# linear != off, and linear -> off as eps -> 0.  Diagnostic only; do not
+# use for production runs.  Ignored when time_interp = off (the off path
+# never reads the old level for the metric value) or metric_interp = carpet.
+REAL smoke_timedep_eps "Smoke test: scale the old (t - dt) metric level by (1 - eps); 0 disables (default)"
+{
+  0.0:0.5 :: "0 disables; keep small"
+} 0.0

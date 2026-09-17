@@ -118,7 +118,14 @@ Two modes are available, selected by the \texttt{Exact} parameter:
   Christoffel symbols are assembled at each particle position by
   \emph{27-point local Lagrange interpolation}: a $3 \times 3 \times 3$
   stencil of grid values around the particle is fit by a local
-  polynomial, of which the required derivatives are taken analytically.
+  polynomial, of which the required spatial derivatives are taken
+  analytically.  The time derivatives of the metric required by
+  $\Gamma^\mu_{00}$ and $\Gamma^\mu_{0\nu}$ are computed with a
+  2nd-order backward difference $(3 L_0 - 4 L_1 + L_2)/(2\,\Delta t)$
+  over the three most recent \texttt{ADMBase} time levels, so the mode
+  also works for time-dependent metrics.  A stationary metric is
+  detected automatically (the two oldest levels agree to relative
+  $10^{-12}$ on a subsample), in which case $dt(g) = 0$ exactly.
   The interpolation is local to each particle (no global polynomial is
   ever fit), so the cost per particle is independent of the particle
   number and the particles are fully independent.
@@ -131,7 +138,11 @@ GSL integrator \texttt{rkf45} (runge--kutta--fehlbert).  One Cactus
 iteration advances the coordinate time by the fixed increment
 \texttt{step} (or by \texttt{cctk\_delta\_time} if \texttt{step} = 0);
 inside it, the integrator takes its own adaptive $\tau$ sub-steps until
-the target coordinate time is reached.
+the target coordinate time is reached.  With a time-dependent grid
+metric the connection is frozen at the grid's current time within one
+particle step, so when any refinement level's metric is not static the
+\texttt{step} increment is capped at the grid time step of those
+levels (a one-time warning is issued when the cap engages).
 
 After each Cactus step the 4-velocity of every particle is
 renormalized: $u^0$ is solved from the quadratic equation
@@ -152,12 +163,19 @@ them a valid $u^0$.
 Because both metric evaluations are local to each particle, the
 particle loop is parallelized with OpenMP
 (\texttt{\#pragma omp parallel for}) over the particle index.  The
-thorn is a unigrid tool: the particle arrays are stored with
-\texttt{DISTRIB=CONSTANT} (replicated on every MPI rank) and the
-functions are scheduled \texttt{global}, so in a multi-process run the
-integration is executed once, on a single rank; the other ranks idle
-during the particle step (verified bit-identical against the
-single-rank result).  Multi-level (AMR) runs are not supported.
+particle arrays are stored with \texttt{DISTRIB=CONSTANT}
+(replicated on every MPI rank); the integration runs on a single rank
+(the other ranks idle during the particle step, and multi-process
+runs are verified bit-identical against the single-rank result).
+Multi-level (AMR) runs are supported for up to three Carpet
+refinement levels (\texttt{geodesic\_amr\_levels}, default 3; unused
+levels are skipped): on every refinement-level call the thorn
+acquires that level's grid geometry and metric fields, and each
+particle's 27-point stencil is drawn from the finest level whose grid
+contains the particle in its safety region, so particles inside a
+refined region are automatically sampled at the finer grid spacing.
+Refined regions are assumed to consist of one centered patch, and
+the run must be single-process.
 
 The evolved state is kept in the \texttt{particle\_arrays} group
 ($\tau$, $t$, $x, y, z$, $u^t, u^x, u^y, u^z$), which is a regular

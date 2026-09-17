@@ -12,8 +12,8 @@ build/
 *.out
 *.err
 
-# testsuite helper binary
-util/check_conserved
+# testsuite helper binary (auto-built by the util/check_conserved wrapper)
+util/check_conserved.bin
 
 # ThornGuide build artifacts
 doc/*.aux

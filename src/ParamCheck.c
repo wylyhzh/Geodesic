@@ -27,12 +27,13 @@
  @@*/
 
 
+#include <string.h>
+
 #include "cctk.h"
 #include "cctk_Arguments.h"
 #include "cctk_Parameters.h"
-#include <stdbool.h>
 
-extern bool check_velocity;
+#include "Geodesic.h"
 
 static const char *rcsid = "$Header$";
 
@@ -54,6 +55,20 @@ void Geodesic_ParamCheck(CCTK_ARGUMENTS)
      CCTK_PARAMWARN("particle_n is larger then particle_n_total.");
   }
 
-   check_velocity = true;
+  /* time_interp = linear needs the grid metric (Exact = no); whether the
+     two stored time levels are actually available is a runtime grid
+     property already handled in geodesics_integrate (timelevels_ok /
+     metric_static), not a par, so it is not checked here. */
+  if (strcmp(time_interp, "linear") == 0)
+  {
+    if (Exact)
+      CCTK_WARN(CCTK_WARN_ABORT,
+        "Geodesic: time_interp = linear requires Exact = no (grid mode).");
+    if (strcmp(metric_interp, "carpet") == 0)
+      CCTK_WARN(CCTK_WARN_ABORT,
+        "Geodesic: time_interp = linear is not supported with metric_interp = carpet.");
+  }
+
+   gstate.check_velocity = true;
 }
 

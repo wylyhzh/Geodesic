@@ -22,7 +22,11 @@
   reference data row by row.
 
   Build (plain C, libc + libm only):
-      cc -O2 -o check_conserved check_conserved.c -lm
+      cc -O2 -o check_conserved.bin check_conserved.c -lm
+
+  In practice the testsuite invokes the wrapper script
+  util/check_conserved, which compiles this file on first use and
+  reuses the resulting binary afterwards.
 */
 
 #include <stdio.h>
@@ -95,8 +99,12 @@ int main(int argc, char **argv)
     gyz = 2.0 * Mk * r * r * z * (r * y - a * x) / (a2r2 * den);
 
     E  = -(gtt * ut + gtx * ux + gty * uy + gtz * uz);
-    px = gxx * ux + gxy * uy + gxz * uz;
-    py = gxy * ux + gyy * uy + gyz * uz;
+    /* p_mu = g_mu nu u^nu: the spatial momenta MUST include the
+       g_{t*} u^t terms -- the Kerr-Schild shift is nonzero, and without
+       them x p_y - y p_x is not the axial Killing momentum (it
+       oscillates with azimuth instead of being constant). */
+    px = gtx * ut + gxx * ux + gxy * uy + gxz * uz;
+    py = gty * ut + gxy * ux + gyy * uy + gyz * uz;
     Lz = x * py - y * px;
 
     printf("%.15g %.15g\n", E, Lz);

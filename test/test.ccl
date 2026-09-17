@@ -1,8 +1,12 @@
 # Geodesic thorn testsuite configuration.
 #
-# Three tests, all integrating the same prograde equatorial circular
-# orbit (r = 11.989, M = 2, a = 0.5, Exact = yes, 32 Cactus steps of
-# 100 coordinate-time units, one particle):
+# Seven tests.  The first four integrate one particle on a prograde
+# equatorial circular orbit (r = 11.989, M = 2, a = 0.5, 32 Cactus
+# steps of 100 coordinate-time units; Exact = yes except
+# circ_orbit_grid); the next two are a 100-particle pair on a ring of
+# the same circular orbits (particle i at angle 2*pi*i/100),
+# Exact = no, with and without AMR; the last is a 200-particle bound
+# equatorial elliptic orbit under 3-level AMR:
 #
 #   circ_orbit           compares the full particle state dump
 #                        (t x y z u^t u^x u^y u^z tau) against the
@@ -15,15 +19,86 @@
 #                        columns against the reference; a broken
 #                        integrator shows up as a drift of E / L_z.
 #
-#   circ_orbit_mpi       the same run with 2 MPI ranks.  The
-#                        OPTIONS:global integration runs on a single
-#                        rank, so the dump must be bit-identical to the
-#                        single-rank reference.
+#   circ_orbit_mpi       the same run with 2 MPI ranks.  Only rank 0
+#                        integrates the particles (the in-code rank-0
+#                        policy; in Exact mode the local safe-region
+#                        checks are skipped so the particle is never
+#                        falsely dropped by its own rank's local
+#                        patch), so the dump must be bit-identical to
+#                        the single-rank reference.
+#
+#   circ_orbit_grid      the same orbit with Exact = no: the metric
+#                        and Christoffel symbols come from the ADMBase
+#                        grid (KerrSchild initial data in 3+1 form)
+#                        via polynomial interpolation + 6th-order FD
+#                        derivatives, with the past time levels filled
+#                        by Carpet (Carpet::init_fill_timelevels = yes)
+#                        so the stationary-metric detection engages
+#                        (d_t g = 0).  Validates the whole grid-sampling
+#                        pipeline; the trajectory deviates slightly
+#                        from the analytic one (grid discretization)
+#                        but the dump must be reproducible.
+#
+#   circ_orbit_amr       100 particles on a ring of the circular
+#                        orbits above, Exact = no, with AMR: two
+#                        static refinement boxes centred on the origin
+#                        (half-widths 16 and 8, refinement factor 2,
+#                        on a 50^3 base grid of dx = 1), so every
+#                        particle (the orbit stays at r in
+#                        [11.7, 12.1]) lives on the level-1 grid
+#                        (dx = 0.5) for the whole run and the
+#                        level-2 box (dx = 0.25) is never sampled.  Single process: with Exact = no the
+#                        refinement patches must be symmetric about
+#                        the origin and only rank 0 integrates, which
+#                        breaks under domain decomposition.
+#
+#   circ_orbit_100       control run for circ_orbit_amr: the same
+#                        100 particles on the same 50^3 grid with no
+#                        refinement, so the AMR test's dump can be
+#                        compared against a known-good coarser-grid
+#                        run (E / L_z scatter from check_conserved is
+#                        ~3x smaller on the refined grid, consistent
+#                        with the 2nd-order 27-point metric
+#                        interpolation).
+#
+#   ellipse_orbit_amr    200 particles on one bound equatorial
+#                        elliptic geodesic (Kerr M = 2, a = 0.5,
+#                        Kerr-Schild coordinates): pericentre Rp = 7.5,
+#                        apocentre (64, 0, 0), E = 0.9742480384407799,
+#                        L_z = 7.1053558433047188; particle i at
+#                        azimuth 2*pi*i/200 of the first winding of the
+#                        strongly precessing orbit (~4.02 pi per radial
+#                        period).  Exact = yes (built-in analytic
+#                        Kerr-Schild metric, sexact branch) on a 144^3
+#                        base grid (domain +-72, dx = 1) with a static
+#                        3-level spherical refinement (boxes 36/18/9,
+#                        refinement factor 2), so the particles occupy
+#                        all four levels at t = 0 and cross level
+#                        boundaries in both directions as the orbit
+#                        runs through ~2.42 radial periods
+#                        (t to 3300).  Exact =
+#                        yes is deliberate: the 2nd-order grid metric
+#                        (Exact = no) corrupts the constants of motion
+#                        of this strongly eccentric orbit (init u^t
+#                        re-solve + coherent integration error push
+#                        the near-pericentre particles across the
+#                        plunge boundary Rp* = 7.35); with the exact
+#                        metric E and L_z are conserved to integrator
+#                        precision and all 200 particles survive.
+#                        Validates the per-level AMR pipeline
+#                        (acquire, pick_level, 4:1 subcycling on three
+#                        layers) and the particle integrator on an
+#                        eccentric orbit; the grid-metric path itself
+#                        is covered by circ_orbit_grid / circ_orbit_amr.
 #
 # The reference files (test/circ_orbit/geodesic_particles.txt,
-# test/circ_orbit_conserved/geodesic_particles.txt and
-# test/circ_orbit_mpi/geodesic_particles.txt) are the raw dumps of one
-# verified run.
+# test/circ_orbit_conserved/geodesic_particles.txt,
+# test/circ_orbit_mpi/geodesic_particles.txt,
+# test/circ_orbit_grid/geodesic_particles.txt,
+# test/circ_orbit_amr/geodesic_particles.txt,
+# test/circ_orbit_100/geodesic_particles.txt and
+# test/ellipse_orbit_amr/geodesic_particles.txt) are the raw dumps of
+# verified runs.
 
 EXTENSIONS txt
 
@@ -44,4 +119,28 @@ TEST circ_orbit_mpi
 {
   RELTOL 1e-12
   NPROCS 2
+}
+
+TEST circ_orbit_grid
+{
+  RELTOL 1e-12
+  NPROCS 1
+}
+
+TEST circ_orbit_amr
+{
+  RELTOL 1e-12
+  NPROCS 1
+}
+
+TEST circ_orbit_100
+{
+  RELTOL 1e-12
+  NPROCS 1
+}
+
+TEST ellipse_orbit_amr
+{
+  RELTOL 1e-12
+  NPROCS 1
 }

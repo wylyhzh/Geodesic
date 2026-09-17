@@ -1,0 +1,30 @@
+#!/bin/sh
+# check_conserved -- testsuite postprocessor wrapper (Geodesic thorn).
+#
+# The Cactus testsuite (lib/sbin/RunTestUtils.pl) invokes the program
+# named by "POSTPROC check_conserved" in test/test.ccl as
+#
+#     <thorn>/util/check_conserved <particle-dump-file>
+#
+# and compares its standard output (one "E L_z" row per dump row)
+# against the reference data.  This wrapper builds the actual helper
+# (check_conserved.c, plain C, libc + libm only) on first use or when
+# the source changes, so the repository carries no precompiled binary.
+#
+# The compiled helper is written to check_conserved.bin next to this
+# script (see .gitignore) and reused afterwards.
+set -e
+
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+bin=$here/check_conserved.bin
+src=$here/check_conserved.c
+
+if [ ! -x "$bin" ] || [ "$src" -nt "$bin" ]; then
+    if command -v cc >/dev/null 2>&1; then
+        cc -O2 -o "$bin" "$src" -lm
+    else
+        gcc -O2 -o "$bin" "$src" -lm
+    fi
+fi
+
+exec "$bin" "$@"

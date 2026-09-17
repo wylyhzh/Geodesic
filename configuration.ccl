@@ -2,5 +2,6 @@
 # Licence : GPLv2+ (see COPYING)
 # $Header$
 
-REQUIRES GSL
+REQUIRES GSL MPI
+
 
