@@ -22,9 +22,12 @@ REAL a "Kerr black-hole spin (used when Exact = yes)"
 } 0.0
 
 # ------------------ number of particles ------------------
-INT particle_n "Number of fixed particles. 0 disables particle evolution."
+# particle_n is capped at 100: cactus_sim -Ov prints one record per
+# particle array element, and no cactus_sim parameter has ever exceeded
+# 100 (the historical limit of this thorn's particle arrays).
+INT particle_n "Number of fixed particles (max 100). 0 disables particle evolution."
 {
-  0:1000 :: "Allowed range"
+  0:100 :: "Allowed range"
 } 0
 
 INT particle_n_total  "Number of total particles. 0 disables particle evolution. particle_n_total >= particle_n"
@@ -33,38 +36,38 @@ INT particle_n_total  "Number of total particles. 0 disables particle evolution.
 } 0
 
 # ------------------ initial coordinates ------------------
-REAL particle_x[1000] "Initial particle x coordinate"
+REAL particle_x[100] "Initial particle x coordinate"
 {
   *:* :: "Any value"
 } 1.0
 
-REAL particle_y[1000] "Initial particle y coordinate"
+REAL particle_y[100] "Initial particle y coordinate"
 {
   *:* :: "Any value"
 } 1.0
 
-REAL particle_z[1000] "Initial particle z coordinate"
+REAL particle_z[100] "Initial particle z coordinate"
 {
   *:* :: "Any value"
 } 1.0
 
 # ------------------ initial 4-velocity u^mu = dx^mu / dtau ------------------
-REAL particle_xv[1000] "Initial particle u^x = dx/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
+REAL particle_xv[100] "Initial particle u^x = dx/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
 {
   *:* :: "Any value"
 } 0.0
 
-REAL particle_yv[1000] "Initial particle u^y = dy/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
+REAL particle_yv[100] "Initial particle u^y = dy/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
 {
   *:* :: "Any value"
 } 0.0
 
-REAL particle_zv[1000] "Initial particle u^z = dz/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
+REAL particle_zv[100] "Initial particle u^z = dz/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
 {
   *:* :: "Any value"
 } 0.0
 
-REAL particle_tv[1000] "Initial particle u^t = dt/dtau (auto-corrected)"
+REAL particle_tv[100] "Initial particle u^t = dt/dtau (auto-corrected)"
 {
   *:* :: "Any value"
 } 1.0

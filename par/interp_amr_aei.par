@@ -282,18 +282,6 @@ CarpetIOHDF5::output_ghost_points            = "yes"
 CarpetIOHDF5::output_boundary_points         = "yes"
 CarpetIOHDF5::output_buffer_points           = "yes"
 
-CarpetIOHDF5::out3D_every = 100000
-CarpetIOHDF5::out3D_vars  = "
- Geodesic::particle_tt
- Geodesic::particle_tx
- Geodesic::particle_ty
- Geodesic::particle_tz
- Geodesic::particle_ttv
- Geodesic::particle_txv
- Geodesic::particle_tyv
- Geodesic::particle_tzv
-"
-
 #------------------------------------------------------------------------------
 # Checkpoint/Recovery:
 #------------------------------------------------------------------------------
