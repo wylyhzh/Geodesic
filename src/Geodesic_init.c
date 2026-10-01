@@ -35,6 +35,12 @@
 
 #include "Geodesic.h"
 
+/* MultiPatch (Coordinates thorn) prototypes, declared because Geodesic's
+   include chain does not include Coordinates_Prototypes.h.  Calls are
+   guarded by CCTK_IsFunctionAliased; see Geodesic_integrate.c for the full
+   comment.  GCC>=12 errors on implicit function declaration, so declare them. */
+extern CCTK_INT MultiPatch_GetMap (const CCTK_POINTER_TO_CONST cctkGH);
+
 void Geodesics_init(CCTK_ARGUMENTS);
 
 /* ============================================================================================
@@ -60,9 +66,16 @@ void Geodesics_init(CCTK_ARGUMENTS)
 
   /* CCTK_INITIAL is traversed once per refinement level in local mode
      (Carpet).  Particle initialisation must run exactly once, so the
-     guard below keeps only the level-0 call; on a plain unigrid run
-     levfac is 1 and the guard is a no-op. */
+     guard below keeps only the level-0 call of map 0 (the center
+     block owns all particles); on a plain unigrid run levfac is 1
+     and the guard is a no-op.  Only map 0's level-0 call is the
+     legitimate init call in a multipatch run. */
   if ((int)lrint(log2((double)cctk_levfac[0])) != 0) return;
+  /* Guard: MultiPatch thorn is only active in multipatch runs.  In a plain
+     single-patch (unigrid/AMR) run the alias is not registered, so we must
+     not call MultiPatch_GetMap; treat the run as map 0. */
+  if (CCTK_IsFunctionAliased("MultiPatch_GetMap") && MultiPatch_GetMap(cctkGH) != 0)
+    return;
 
   if (particle_n > particle_n_total)
     CCTK_WARN(CCTK_WARN_ABORT, "Error: particle_n > particle_n_total.");
@@ -94,6 +107,17 @@ void Geodesics_init(CCTK_ARGUMENTS)
     if (gstate.zmin_safe < particle_rand_zmin && particle_rand_zmin < gstate.zmax_safe && particle_rand_zmin <= particle_rand_zmax) gstate.zmin_safe = particle_rand_zmin;
     if (gstate.zmax_safe > particle_rand_zmax && particle_rand_zmax > gstate.zmin_safe && particle_rand_zmin <= particle_rand_zmax) gstate.zmax_safe = particle_rand_zmax;
 
+    /* AMR region centre / half-extent, used by the acquire phase to rebuild
+       each fine-level patch origin (see Geodesic_integrate.c).  Defaults are
+       (0,0,0) centre and zero radii; set the radii in the par for multi-rank
+       AMR runs so the split directions are centred on the rank's portion. */
+    gstate.amr_center[0] = amr_center_x;
+    gstate.amr_center[1] = amr_center_y;
+    gstate.amr_center[2] = amr_center_z;
+    gstate.amr_radius[0] = amr_radius_x;
+    gstate.amr_radius[1] = amr_radius_y;
+    gstate.amr_radius[2] = amr_radius_z;
+
     /* fixed seed => reproducible runs
        if you want different random values every run, replace with:
          unsigned int seed = (unsigned int)time(NULL);
@@ -115,6 +139,22 @@ void Geodesics_init(CCTK_ARGUMENTS)
       particle_txv[i] = particle_xv[i];
       particle_tyv[i] = particle_yv[i];
       particle_tzv[i] = particle_zv[i];
+
+      /* inward (centripetal) radial 4-velocity kick so circular orbits
+         visibly deviate; 0 disables (see particle_radial_kick in param.ccl) */
+      if (particle_radial_kick > 0.0)
+      {
+        double r = sqrt(particle_tx[i]*particle_tx[i] +
+                        particle_ty[i]*particle_ty[i] +
+                        particle_tz[i]*particle_tz[i]);
+        if (r > 1.0e-12)
+        {
+          double kr = -(particle_radial_kick) / r;
+          particle_txv[i] += kr * particle_tx[i];
+          particle_tyv[i] += kr * particle_ty[i];
+          particle_tzv[i] += kr * particle_tz[i];
+        }
+      }
     }
 
     /* ----------------------------------------------------------------------------------------
@@ -151,6 +191,22 @@ void Geodesics_init(CCTK_ARGUMENTS)
       particle_txv[i] = 0.0;
       particle_tyv[i] = 0.0;
       particle_tzv[i] = 0.0;
+
+      /* inward (centripetal) radial 4-velocity kick so circular orbits
+         visibly deviate; 0 disables (see particle_radial_kick in param.ccl) */
+      if (particle_radial_kick > 0.0)
+      {
+        double r = sqrt(particle_tx[i]*particle_tx[i] +
+                        particle_ty[i]*particle_ty[i] +
+                        particle_tz[i]*particle_tz[i]);
+        if (r > 1.0e-12)
+        {
+          double kr = -(particle_radial_kick) / r;
+          particle_txv[i] += kr * particle_tx[i];
+          particle_tyv[i] += kr * particle_ty[i];
+          particle_tzv[i] += kr * particle_tz[i];
+        }
+      }
     }
   }
 }

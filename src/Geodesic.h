@@ -35,7 +35,7 @@
       component).  With a single process and one centered patch per
       level, geodesics_integrate is called once per level per
       iteration.  On each call it only stores the level's grid-function
-      data POINTERS and grid geometry into gstate.LD[level] (no data copy).
+      data POINTERS and grid geometry into gstate.LD[map][level] (no copy).
       Carpet does not move grid data during one schedule traversal, and
       the particle integration happens inside the finest-level call of
       the same traversal, so the cached pointers are always valid when
@@ -82,9 +82,14 @@
 #define POLY27 27
 #endif
 
-/* -------------------- AMR: maximum number of refinement levels -------------------- */
+/* -------------------- AMR: maximum number of refinement levels --------------------
+   Match Carpet::max_refinement_levels so particles can be integrated on the
+   finest AMR level of the simulation.  Default 16 covers typical runs. */
 #ifndef GEODESIC_MAX_LEVELS
-#define GEODESIC_MAX_LEVELS 4
+#define GEODESIC_MAX_LEVELS 16
+#endif
+#ifndef GEODESIC_MAX_MAPS
+#define GEODESIC_MAX_MAPS 8   /* Thornburg04 = 7 maps (1 center + 6); 1 spare */
 #endif
 
 /* -------------------- Multi-process AMR: per-particle state payload --------------------
@@ -94,7 +99,7 @@
    rl_last outbd. outbd (particle crossed a local box edge this step) is
    needed by the chunked integrator on every rank to pick a common chunk
    boundary. */
-#define GEODESIC_MPI_NPAY 15
+#define GEODESIC_MPI_NPAY 16
 
 /* -------------------- Base data containers at grid points -------------------- */
 typedef struct CF2_DATA {
@@ -135,6 +140,14 @@ typedef struct PARTICLEGEODESIC
   CCTK_REAL pgd1[4][4][POLY27];
   CCTK_INT  pgd1c[4][4];
 
+  /* time_interp = linear: 1 if the OLDER time level's stencil samples
+     are invalid (all-zero or non-finite) so the current level must be
+     used for the metric/Christoffel blend (theta pinned to 1).  This
+     handles the first-integration moment where the particle's coordinate
+     time lags the grid and the past time level is not yet filled at the
+     particle's AMR cell. */
+  CCTK_INT  old_level_bad;
+
   /* time_interp = linear (local27 only): the Christoffel polynomial
      fitted on the OLDER time level (t - dt), 27-term fits of the
      pointwise Christoffel symbols computed on the stencil at that
@@ -159,6 +172,29 @@ typedef struct PARTICLEGEODESIC
      a dead particle is skipped by the integration loop forever */
   CCTK_INT  dead;
 
+  /* sticky robust-path flag: 0 = cheap (historical) path, 1 = robust
+     (blend-then-inverse) path.  Only meaningful for metric_interp =
+     local27 (sinterp_mode 0) with adaptive_interp = on.  Set by the
+     strong-curvature criterion (Geodesic::strong_curv_crit, see
+     geodesic_integrate_particle) and never returned to 0 (sticky).
+     Carried in the MPI payload so that ownership transfers across
+     ranks in multi-process AMR inherit the correct path. */
+  CCTK_INT  use_robust;
+
+  /* current owning map (block).  0 = center Cartesian block for all
+     particles initially.  Updated on a cross-block event; grid data is
+     read from gstate.LD[cur_map][level], and the particle's y[] in
+     func_ode is in this map's LOCAL coordinates. */
+  CCTK_INT  cur_map;
+
+  /* Phase B (multipath): transient crossing bookkeeping.  Set inside
+     func_ode when a block boundary is crossed during this rank's
+     integration of the particle; the integrator (geodesic_integrate_
+     particle) reads crossed_y[] and restarts the ODE from it.  Both are
+     per-particle-per-step, owned by exactly one thread, and are NOT
+     part of the MPI payload (GEODESIC_MPI_NPAY). */
+  CCTK_INT  crossed;
+  CCTK_REAL crossed_y[8];
 } ParticleGeodesic;
 
 /* ============================================================
@@ -200,6 +236,10 @@ typedef struct {
   CCTK_INT  nghostzones[3];        /* cctk_nghostzones                      */
   CCTK_INT  levfac[3];             /* cctk_levfac                           */
   CCTK_REAL dt;                    /* cctk_delta_time of this level         */
+  CCTK_REAL time;                  /* data time of this level's tl0, i.e. the
+                                     cctk_time at acquire: the three stored
+                                     time levels span [time-2dt, time] (slots
+                                     [0]=time, [1]=time-dt, [2]=time-2dt)     */
   CCTK_REAL r_lbnd[3];             /* safe region for particles: origin + 7*dx */
   CCTK_REAL r_ubnd[3];             /* safe region: origin + (lsh-8)*dx     */
   /* interior box of this rank's local patch (multi-process AMR
@@ -230,6 +270,8 @@ typedef struct {
 typedef struct {
   CCTK_REAL ksm, ksa, sinitial_radius;
   CCTK_REAL xmin_safe, xmax_safe, ymin_safe, ymax_safe, zmin_safe, zmax_safe;
+  CCTK_REAL amr_center[3];  /* AMR region centre (physical), par amr_center_* */
+  CCTK_REAL amr_radius[3];  /* AMR region half-extent (physical), par amr_radius_* */
   unsigned int seed;      /* rand_r seed (unsigned by API requirement) */
   CCTK_INT dispno;
   bool sexact;            /* Exact=yes: built-in analytic Kerr-Schild metric */
@@ -250,6 +292,61 @@ typedef struct {
   /* time interpolation of the grid metric (par Geodesic::time_interp):
      0 = off (default), 1 = linear blend of the two stored time levels. */
   CCTK_INT stime_interp;
+  /* adaptive_interp (par Geodesic::adaptive_interp): for the local27 sampler,
+     1 = compute Christoffel by fitting the METRIC (blend-then-inverse: fit
+     4-metric from the 27-cell stencil, invert, differentiate) -- robust in
+     strong fields; 0 = historical behaviour (fit/blend the Christoffel
+     directly).  Only affects sinterp_mode == 0 (local27); aei/carpet are
+     unaffected.  Default 1 (on). */
+  CCTK_INT sadaptive;
+  /* strong-curvature criterion (par Geodesic::strong_curv_crit): which
+     indicator promotes a local27 particle to the robust (blend-then-inverse)
+     path.  0 = "u_dot_u" (trigger when raw u·u > u_dot_u_thr, default);
+     1 = "alpha" (trigger when lapse < alpha_thr).  Sticky: once set,
+     use_robust stays 1 for the particle's life.  Only affects
+     metric_interp = local27 (sinterp_mode 0). */
+  CCTK_INT  strong_mode;
+  CCTK_REAL u_dot_u_thr;   /* par Geodesic::u_dot_u_threshold, default -0.01 */
+  CCTK_REAL alpha_thr;     /* par Geodesic::alpha_threshold, default 0.5     */
+  /* velocity-component magnitude checks (added discriminant on top of the
+     u·u / lapse strong-curvature trigger).  The 4-velocity is normalized to
+     u·u = -1, yet a particle near light speed has |u^0|,|u^i| >> 1 while
+     u·u stays -1.  A positive threshold enables the corresponding check
+     (flag when the magnitude exceeds it); 0 = disabled (default, so the
+     existing behaviour is unchanged until the user tunes it).  Only used
+     with metric_interp = local27 (sinterp_mode 0). */
+  CCTK_REAL u0_thr;        /* par Geodesic::u0_threshold, default 0 (off)   */
+  CCTK_REAL ui_thr;        /* par Geodesic::ui_threshold, default 0 (off)   */
+  /* strong-region Christoffel source (par Geodesic::strong_christoffel): for
+     the local27 robust (use_robust) path.  0 = "hybrid" (default): metric
+     VALUE from AEI order-4, Christoffel derivatives from l27 poly27;
+     1 = "l27": metric value AND derivatives both from l27 (blend-then-
+     inverse).  Only affects metric_interp = local27 (sinterp_mode 0). */
+  CCTK_INT  strong_christ_off;
+  /* log-space metric interpolation (par Geodesic::log_metric_interp):
+     for the local27 robust (use_robust) path, interpolate the metric VALUE
+     in log|.| space for the positive ADM fields (gxx/gyy/gzz/lapse) to
+     suppress strong-curvature oscillation of the 4th-order (Lagrange) fit;
+     the six sign-changing fields (off-diagonal metric + shift) stay in
+     regular space.  Same 5-node order-4 tensor-product molecule as AEI a4.
+     0 = plain AEI values (default, unchanged behaviour);
+     1 = log-space for those fields (qwen1.txt).  Only affects
+     metric_interp = local27 (sinterp_mode 0), use_robust. */
+  CCTK_INT  log_metric_interp;
+  /* robust-path interpolation engine (par Geodesic::robust_metric_interp):
+     for the local27 robust (use_robust) path with strong_christ_off = 0
+     ("hybrid", the AEI-based strong-region path).
+     0 = "aei"  : AEI order-4 pointwise (5-node space x 2/3-node time
+                  blend; the current default, unchanged behaviour, optionally
+                  in log-space when log_metric_interp is on).
+     1 = "fourd": true 4D tensor product -- 5-node order-4 space x 3-node
+                  order-2 time Lagrange over the three stored ADMBase levels,
+                  giving both the value and all four derivatives from one
+                  consistent interpolant.  Falls back to the plain AEI path
+                  on boundary / level failure.  Only affects
+                  metric_interp = local27 (sinterp_mode 0), use_robust,
+                  strong_christ_off = 0. */
+  CCTK_INT  robust_metric_interp;
   /* smoke test (par Geodesic::smoke_timedep_eps, default 0 = disabled):
      the sampled values of the OLDER time level are multiplied by
      (1 - smoke_eps) inside the interpolators so the two levels differ
@@ -265,9 +362,21 @@ typedef struct {
   CCTK_INT aei_warned, carpet_warned;  /* one-shot warning flags */
   CCTK_REAL sstep;
   CCTK_INT step_cap_warned, pastlevels_warned;
-  CCTK_INT ld_generation, samr_levels, l0_seen_iter, last_integ_iter, nlev_seen;
+  CCTK_INT  ld_generation, samr_levels, l0_seen_iter, last_integ_iter,
+           nlev_seen, last_dump_iter;
+  /* subcycling call-batch tracking (Carpet calls POSTSTEP per level per
+     substep; one "batch" = all calls sharing a cctk_iteration):
+     batch_iter = iteration of the current batch, batch_maxlvl = highest
+     level seen so far in this batch; last_integ_time = cctk_time of the
+     last firing call (drives sstep = elapsed time). */
+  CCTK_INT  batch_iter, batch_maxlvl;
+  CCTK_REAL last_integ_time;
   CCTK_INT init_done;          /* the one-shot u^mu init (re-solve) has run */
-  LevelData LD[GEODESIC_MAX_LEVELS];
+  /* [map][level]: per-block, per-level grid data.  Only map 0 (center
+     Cartesian block) is used while the map-0 filter is active; the multi-
+     map extension (claude2.txt Step1) fills every block and lets particles
+     move between them via locate_patch + velocity transform. */
+  LevelData LD[GEODESIC_MAX_MAPS][GEODESIC_MAX_LEVELS];
   ParticleGeodesic *pgeodesic;
   CCTK_INT pgeodesic_capacity;
   int *owner_of;          /* multi_amr: owning rank of each particle (NULL otherwise) */
@@ -276,6 +385,12 @@ typedef struct {
   CCTK_REAL *mmpi_buf;    /* multi_amr: scratch for the particle-state Allgather */
   CCTK_INT mmpi_cap;
   FILE *dfp;
+  /* Number of MultiPatch blocks.  Set in the one-shot init from
+     MultiPatch_GetMaps.  The multi-block crossing logic in func_ode is
+     only valid when there is more than one block; a single-block run
+     (per-hole AMR, plain unigrid) has nmaps == 1 and must never enter
+     locate_and_cross().  Zero until init. */
+  CCTK_INT nmaps;
 } GeodesicState;
 extern GeodesicState gstate;
 
@@ -285,6 +400,7 @@ typedef struct ODE_DATA {
   CCTK_REAL bg;        /* coordinate time at the start of this Cactus step */
   CCTK_REAL a;         /* du^t/dtau, tracked by func_ode for the tau_end prediction */
   GeodesicState *st;   /* thorn state (ODE callback boundary) */
+  cGH *cctkGH;         /* Phase B: current geometry for multipatch transforms */
 } ode_data;
 
 #endif /* GEODESIC_H */

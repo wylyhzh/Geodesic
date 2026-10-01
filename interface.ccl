@@ -6,6 +6,15 @@ implements: Geodesic
 inherits: Grid
 inherits: ADMBase
 
+# Multi-patch aware: Geodesic tracks particles on whichever map (patch)
+# of the multipath coordinate system owns them.  It asks the driver for
+# the current map, the total map count, and the global<->local coordinate
+# transforms (plus their Jacobians) of the Thornburg-style patch system.
+USES FUNCTION MultiPatch_GetMap
+USES FUNCTION MultiPatch_GetMaps
+USES FUNCTION MultiPatch_GlobalToLocal
+USES FUNCTION MultiPatch_LocalToGlobal
+
 public:
 
 # Per-particle evolved state.

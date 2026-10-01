@@ -1,0 +1,1261 @@
+
+################################################################################
+# Script variables
+################################################################################
+
+# D                   = 10.0
+# M                   = 1.0
+# Pmx                 = 0.00084541526517121
+# Pmy                 = -0.09530152296974252
+# Pmz                 = 0
+# Pphi                = 0.09530152296974252
+# Ppx                 = -0.00084541526517121
+# Ppy                 = 0.09530152296974252
+# Ppz                 = 0
+# Pr                  = -0.00084541526517121
+# Smx                 = 0.0
+# Smy                 = 0.0
+# Smz                 = -0.09156449704142013
+# Spx                 = 0.0
+# Spy                 = 0.0
+# Spz                 = 0.09509112426035504
+# __file__            = /home/lyh/Cactus/repos/einsteinexamples/par/GW150914.rpar
+# __name__            = __main__
+# ahrm                = 0.4461538461538462
+# ahrp                = 0.5538461538461539
+# center_offset       = -0.5384615384615383
+# chim                = -0.46
+# chip                = 0.31
+# col_width           = 19
+# dt0                 = 0.2753406593406593
+# dt_it               = 0.002151098901098901
+# dtdx                = 0.45
+# dtdx0               = 0.225
+# e                   = 2.718281828459045
+# expected_merger     = 1000.0
+# final_time          = 1700.0
+# find_cah            = 371902
+# h0                  = 1.2237362637362637
+# h0_min              = 1.4276923076923076
+# half_D              = 5.0
+# hfm_min             = 0.022307692307692306
+# horizon_every       = 256
+# hr                  = 1.2237362637362637
+# hr_min              = 1.92
+# i                   = 7
+# inf                 = inf
+# key                 = xp
+# levelsm             = [0,17.132308,8.566154,4.283077,2.141538,1.070769,0.535385]
+# levelsp             = [0,21.267692,10.633846,5.316923,2.658462,1.329231,0.664615]
+# maxrls              = 9
+# mm                  = 0.4461538461538462
+# mp                  = 0.5538461538461539
+# n                   = 28
+# n_angular           = 28
+# n_min               = 24
+# nan                 = nan
+# out2d_every         = 1024
+# out3d_every         = 0
+# out_every           = 128
+# outermost_detector  = 500.0
+# pi                  = 3.141592653589793
+# q                   = 1.2413793103448276
+# rl0_every           = 128
+# rl1_every           = 128
+# rl_max              = 8
+# rlsm                = 7
+# rlsp                = 7
+# rm                  = 0.5353846153846153
+# rp                  = 0.6646153846153846
+# sphere_inner_radius = 51.39692307692307
+# sphere_outer_radius = 2194.1591208791206
+# tau                 = 6.283185307179586
+# time_after_merger   = 200.0
+# val                 = 4.461538461538462
+# wave_extract_every  = 256
+# waveform_length     = 1200.0
+# xm                  = -5.538461538461538
+# xp                  = 4.461538461538462
+
+################################################################################
+# Active thorns
+################################################################################
+
+ActiveThorns = "
+Geodesic
+ADMBase
+ML_ADMConstraints
+ADMCoupling
+ADMMacros
+AEILocalInterp
+AHFinderDirect
+Boundary
+Carpet
+CarpetIOBasic
+CarpetIOScalar
+CarpetInterp
+CarpetInterp2
+CarpetLib
+CarpetReduce
+CarpetRegrid2
+CarpetTracker
+CartGrid3D
+CoordBase
+CoordGauge
+Coordinates
+CoordinatesSymmetry
+Formaline
+GlobalDerivative
+hwloc
+IOUtil
+InitBase
+Interpolate2
+QuasiLocalMeasures
+LocalInterp
+LoopControl
+MoL
+NaNChecker
+PunctureTracker
+Slab
+SpaceMask
+SphericalSurface
+StaticConformal
+SummationByParts
+SymBase
+SystemStatistics
+SystemTopology
+TensorTypes
+Time
+TmunuBase
+TwoPunctures
+Vectors
+ML_BSSN
+ML_BSSN_Helper
+NewRad
+GenericFD
+#  WaveExtractCPM
+ADMDerivatives
+"
+
+################################################################################
+# Grid structure
+################################################################################
+
+Carpet::domain_from_multipatch          = yes
+CartGrid3D::type                        = "multipatch"
+CartGrid3D::set_coordinate_ranges_on    = "all maps"
+Coordinates::coordinate_system          = "Thornburg04"
+Coordinates::h_cartesian                = 1.2237362637362637
+Coordinates::h_radial                   = 1.2237362637362637
+
+Coordinates::sphere_inner_radius        = 51.39692307692307
+Coordinates::sphere_outer_radius        = 2194.1591208791206
+Coordinates::n_angular                  = 28
+
+Driver::ghost_size                      = 5
+Coordinates::patch_boundary_size        = 5
+Coordinates::additional_overlap_size    = 3
+Coordinates::outer_boundary_size        = 5
+
+# change these (to their defaults) to disable z-zymmetry
+CoordinatesSymmetry::reflection_z       = yes
+CoordinatesSymmetry::stagger            = no
+Coordinates::symmetry                   = "+z bitant"
+Coordinates::additional_symmetry_size   = 1
+Coordinates::verbose                    = no
+
+Time::timestep_method                   = "given"
+Time::timestep                          = 0.2753406593406593
+Carpet::time_refinement_factors         = "[1,1,2,4,8,16,32,64,128,256]"
+
+################################################################################
+# Mesh refinement
+################################################################################
+
+Carpet::max_refinement_levels           = 9
+CarpetRegrid2::num_centres              = 2
+CarpetRegrid2::num_levels_1             = 7
+CarpetRegrid2::position_x_1             = 4.461538461538462
+CarpetRegrid2::radius_1                 = [0,21.267692,10.633846,5.316923,2.658462,1.329231,0.664615]
+CarpetRegrid2::num_levels_2             = 7
+CarpetRegrid2::position_x_2             = -5.538461538461538
+CarpetRegrid2::radius_2                 = [0,17.132308,8.566154,4.283077,2.141538,1.070769,0.535385]
+
+Carpet::use_buffer_zones                = yes
+Carpet::prolongation_order_space        = 5
+Carpet::prolongation_order_time         = 2
+
+CarpetRegrid2::regrid_every             = 128
+CarpetRegrid2::verbose                  = no
+Carpet::grid_coordinates_filename       = "carpet-grid.asc"
+
+################################################################################
+# Initial data
+################################################################################
+
+ADMBase::initial_data                   = "twopunctures"
+ADMBase::initial_lapse                  = "twopunctures-averaged"
+ADMBase::initial_shift                  = "zero"
+ADMBase::initial_dtlapse                = "zero"
+ADMBase::initial_dtshift                = "zero"
+
+TwoPunctures::target_M_plus             = 0.5538461538461539
+TwoPunctures::target_M_minus            = 0.4461538461538462
+
+# Initial guesses for iterative solve
+TwoPunctures::par_m_plus                = 0.5538461538461539
+TwoPunctures::par_m_minus               = 0.4461538461538462
+
+TwoPunctures::par_b                     = 5.0
+TwoPunctures::center_offset[0]          = -0.5384615384615383
+
+TwoPunctures::par_P_plus[0]             = -0.00084541526517121
+TwoPunctures::par_P_plus[1]             = 0.09530152296974252
+TwoPunctures::par_P_plus[2]             = 0
+
+TwoPunctures::par_P_minus[0]            = 0.00084541526517121
+TwoPunctures::par_P_minus[1]            = -0.09530152296974252
+TwoPunctures::par_P_minus[2]            = 0
+
+TwoPunctures::par_S_plus[0]             = 0.0
+TwoPunctures::par_S_plus[1]             = 0.0
+TwoPunctures::par_S_plus[2]             = 0.09509112426035504
+
+TwoPunctures::par_S_minus[0]            = 0.0
+TwoPunctures::par_S_minus[1]            = 0.0
+TwoPunctures::par_S_minus[2]            = -0.09156449704142013
+
+TwoPunctures::grid_setup_method         = "evaluation"
+TwoPunctures::give_bare_mass            = no
+TwoPunctures::TP_epsilon                = 1e-6
+Carpet::init_fill_timelevels            = yes
+InitBase::initial_data_setup_method     = "init_single_level"
+
+################################################################################
+# Evolution and boundary
+################################################################################
+
+GenericFD::jacobian_group = "Coordinates::jacobian"
+GenericFD::jacobian_derivative_group = "Coordinates::jacobian2"
+GenericFD::jacobian_identity_map = 0
+
+ADMBase::evolution_method         = "ML_BSSN"
+ADMBase::lapse_evolution_method   = "ML_BSSN"
+ADMBase::shift_evolution_method   = "ML_BSSN"
+ADMBase::dtlapse_evolution_method = "ML_BSSN"
+ADMBase::dtshift_evolution_method = "ML_BSSN"
+
+ML_BSSN::fdOrder             = 8
+
+# 1+log slicing requires harmonicN = 1 and harmonicF = 2.0
+ML_BSSN::harmonicN           = 1
+ML_BSSN::harmonicF           = 2.0
+
+ML_BSSN::ShiftGammaCoeff     = 0.75
+ML_BSSN::BetaDriver          = 1.0
+ML_BSSN::advectLapse         = 1
+ML_BSSN::advectShift         = 1
+
+ML_BSSN::MinimumLapse        = 1.0e-8
+
+# conformalaMethod = 1 for W, 0 for phi
+ML_BSSN::conformalMethod     = 1
+
+# We apply dissipation using GlobalDerivaitive so disable it here
+ML_BSSN::epsDiss             = 0.0
+
+ML_BSSN::dt_lapse_shift_method = "noLapseShiftAdvection"
+
+ML_BSSN::initial_boundary_condition = "extrapolate-gammas"
+ML_BSSN::rhs_boundary_condition     = "scalar"
+Boundary::radpower                  = 2
+
+################################################################################
+# BH tracking
+################################################################################
+
+CarpetTracker::surface                      [0] = 0
+CarpetTracker::surface                      [1] = 1
+PunctureTracker::track                      [0] = yes
+PunctureTracker::initial_x                  [0] = 4.461538461538462
+PunctureTracker::which_surface_to_store_info[0] = 0
+PunctureTracker::track                      [1] = yes
+PunctureTracker::initial_x                  [1] = -5.538461538461538
+PunctureTracker::which_surface_to_store_info[1] = 1
+
+################################################################################
+# Spatial finite differencing
+################################################################################
+
+SummationByParts::order                              = 8
+
+# Drop order instead of using upwinded stencils, only for advection derivatives
+SummationByParts::sbp_upwind_deriv = no
+
+SummationByParts::sbp_1st_deriv                      = yes
+SummationByParts::sbp_2nd_deriv                      = no
+SummationByParts::onesided_interpatch_boundaries     = no
+SummationByParts::onesided_outer_boundaries          = yes
+SummationByParts::use_dissipation                    = no
+GlobalDerivative::use_dissipation                    = yes
+SummationByParts::scale_with_h                       = yes
+SummationByParts::dissipation_type                   = "Kreiss-Oliger"
+SummationByParts::epsdis                             = 0.15
+
+# Because dt/dx is half that of the other levels we also need half the dissipation
+GlobalDerivative::epsdis_for_level               [0] = 0.075
+
+# Variables for dissipation
+SummationByParts::vars                               = "
+ML_BSSN::ML_log_confac
+ML_BSSN::ML_metric
+ML_BSSN::ML_trace_curv
+ML_BSSN::ML_curv
+ML_BSSN::ML_Gamma
+ML_BSSN::ML_lapse
+ML_BSSN::ML_shift
+ML_BSSN::ML_dtlapse
+ML_BSSN::ML_dtshift
+"
+
+################################################################################
+# Time integration
+################################################################################
+
+MoL::ODE_Method                         = "rk4"
+MoL::MoL_Intermediate_Steps             = 4
+MoL::MoL_Num_Scratch_Levels             = 1
+
+################################################################################
+# Interpolation
+################################################################################
+
+CarpetInterp::check_tree_search         = no
+CarpetInterp::tree_search               = yes
+# Use 5-th order interpatch interpolation on the Llama grid
+Interpolate::interpolator_order         = 5
+
+################################################################################
+# Psi4 computation
+################################################################################
+
+
+################################################################################
+# Psi4 mode decomposition
+################################################################################
+
+# Radii are chosen to be evenly spaced in 1/r as that is the variable
+# extrapolation is performed in
+
+# Disable ASCII output to avoid creating a large number of files
+
+################################################################################
+# Gauge invariant perturbations of Schwarzschild (ZM-CPM variables)
+################################################################################
+
+# WaveExtractCPM::out_every                  = 256
+# WaveExtractCPM::use_carpetinterp2          = no
+# WaveExtractCPM::calc_when_necessary        = no
+# WaveExtractCPM::verbose                    = 0
+# WaveExtractCPM::maximum_detector_number    = 7
+# WaveExtractCPM::switch_output_format       = 100
+# WaveExtractCPM::rsch2_computation          = "average Schwarzschild metric"
+# WaveExtractCPM::l_mode                     = 8
+# WaveExtractCPM::m_mode                     = 8
+# WaveExtractCPM::detector_radius        [0] = 100
+# WaveExtractCPM::detector_radius        [1] = 115
+# WaveExtractCPM::detector_radius        [2] = 136
+# WaveExtractCPM::detector_radius        [3] = 167
+# WaveExtractCPM::detector_radius        [4] = 214
+# WaveExtractCPM::detector_radius        [5] = 300
+# WaveExtractCPM::detector_radius        [6] = 500
+# WaveExtractCPM::maxntheta                  = 120
+# WaveExtractCPM::maxnphi                    = 240
+# WaveExtractCPM::output_hdf5                = yes
+# WaveExtractCPM::output_ascii               = no
+# WaveExtractCPM::output_h                   = yes
+# WaveExtractCPM::output_Psi                 = yes
+
+################################################################################
+# Apparent Horizons
+################################################################################
+
+AHFinderDirect::N_horizons                               = 3
+AHFinderDirect::find_every                               = 256
+AHFinderDirect::output_h_every                           = 0
+AHFinderDirect::max_Newton_iterations__initial           = 50
+AHFinderDirect::max_Newton_iterations__subsequent        = 50
+AHFinderDirect::max_allowable_Theta_growth_iterations    = 10
+AHFinderDirect::max_allowable_Theta_nonshrink_iterations = 10
+AHFinderDirect::geometry_interpolator_name               = "Lagrange polynomial interpolation"
+AHFinderDirect::geometry_interpolator_pars               = "order=4"
+AHFinderDirect::surface_interpolator_name                = "Lagrange polynomial interpolation"
+AHFinderDirect::surface_interpolator_pars                = "order=4"
+AHFinderDirect::verbose_level                            = "physics details"
+AHFinderDirect::move_origins                             = yes
+
+AHFinderDirect::origin_x                             [1] = 4.461538461538462
+AHFinderDirect::initial_guess__coord_sphere__x_center[1] = 4.461538461538462
+AHFinderDirect::initial_guess__coord_sphere__radius  [1] = 0.6646153846153846
+AHFinderDirect::which_surface_to_store_info          [1] = 2
+AHFinderDirect::set_mask_for_individual_horizon      [1] = no
+AHFinderDirect::reset_horizon_after_not_finding      [1] = no
+AHFinderDirect::track_origin_from_grid_scalar        [1] = yes
+AHFinderDirect::track_origin_source_x                [1] = "PunctureTracker::pt_loc_x[0]"
+AHFinderDirect::track_origin_source_y                [1] = "PunctureTracker::pt_loc_y[0]"
+AHFinderDirect::track_origin_source_z                [1] = "PunctureTracker::pt_loc_z[0]"
+AHFinderDirect::max_allowable_horizon_radius         [1] = 3
+
+AHFinderDirect::origin_x                             [2] = -5.538461538461538
+AHFinderDirect::initial_guess__coord_sphere__x_center[2] = -5.538461538461538
+AHFinderDirect::initial_guess__coord_sphere__radius  [2] = 0.5353846153846153
+AHFinderDirect::which_surface_to_store_info          [2] = 3
+AHFinderDirect::set_mask_for_individual_horizon      [2] = no
+AHFinderDirect::reset_horizon_after_not_finding      [2] = no
+AHFinderDirect::track_origin_from_grid_scalar        [2] = yes
+AHFinderDirect::track_origin_source_x                [2] = "PunctureTracker::pt_loc_x[1]"
+AHFinderDirect::track_origin_source_y                [2] = "PunctureTracker::pt_loc_y[1]"
+AHFinderDirect::track_origin_source_z                [2] = "PunctureTracker::pt_loc_z[1]"
+AHFinderDirect::max_allowable_horizon_radius         [2] = 3
+
+AHFinderDirect::origin_x                             [3] = 0
+AHFinderDirect::find_after_individual                [3] = 371902
+AHFinderDirect::initial_guess__coord_sphere__x_center[3] = 0
+AHFinderDirect::initial_guess__coord_sphere__radius  [3] = 1.0
+AHFinderDirect::which_surface_to_store_info          [3] = 4
+AHFinderDirect::set_mask_for_individual_horizon      [3] = no
+AHFinderDirect::max_allowable_horizon_radius         [3] = 6
+
+################################################################################
+# Spherical surfaces
+################################################################################
+
+SphericalSurface::nsurfaces             = 5
+SphericalSurface::maxntheta             = 66
+SphericalSurface::maxnphi               = 124
+SphericalSurface::verbose               = no
+
+# Surfaces 0 and 1 are used by PunctureTracker
+
+# Horizon 1
+SphericalSurface::ntheta            [2] = 41
+SphericalSurface::nphi              [2] = 80
+SphericalSurface::nghoststheta      [2] = 2
+SphericalSurface::nghostsphi        [2] = 2
+
+# Horizon 2
+SphericalSurface::ntheta            [3] = 41
+SphericalSurface::nphi              [3] = 80
+SphericalSurface::nghoststheta      [3] = 2
+SphericalSurface::nghostsphi        [3] = 2
+
+# Common horizon
+SphericalSurface::ntheta            [4] = 41
+SphericalSurface::nphi              [4] = 80
+SphericalSurface::nghoststheta      [4] = 2
+SphericalSurface::nghostsphi        [4] = 2
+
+################################################################################
+# Isolated Horizons
+################################################################################
+
+QuasiLocalMeasures::verbose                = no
+QuasiLocalMeasures::veryverbose            = no
+QuasiLocalMeasures::interpolator           = "Lagrange polynomial interpolation"
+QuasiLocalMeasures::interpolator_options   = "order=4"
+QuasiLocalMeasures::spatial_order          = 4
+QuasiLocalMeasures::num_surfaces           = 3
+QuasiLocalMeasures::surface_index      [0] = 2
+QuasiLocalMeasures::surface_index      [1] = 3
+QuasiLocalMeasures::surface_index      [2] = 4
+QuasiLocalMeasures::output_vtk_every       = 0
+
+################################################################################
+# Correctness checking
+################################################################################
+
+Carpet::poison_new_timelevels           = no
+Carpet::check_for_poison                = no
+
+NaNChecker::check_every                 = 1
+NanChecker::check_after                 = 0
+NaNChecker::report_max                  = 10
+NaNChecker::verbose                     = "all"
+NaNChecker::action_if_found             = terminate
+NaNChecker::out_NaNmask                 = yes
+NaNChecker::check_vars                  = "
+ML_BSSN::ML_log_confac
+ADMBase::gxx
+ADMBase::gxy
+ADMBase::gxz
+ADMBase::gyy
+ADMBase::gyz
+ADMBase::gzz
+ADMBase::alp
+ADMBase::betax
+ADMBase::betay
+ADMBase::betaz
+"
+
+################################################################################
+# Timers
+################################################################################
+
+Carpet::output_timer_tree_every         = 1024
+Carpet::output_initialise_timer_tree    = yes
+
+################################################################################
+# Output
+################################################################################
+
+IO::out_dir = "/home/lyh/Cactus/TEST/sim/gw150914_geo_aei_2048"
+IOScalar::one_file_per_group            = yes
+
+IOBasic::outInfo_every                  = 1
+IOBasic::outInfo_reductions             = "minimum maximum"
+IOBasic::outInfo_vars                   = "
+ML_BSSN::ML_log_confac
+Carpet::physical_time_per_hour
+SystemStatistics::maxrss_mb
+SystemStatistics::swap_used_mb
+"
+
+IOScalar::outScalar_every               = 256
+IOScalar::outScalar_reductions          = "minimum maximum average"
+IOScalar::outScalar_vars                = "SystemStatistics::process_memory_mb"
+
+
+
+
+
+
+################################################################################
+# Checkpointing and recovery
+################################################################################
+
+IO::out_proc_every               = 2
+IO::abort_on_io_errors           = yes
+
+################################################################################
+# Run termination
+################################################################################
+
+# Trigger termination 30 minutes before the walltime is reached
+Cactus::terminate                = "iteration"
+Cactus::cctk_itlast              = 2048
+#------------------------------------------------------------------------------
+# Geodesic particle probe: aei (metric_interp=aei, time_interp=linear)
+Geodesic::Exact                  = "no"
+Geodesic::step                   = 0.0
+Geodesic::particle_n_total       = 100
+Geodesic::particle_n             = 100
+Geodesic::geodesic_amr_levels    = 1
+Geodesic::excised_radius         = 2.0
+Geodesic::initial_radius         = 8.0
+Geodesic::rverbose               = "no"
+Geodesic::particle_dump_every    = 1
+Geodesic::particle_dump_file     = "geodesic_particles_gw150914_geo_aei_2048.txt"
+Geodesic::particle_radial_kick  = 0.2
+Geodesic::particle_loss_policy   = "drop"
+Geodesic::metric_interp          = "aei"
+Geodesic::time_interp            = "linear"
+Geodesic::particle_x[0]         = 8.00000000000000000
+Geodesic::particle_y[0]         = 0.00000000000000000
+Geodesic::particle_x[1]         = 7.98421382742617336
+Geodesic::particle_y[1]         = 0.50232415623450699
+Geodesic::particle_x[2]         = 7.93691761051582390
+Geodesic::particle_y[2]         = 1.00266586851443407
+Geodesic::particle_x[3]         = 7.85829800582950977
+Geodesic::particle_y[3]         = 1.49905051668579681
+Geodesic::particle_x[4]         = 7.74866528902904861
+Geodesic::particle_y[4]         = 1.98951909731883858
+Geodesic::particle_x[5]         = 7.60845213036122825
+Geodesic::particle_y[5]         = 2.47213595499957961
+Geodesic::particle_x[6]         = 7.43821188710601167
+Geodesic::particle_y[6]         = 2.94499642147742335
+Geodesic::particle_x[7]         = 7.23861641972815750
+Geodesic::particle_y[7]         = 3.40623433252058172
+Geodesic::particle_x[8]         = 7.01045344035090956
+Geodesic::particle_y[8]         = 3.85402939281372259
+Geodesic::particle_x[9]         = 6.75462340401612149
+Geodesic::particle_y[9]         = 4.28661435983197325
+Geodesic::particle_x[10]         = 6.47213595499957961
+Geodesic::particle_y[10]         = 4.70228201833978599
+Geodesic::particle_x[11]         = 6.16410594220631403
+Geodesic::particle_y[11]         = 5.09939191798951796
+Geodesic::particle_x[12]         = 5.83174901937129331
+Geodesic::particle_y[12]         = 5.47637684742950981
+Geodesic::particle_x[13]         = 5.47637684742950981
+Geodesic::particle_y[13]         = 5.83174901937129331
+Geodesic::particle_x[14]         = 5.09939191798951796
+Geodesic::particle_y[14]         = 6.16410594220631403
+Geodesic::particle_x[15]         = 4.70228201833978599
+Geodesic::particle_y[15]         = 6.47213595499957872
+Geodesic::particle_x[16]         = 4.28661435983197237
+Geodesic::particle_y[16]         = 6.75462340401612149
+Geodesic::particle_x[17]         = 3.85402939281372126
+Geodesic::particle_y[17]         = 7.01045344035090956
+Geodesic::particle_x[18]         = 3.40623433252058172
+Geodesic::particle_y[18]         = 7.23861641972815750
+Geodesic::particle_x[19]         = 2.94499642147742513
+Geodesic::particle_y[19]         = 7.43821188710601078
+Geodesic::particle_x[20]         = 2.47213595499957961
+Geodesic::particle_y[20]         = 7.60845213036122825
+Geodesic::particle_x[21]         = 1.98951909731883791
+Geodesic::particle_y[21]         = 7.74866528902904861
+Geodesic::particle_x[22]         = 1.49905051668579792
+Geodesic::particle_y[22]         = 7.85829800582950977
+Geodesic::particle_x[23]         = 1.00266586851443584
+Geodesic::particle_y[23]         = 7.93691761051582212
+Geodesic::particle_x[24]         = 0.50232415623450821
+Geodesic::particle_y[24]         = 7.98421382742617336
+Geodesic::particle_x[25]         = 0.00000000000000049
+Geodesic::particle_y[25]         = 8.00000000000000000
+Geodesic::particle_x[26]         = -0.50232415623450721
+Geodesic::particle_y[26]         = 7.98421382742617336
+Geodesic::particle_x[27]         = -1.00266586851443318
+Geodesic::particle_y[27]         = 7.93691761051582390
+Geodesic::particle_x[28]         = -1.49905051668579681
+Geodesic::particle_y[28]         = 7.85829800582950977
+Geodesic::particle_x[29]         = -1.98951909731883880
+Geodesic::particle_y[29]         = 7.74866528902904861
+Geodesic::particle_x[30]         = -2.47213595499957695
+Geodesic::particle_y[30]         = 7.60845213036122914
+Geodesic::particle_x[31]         = -2.94499642147742202
+Geodesic::particle_y[31]         = 7.43821188710601167
+Geodesic::particle_x[32]         = -3.40623433252058172
+Geodesic::particle_y[32]         = 7.23861641972815661
+Geodesic::particle_x[33]         = -3.85402939281372348
+Geodesic::particle_y[33]         = 7.01045344035090778
+Geodesic::particle_x[34]         = -4.28661435983197503
+Geodesic::particle_y[34]         = 6.75462340401611971
+Geodesic::particle_x[35]         = -4.70228201833978421
+Geodesic::particle_y[35]         = 6.47213595499957961
+Geodesic::particle_x[36]         = -5.09939191798951796
+Geodesic::particle_y[36]         = 6.16410594220631403
+Geodesic::particle_x[37]         = -5.47637684742950981
+Geodesic::particle_y[37]         = 5.83174901937129153
+Geodesic::particle_x[38]         = -5.83174901937129064
+Geodesic::particle_y[38]         = 5.47637684742951070
+Geodesic::particle_x[39]         = -6.16410594220631314
+Geodesic::particle_y[39]         = 5.09939191798951885
+Geodesic::particle_x[40]         = -6.47213595499957872
+Geodesic::particle_y[40]         = 4.70228201833978599
+Geodesic::particle_x[41]         = -6.75462340401611883
+Geodesic::particle_y[41]         = 4.28661435983197592
+Geodesic::particle_x[42]         = -7.01045344035090956
+Geodesic::particle_y[42]         = 3.85402939281372170
+Geodesic::particle_x[43]         = -7.23861641972815484
+Geodesic::particle_y[43]         = 3.40623433252058305
+Geodesic::particle_x[44]         = -7.43821188710601078
+Geodesic::particle_y[44]         = 2.94499642147742513
+Geodesic::particle_x[45]         = -7.60845213036122825
+Geodesic::particle_y[45]         = 2.47213595499958005
+Geodesic::particle_x[46]         = -7.74866528902904772
+Geodesic::particle_y[46]         = 1.98951909731884213
+Geodesic::particle_x[47]         = -7.85829800582950977
+Geodesic::particle_y[47]         = 1.49905051668579681
+Geodesic::particle_x[48]         = -7.93691761051582212
+Geodesic::particle_y[48]         = 1.00266586851443629
+Geodesic::particle_x[49]         = -7.98421382742617336
+Geodesic::particle_y[49]         = 0.50232415623450866
+Geodesic::particle_x[50]         = -8.00000000000000000
+Geodesic::particle_y[50]         = 0.00000000000000098
+Geodesic::particle_x[51]         = -7.98421382742617336
+Geodesic::particle_y[51]         = -0.50232415623450677
+Geodesic::particle_x[52]         = -7.93691761051582390
+Geodesic::particle_y[52]         = -1.00266586851443429
+Geodesic::particle_x[53]         = -7.85829800582950977
+Geodesic::particle_y[53]         = -1.49905051668579836
+Geodesic::particle_x[54]         = -7.74866528902905038
+Geodesic::particle_y[54]         = -1.98951909731883680
+Geodesic::particle_x[55]         = -7.60845213036122914
+Geodesic::particle_y[55]         = -2.47213595499957828
+Geodesic::particle_x[56]         = -7.43821188710601167
+Geodesic::particle_y[56]         = -2.94499642147742335
+Geodesic::particle_x[57]         = -7.23861641972815750
+Geodesic::particle_y[57]         = -3.40623433252057817
+Geodesic::particle_x[58]         = -7.01045344035090778
+Geodesic::particle_y[58]         = -3.85402939281372348
+Geodesic::particle_x[59]         = -6.75462340401612149
+Geodesic::particle_y[59]         = -4.28661435983197148
+Geodesic::particle_x[60]         = -6.47213595499958316
+Geodesic::particle_y[60]         = -4.70228201833978154
+Geodesic::particle_x[61]         = -6.16410594220631403
+Geodesic::particle_y[61]         = -5.09939191798951796
+Geodesic::particle_x[62]         = -5.83174901937129420
+Geodesic::particle_y[62]         = -5.47637684742950714
+Geodesic::particle_x[63]         = -5.47637684742950981
+Geodesic::particle_y[63]         = -5.83174901937129331
+Geodesic::particle_x[64]         = -5.09939191798951619
+Geodesic::particle_y[64]         = -6.16410594220631580
+Geodesic::particle_x[65]         = -4.70228201833978599
+Geodesic::particle_y[65]         = -6.47213595499957872
+Geodesic::particle_x[66]         = -4.28661435983197148
+Geodesic::particle_y[66]         = -6.75462340401612238
+Geodesic::particle_x[67]         = -3.85402939281372259
+Geodesic::particle_y[67]         = -7.01045344035090956
+Geodesic::particle_x[68]         = -3.40623433252057772
+Geodesic::particle_y[68]         = -7.23861641972815928
+Geodesic::particle_x[69]         = -2.94499642147742291
+Geodesic::particle_y[69]         = -7.43821188710601167
+Geodesic::particle_x[70]         = -2.47213595499958050
+Geodesic::particle_y[70]         = -7.60845213036122825
+Geodesic::particle_x[71]         = -1.98951909731883569
+Geodesic::particle_y[71]         = -7.74866528902905038
+Geodesic::particle_x[72]         = -1.49905051668579703
+Geodesic::particle_y[72]         = -7.85829800582950977
+Geodesic::particle_x[73]         = -1.00266586851443673
+Geodesic::particle_y[73]         = -7.93691761051582212
+Geodesic::particle_x[74]         = -0.50232415623450566
+Geodesic::particle_y[74]         = -7.98421382742617336
+Geodesic::particle_x[75]         = -0.00000000000000147
+Geodesic::particle_y[75]         = -8.00000000000000000
+Geodesic::particle_x[76]         = 0.50232415623450266
+Geodesic::particle_y[76]         = -7.98421382742617336
+Geodesic::particle_x[77]         = 1.00266586851443384
+Geodesic::particle_y[77]         = -7.93691761051582390
+Geodesic::particle_x[78]         = 1.49905051668579414
+Geodesic::particle_y[78]         = -7.85829800582950977
+Geodesic::particle_x[79]         = 1.98951909731883969
+Geodesic::particle_y[79]         = -7.74866528902904861
+Geodesic::particle_x[80]         = 2.47213595499957783
+Geodesic::particle_y[80]         = -7.60845213036122914
+Geodesic::particle_x[81]         = 2.94499642147741980
+Geodesic::particle_y[81]         = -7.43821188710601344
+Geodesic::particle_x[82]         = 3.40623433252057461
+Geodesic::particle_y[82]         = -7.23861641972815928
+Geodesic::particle_x[83]         = 3.85402939281372614
+Geodesic::particle_y[83]         = -7.01045344035090690
+Geodesic::particle_x[84]         = 4.28661435983197414
+Geodesic::particle_y[84]         = -6.75462340401611971
+Geodesic::particle_x[85]         = 4.70228201833978332
+Geodesic::particle_y[85]         = -6.47213595499958139
+Geodesic::particle_x[86]         = 5.09939191798951441
+Geodesic::particle_y[86]         = -6.16410594220631669
+Geodesic::particle_x[87]         = 5.47637684742950359
+Geodesic::particle_y[87]         = -5.83174901937129775
+Geodesic::particle_x[88]         = 5.83174901937129064
+Geodesic::particle_y[88]         = -5.47637684742951247
+Geodesic::particle_x[89]         = 6.16410594220631580
+Geodesic::particle_y[89]         = -5.09939191798951796
+Geodesic::particle_x[90]         = 6.47213595499957872
+Geodesic::particle_y[90]         = -4.70228201833978687
+Geodesic::particle_x[91]         = 6.75462340401611883
+Geodesic::particle_y[91]         = -4.28661435983197681
+Geodesic::particle_x[92]         = 7.01045344035090512
+Geodesic::particle_y[92]         = -3.85402939281372880
+Geodesic::particle_x[93]         = 7.23861641972815484
+Geodesic::particle_y[93]         = -3.40623433252058394
+Geodesic::particle_x[94]         = 7.43821188710601167
+Geodesic::particle_y[94]         = -2.94499642147742335
+Geodesic::particle_x[95]         = 7.60845213036122825
+Geodesic::particle_y[95]         = -2.47213595499958139
+Geodesic::particle_x[96]         = 7.74866528902904772
+Geodesic::particle_y[96]         = -1.98951909731884280
+Geodesic::particle_x[97]         = 7.85829800582950977
+Geodesic::particle_y[97]         = -1.49905051668579770
+Geodesic::particle_x[98]         = 7.93691761051582212
+Geodesic::particle_y[98]         = -1.00266586851443740
+Geodesic::particle_x[99]         = 7.98421382742617336
+Geodesic::particle_y[99]         = -0.50232415623450610
+Geodesic::particle_z[0]         = 0.00000000000000000
+Geodesic::particle_z[1]         = 0.00000000000000000
+Geodesic::particle_z[2]         = 0.00000000000000000
+Geodesic::particle_z[3]         = 0.00000000000000000
+Geodesic::particle_z[4]         = 0.00000000000000000
+Geodesic::particle_z[5]         = 0.00000000000000000
+Geodesic::particle_z[6]         = 0.00000000000000000
+Geodesic::particle_z[7]         = 0.00000000000000000
+Geodesic::particle_z[8]         = 0.00000000000000000
+Geodesic::particle_z[9]         = 0.00000000000000000
+Geodesic::particle_z[10]         = 0.00000000000000000
+Geodesic::particle_z[11]         = 0.00000000000000000
+Geodesic::particle_z[12]         = 0.00000000000000000
+Geodesic::particle_z[13]         = 0.00000000000000000
+Geodesic::particle_z[14]         = 0.00000000000000000
+Geodesic::particle_z[15]         = 0.00000000000000000
+Geodesic::particle_z[16]         = 0.00000000000000000
+Geodesic::particle_z[17]         = 0.00000000000000000
+Geodesic::particle_z[18]         = 0.00000000000000000
+Geodesic::particle_z[19]         = 0.00000000000000000
+Geodesic::particle_z[20]         = 0.00000000000000000
+Geodesic::particle_z[21]         = 0.00000000000000000
+Geodesic::particle_z[22]         = 0.00000000000000000
+Geodesic::particle_z[23]         = 0.00000000000000000
+Geodesic::particle_z[24]         = 0.00000000000000000
+Geodesic::particle_z[25]         = 0.00000000000000000
+Geodesic::particle_z[26]         = 0.00000000000000000
+Geodesic::particle_z[27]         = 0.00000000000000000
+Geodesic::particle_z[28]         = 0.00000000000000000
+Geodesic::particle_z[29]         = 0.00000000000000000
+Geodesic::particle_z[30]         = 0.00000000000000000
+Geodesic::particle_z[31]         = 0.00000000000000000
+Geodesic::particle_z[32]         = 0.00000000000000000
+Geodesic::particle_z[33]         = 0.00000000000000000
+Geodesic::particle_z[34]         = 0.00000000000000000
+Geodesic::particle_z[35]         = 0.00000000000000000
+Geodesic::particle_z[36]         = 0.00000000000000000
+Geodesic::particle_z[37]         = 0.00000000000000000
+Geodesic::particle_z[38]         = 0.00000000000000000
+Geodesic::particle_z[39]         = 0.00000000000000000
+Geodesic::particle_z[40]         = 0.00000000000000000
+Geodesic::particle_z[41]         = 0.00000000000000000
+Geodesic::particle_z[42]         = 0.00000000000000000
+Geodesic::particle_z[43]         = 0.00000000000000000
+Geodesic::particle_z[44]         = 0.00000000000000000
+Geodesic::particle_z[45]         = 0.00000000000000000
+Geodesic::particle_z[46]         = 0.00000000000000000
+Geodesic::particle_z[47]         = 0.00000000000000000
+Geodesic::particle_z[48]         = 0.00000000000000000
+Geodesic::particle_z[49]         = 0.00000000000000000
+Geodesic::particle_z[50]         = 0.00000000000000000
+Geodesic::particle_z[51]         = 0.00000000000000000
+Geodesic::particle_z[52]         = 0.00000000000000000
+Geodesic::particle_z[53]         = 0.00000000000000000
+Geodesic::particle_z[54]         = 0.00000000000000000
+Geodesic::particle_z[55]         = 0.00000000000000000
+Geodesic::particle_z[56]         = 0.00000000000000000
+Geodesic::particle_z[57]         = 0.00000000000000000
+Geodesic::particle_z[58]         = 0.00000000000000000
+Geodesic::particle_z[59]         = 0.00000000000000000
+Geodesic::particle_z[60]         = 0.00000000000000000
+Geodesic::particle_z[61]         = 0.00000000000000000
+Geodesic::particle_z[62]         = 0.00000000000000000
+Geodesic::particle_z[63]         = 0.00000000000000000
+Geodesic::particle_z[64]         = 0.00000000000000000
+Geodesic::particle_z[65]         = 0.00000000000000000
+Geodesic::particle_z[66]         = 0.00000000000000000
+Geodesic::particle_z[67]         = 0.00000000000000000
+Geodesic::particle_z[68]         = 0.00000000000000000
+Geodesic::particle_z[69]         = 0.00000000000000000
+Geodesic::particle_z[70]         = 0.00000000000000000
+Geodesic::particle_z[71]         = 0.00000000000000000
+Geodesic::particle_z[72]         = 0.00000000000000000
+Geodesic::particle_z[73]         = 0.00000000000000000
+Geodesic::particle_z[74]         = 0.00000000000000000
+Geodesic::particle_z[75]         = 0.00000000000000000
+Geodesic::particle_z[76]         = 0.00000000000000000
+Geodesic::particle_z[77]         = 0.00000000000000000
+Geodesic::particle_z[78]         = 0.00000000000000000
+Geodesic::particle_z[79]         = 0.00000000000000000
+Geodesic::particle_z[80]         = 0.00000000000000000
+Geodesic::particle_z[81]         = 0.00000000000000000
+Geodesic::particle_z[82]         = 0.00000000000000000
+Geodesic::particle_z[83]         = 0.00000000000000000
+Geodesic::particle_z[84]         = 0.00000000000000000
+Geodesic::particle_z[85]         = 0.00000000000000000
+Geodesic::particle_z[86]         = 0.00000000000000000
+Geodesic::particle_z[87]         = 0.00000000000000000
+Geodesic::particle_z[88]         = 0.00000000000000000
+Geodesic::particle_z[89]         = 0.00000000000000000
+Geodesic::particle_z[90]         = 0.00000000000000000
+Geodesic::particle_z[91]         = 0.00000000000000000
+Geodesic::particle_z[92]         = 0.00000000000000000
+Geodesic::particle_z[93]         = 0.00000000000000000
+Geodesic::particle_z[94]         = 0.00000000000000000
+Geodesic::particle_z[95]         = 0.00000000000000000
+Geodesic::particle_z[96]         = 0.00000000000000000
+Geodesic::particle_z[97]         = 0.00000000000000000
+Geodesic::particle_z[98]         = 0.00000000000000000
+Geodesic::particle_z[99]         = 0.00000000000000000
+Geodesic::particle_tv[0]        = 1.00000000000000000
+Geodesic::particle_tv[1]        = 1.00000000000000000
+Geodesic::particle_tv[2]        = 1.00000000000000000
+Geodesic::particle_tv[3]        = 1.00000000000000000
+Geodesic::particle_tv[4]        = 1.00000000000000000
+Geodesic::particle_tv[5]        = 1.00000000000000000
+Geodesic::particle_tv[6]        = 1.00000000000000000
+Geodesic::particle_tv[7]        = 1.00000000000000000
+Geodesic::particle_tv[8]        = 1.00000000000000000
+Geodesic::particle_tv[9]        = 1.00000000000000000
+Geodesic::particle_tv[10]        = 1.00000000000000000
+Geodesic::particle_tv[11]        = 1.00000000000000000
+Geodesic::particle_tv[12]        = 1.00000000000000000
+Geodesic::particle_tv[13]        = 1.00000000000000000
+Geodesic::particle_tv[14]        = 1.00000000000000000
+Geodesic::particle_tv[15]        = 1.00000000000000000
+Geodesic::particle_tv[16]        = 1.00000000000000000
+Geodesic::particle_tv[17]        = 1.00000000000000000
+Geodesic::particle_tv[18]        = 1.00000000000000000
+Geodesic::particle_tv[19]        = 1.00000000000000000
+Geodesic::particle_tv[20]        = 1.00000000000000000
+Geodesic::particle_tv[21]        = 1.00000000000000000
+Geodesic::particle_tv[22]        = 1.00000000000000000
+Geodesic::particle_tv[23]        = 1.00000000000000000
+Geodesic::particle_tv[24]        = 1.00000000000000000
+Geodesic::particle_tv[25]        = 1.00000000000000000
+Geodesic::particle_tv[26]        = 1.00000000000000000
+Geodesic::particle_tv[27]        = 1.00000000000000000
+Geodesic::particle_tv[28]        = 1.00000000000000000
+Geodesic::particle_tv[29]        = 1.00000000000000000
+Geodesic::particle_tv[30]        = 1.00000000000000000
+Geodesic::particle_tv[31]        = 1.00000000000000000
+Geodesic::particle_tv[32]        = 1.00000000000000000
+Geodesic::particle_tv[33]        = 1.00000000000000000
+Geodesic::particle_tv[34]        = 1.00000000000000000
+Geodesic::particle_tv[35]        = 1.00000000000000000
+Geodesic::particle_tv[36]        = 1.00000000000000000
+Geodesic::particle_tv[37]        = 1.00000000000000000
+Geodesic::particle_tv[38]        = 1.00000000000000000
+Geodesic::particle_tv[39]        = 1.00000000000000000
+Geodesic::particle_tv[40]        = 1.00000000000000000
+Geodesic::particle_tv[41]        = 1.00000000000000000
+Geodesic::particle_tv[42]        = 1.00000000000000000
+Geodesic::particle_tv[43]        = 1.00000000000000000
+Geodesic::particle_tv[44]        = 1.00000000000000000
+Geodesic::particle_tv[45]        = 1.00000000000000000
+Geodesic::particle_tv[46]        = 1.00000000000000000
+Geodesic::particle_tv[47]        = 1.00000000000000000
+Geodesic::particle_tv[48]        = 1.00000000000000000
+Geodesic::particle_tv[49]        = 1.00000000000000000
+Geodesic::particle_tv[50]        = 1.00000000000000000
+Geodesic::particle_tv[51]        = 1.00000000000000000
+Geodesic::particle_tv[52]        = 1.00000000000000000
+Geodesic::particle_tv[53]        = 1.00000000000000000
+Geodesic::particle_tv[54]        = 1.00000000000000000
+Geodesic::particle_tv[55]        = 1.00000000000000000
+Geodesic::particle_tv[56]        = 1.00000000000000000
+Geodesic::particle_tv[57]        = 1.00000000000000000
+Geodesic::particle_tv[58]        = 1.00000000000000000
+Geodesic::particle_tv[59]        = 1.00000000000000000
+Geodesic::particle_tv[60]        = 1.00000000000000000
+Geodesic::particle_tv[61]        = 1.00000000000000000
+Geodesic::particle_tv[62]        = 1.00000000000000000
+Geodesic::particle_tv[63]        = 1.00000000000000000
+Geodesic::particle_tv[64]        = 1.00000000000000000
+Geodesic::particle_tv[65]        = 1.00000000000000000
+Geodesic::particle_tv[66]        = 1.00000000000000000
+Geodesic::particle_tv[67]        = 1.00000000000000000
+Geodesic::particle_tv[68]        = 1.00000000000000000
+Geodesic::particle_tv[69]        = 1.00000000000000000
+Geodesic::particle_tv[70]        = 1.00000000000000000
+Geodesic::particle_tv[71]        = 1.00000000000000000
+Geodesic::particle_tv[72]        = 1.00000000000000000
+Geodesic::particle_tv[73]        = 1.00000000000000000
+Geodesic::particle_tv[74]        = 1.00000000000000000
+Geodesic::particle_tv[75]        = 1.00000000000000000
+Geodesic::particle_tv[76]        = 1.00000000000000000
+Geodesic::particle_tv[77]        = 1.00000000000000000
+Geodesic::particle_tv[78]        = 1.00000000000000000
+Geodesic::particle_tv[79]        = 1.00000000000000000
+Geodesic::particle_tv[80]        = 1.00000000000000000
+Geodesic::particle_tv[81]        = 1.00000000000000000
+Geodesic::particle_tv[82]        = 1.00000000000000000
+Geodesic::particle_tv[83]        = 1.00000000000000000
+Geodesic::particle_tv[84]        = 1.00000000000000000
+Geodesic::particle_tv[85]        = 1.00000000000000000
+Geodesic::particle_tv[86]        = 1.00000000000000000
+Geodesic::particle_tv[87]        = 1.00000000000000000
+Geodesic::particle_tv[88]        = 1.00000000000000000
+Geodesic::particle_tv[89]        = 1.00000000000000000
+Geodesic::particle_tv[90]        = 1.00000000000000000
+Geodesic::particle_tv[91]        = 1.00000000000000000
+Geodesic::particle_tv[92]        = 1.00000000000000000
+Geodesic::particle_tv[93]        = 1.00000000000000000
+Geodesic::particle_tv[94]        = 1.00000000000000000
+Geodesic::particle_tv[95]        = 1.00000000000000000
+Geodesic::particle_tv[96]        = 1.00000000000000000
+Geodesic::particle_tv[97]        = 1.00000000000000000
+Geodesic::particle_tv[98]        = 1.00000000000000000
+Geodesic::particle_tv[99]        = 1.00000000000000000
+Geodesic::particle_xv[0]         = -0.00000000000000000   
+Geodesic::particle_xv[1]         = -0.03861106425277002   
+Geodesic::particle_xv[2]         = -0.07706974827465173   
+Geodesic::particle_xv[3]         = -0.11522427320991212   
+Geodesic::particle_xv[4]         = -0.15292406057977617   
+Geodesic::particle_xv[5]         = -0.19002032654688947   
+Geodesic::particle_xv[6]         = -0.22636666909715175   
+Geodesic::particle_xv[7]         = -0.26181964582158151   
+Geodesic::particle_xv[8]         = -0.29623934001797175   
+Geodesic::particle_xv[9]         = -0.32948991287819190   
+Geodesic::particle_xv[10]         = -0.36144013958190446   
+Geodesic::particle_xv[11]         = -0.39196392718097978   
+Geodesic::particle_xv[12]         = -0.42094081223075674   
+Geodesic::particle_xv[13]         = -0.44825643620422323   
+Geodesic::particle_xv[14]         = -0.47380299681287746   
+Geodesic::particle_xv[15]         = -0.49747967345311056   
+Geodesic::particle_xv[16]         = -0.51919302509906817   
+Geodesic::particle_xv[17]         = -0.53885735907169041   
+Geodesic::particle_xv[18]         = -0.55639506922856696   
+Geodesic::particle_xv[19]         = -0.57173694223992610   
+Geodesic::particle_xv[20]         = -0.58482243074202744   
+Geodesic::particle_xv[21]         = -0.59559989228994414   
+Geodesic::particle_xv[22]         = -0.60402679316670005   
+Geodesic::particle_xv[23]         = -0.61006987624442000   
+Geodesic::particle_xv[24]         = -0.61370529223501769   
+Geodesic::particle_xv[25]         = -0.61491869381244224   
+Geodesic::particle_xv[26]         = -0.61370529223501769   
+Geodesic::particle_xv[27]         = -0.61006987624442011   
+Geodesic::particle_xv[28]         = -0.60402679316670027   
+Geodesic::particle_xv[29]         = -0.59559989228994414   
+Geodesic::particle_xv[30]         = -0.58482243074202755   
+Geodesic::particle_xv[31]         = -0.57173694223992622   
+Geodesic::particle_xv[32]         = -0.55639506922856685   
+Geodesic::particle_xv[33]         = -0.53885735907169030   
+Geodesic::particle_xv[34]         = -0.51919302509906817   
+Geodesic::particle_xv[35]         = -0.49747967345311056   
+Geodesic::particle_xv[36]         = -0.47380299681287746   
+Geodesic::particle_xv[37]         = -0.44825643620422317   
+Geodesic::particle_xv[38]         = -0.42094081223075686   
+Geodesic::particle_xv[39]         = -0.39196392718097994   
+Geodesic::particle_xv[40]         = -0.36144013958190446   
+Geodesic::particle_xv[41]         = -0.32948991287819213   
+Geodesic::particle_xv[42]         = -0.29623934001797170   
+Geodesic::particle_xv[43]         = -0.26181964582158157   
+Geodesic::particle_xv[44]         = -0.22636666909715186   
+Geodesic::particle_xv[45]         = -0.19002032654688952   
+Geodesic::particle_xv[46]         = -0.15292406057977642   
+Geodesic::particle_xv[47]         = -0.11522427320991209   
+Geodesic::particle_xv[48]         = -0.07706974827465191   
+Geodesic::particle_xv[49]         = -0.03861106425277015   
+Geodesic::particle_xv[50]         = -0.00000000000000008   
+Geodesic::particle_xv[51]         = 0.03861106425277001   
+Geodesic::particle_xv[52]         = 0.07706974827465173   
+Geodesic::particle_xv[53]         = 0.11522427320991221   
+Geodesic::particle_xv[54]         = 0.15292406057977601   
+Geodesic::particle_xv[55]         = 0.19002032654688941   
+Geodesic::particle_xv[56]         = 0.22636666909715175   
+Geodesic::particle_xv[57]         = 0.26181964582158124   
+Geodesic::particle_xv[58]         = 0.29623934001797175   
+Geodesic::particle_xv[59]         = 0.32948991287819174   
+Geodesic::particle_xv[60]         = 0.36144013958190413   
+Geodesic::particle_xv[61]         = 0.39196392718097978   
+Geodesic::particle_xv[62]         = 0.42094081223075658   
+Geodesic::particle_xv[63]         = 0.44825643620422323   
+Geodesic::particle_xv[64]         = 0.47380299681287757   
+Geodesic::particle_xv[65]         = 0.49747967345311056   
+Geodesic::particle_xv[66]         = 0.51919302509906828   
+Geodesic::particle_xv[67]         = 0.53885735907169030   
+Geodesic::particle_xv[68]         = 0.55639506922856707   
+Geodesic::particle_xv[69]         = 0.57173694223992622   
+Geodesic::particle_xv[70]         = 0.58482243074202744   
+Geodesic::particle_xv[71]         = 0.59559989228994414   
+Geodesic::particle_xv[72]         = 0.60402679316670027   
+Geodesic::particle_xv[73]         = 0.61006987624442000   
+Geodesic::particle_xv[74]         = 0.61370529223501769   
+Geodesic::particle_xv[75]         = 0.61491869381244224   
+Geodesic::particle_xv[76]         = 0.61370529223501769   
+Geodesic::particle_xv[77]         = 0.61006987624442011   
+Geodesic::particle_xv[78]         = 0.60402679316670027   
+Geodesic::particle_xv[79]         = 0.59559989228994414   
+Geodesic::particle_xv[80]         = 0.58482243074202755   
+Geodesic::particle_xv[81]         = 0.57173694223992622   
+Geodesic::particle_xv[82]         = 0.55639506922856707   
+Geodesic::particle_xv[83]         = 0.53885735907169019   
+Geodesic::particle_xv[84]         = 0.51919302509906817   
+Geodesic::particle_xv[85]         = 0.49747967345311067   
+Geodesic::particle_xv[86]         = 0.47380299681287780   
+Geodesic::particle_xv[87]         = 0.44825643620422367   
+Geodesic::particle_xv[88]         = 0.42094081223075691   
+Geodesic::particle_xv[89]         = 0.39196392718097978   
+Geodesic::particle_xv[90]         = 0.36144013958190452   
+Geodesic::particle_xv[91]         = 0.32948991287819218   
+Geodesic::particle_xv[92]         = 0.29623934001797220   
+Geodesic::particle_xv[93]         = 0.26181964582158168   
+Geodesic::particle_xv[94]         = 0.22636666909715170   
+Geodesic::particle_xv[95]         = 0.19002032654688958   
+Geodesic::particle_xv[96]         = 0.15292406057977651   
+Geodesic::particle_xv[97]         = 0.11522427320991217   
+Geodesic::particle_xv[98]         = 0.07706974827465196   
+Geodesic::particle_xv[99]         = 0.03861106425276995   
+Geodesic::particle_yv[0]         = 0.61491869381244224   
+Geodesic::particle_yv[1]         = 0.61370529223501769   
+Geodesic::particle_yv[2]         = 0.61006987624442011   
+Geodesic::particle_yv[3]         = 0.60402679316670027   
+Geodesic::particle_yv[4]         = 0.59559989228994414   
+Geodesic::particle_yv[5]         = 0.58482243074202744   
+Geodesic::particle_yv[6]         = 0.57173694223992622   
+Geodesic::particle_yv[7]         = 0.55639506922856696   
+Geodesic::particle_yv[8]         = 0.53885735907169030   
+Geodesic::particle_yv[9]         = 0.51919302509906817   
+Geodesic::particle_yv[10]         = 0.49747967345311056   
+Geodesic::particle_yv[11]         = 0.47380299681287746   
+Geodesic::particle_yv[12]         = 0.44825643620422323   
+Geodesic::particle_yv[13]         = 0.42094081223075674   
+Geodesic::particle_yv[14]         = 0.39196392718097983   
+Geodesic::particle_yv[15]         = 0.36144013958190446   
+Geodesic::particle_yv[16]         = 0.32948991287819179   
+Geodesic::particle_yv[17]         = 0.29623934001797170   
+Geodesic::particle_yv[18]         = 0.26181964582158151   
+Geodesic::particle_yv[19]         = 0.22636666909715186   
+Geodesic::particle_yv[20]         = 0.19002032654688950   
+Geodesic::particle_yv[21]         = 0.15292406057977612   
+Geodesic::particle_yv[22]         = 0.11522427320991219   
+Geodesic::particle_yv[23]         = 0.07706974827465185   
+Geodesic::particle_yv[24]         = 0.03861106425277012   
+Geodesic::particle_yv[25]         = 0.00000000000000004   
+Geodesic::particle_yv[26]         = -0.03861106425277004   
+Geodesic::particle_yv[27]         = -0.07706974827465166   
+Geodesic::particle_yv[28]         = -0.11522427320991212   
+Geodesic::particle_yv[29]         = -0.15292406057977620   
+Geodesic::particle_yv[30]         = -0.19002032654688930   
+Geodesic::particle_yv[31]         = -0.22636666909715161   
+Geodesic::particle_yv[32]         = -0.26181964582158151   
+Geodesic::particle_yv[33]         = -0.29623934001797186   
+Geodesic::particle_yv[34]         = -0.32948991287819207   
+Geodesic::particle_yv[35]         = -0.36144013958190430   
+Geodesic::particle_yv[36]         = -0.39196392718097983   
+Geodesic::particle_yv[37]         = -0.42094081223075680   
+Geodesic::particle_yv[38]         = -0.44825643620422317   
+Geodesic::particle_yv[39]         = -0.47380299681287746   
+Geodesic::particle_yv[40]         = -0.49747967345311056   
+Geodesic::particle_yv[41]         = -0.51919302509906795   
+Geodesic::particle_yv[42]         = -0.53885735907169030   
+Geodesic::particle_yv[43]         = -0.55639506922856674   
+Geodesic::particle_yv[44]         = -0.57173694223992610   
+Geodesic::particle_yv[45]         = -0.58482243074202744   
+Geodesic::particle_yv[46]         = -0.59559989228994403   
+Geodesic::particle_yv[47]         = -0.60402679316670027   
+Geodesic::particle_yv[48]         = -0.61006987624442000   
+Geodesic::particle_yv[49]         = -0.61370529223501769   
+Geodesic::particle_yv[50]         = -0.61491869381244224   
+Geodesic::particle_yv[51]         = -0.61370529223501769   
+Geodesic::particle_yv[52]         = -0.61006987624442011   
+Geodesic::particle_yv[53]         = -0.60402679316670005   
+Geodesic::particle_yv[54]         = -0.59559989228994414   
+Geodesic::particle_yv[55]         = -0.58482243074202755   
+Geodesic::particle_yv[56]         = -0.57173694223992622   
+Geodesic::particle_yv[57]         = -0.55639506922856696   
+Geodesic::particle_yv[58]         = -0.53885735907169030   
+Geodesic::particle_yv[59]         = -0.51919302509906817   
+Geodesic::particle_yv[60]         = -0.49747967345311089   
+Geodesic::particle_yv[61]         = -0.47380299681287746   
+Geodesic::particle_yv[62]         = -0.44825643620422345   
+Geodesic::particle_yv[63]         = -0.42094081223075674   
+Geodesic::particle_yv[64]         = -0.39196392718097972   
+Geodesic::particle_yv[65]         = -0.36144013958190446   
+Geodesic::particle_yv[66]         = -0.32948991287819174   
+Geodesic::particle_yv[67]         = -0.29623934001797170   
+Geodesic::particle_yv[68]         = -0.26181964582158118   
+Geodesic::particle_yv[69]         = -0.22636666909715164   
+Geodesic::particle_yv[70]         = -0.19002032654688955   
+Geodesic::particle_yv[71]         = -0.15292406057977595   
+Geodesic::particle_yv[72]         = -0.11522427320991212   
+Geodesic::particle_yv[73]         = -0.07706974827465192   
+Geodesic::particle_yv[74]         = -0.03861106425276992   
+Geodesic::particle_yv[75]         = -0.00000000000000011   
+Geodesic::particle_yv[76]         = 0.03861106425276969   
+Geodesic::particle_yv[77]         = 0.07706974827465170   
+Geodesic::particle_yv[78]         = 0.11522427320991188   
+Geodesic::particle_yv[79]         = 0.15292406057977623   
+Geodesic::particle_yv[80]         = 0.19002032654688933   
+Geodesic::particle_yv[81]         = 0.22636666909715142   
+Geodesic::particle_yv[82]         = 0.26181964582158096   
+Geodesic::particle_yv[83]         = 0.29623934001797203   
+Geodesic::particle_yv[84]         = 0.32948991287819202   
+Geodesic::particle_yv[85]         = 0.36144013958190424   
+Geodesic::particle_yv[86]         = 0.39196392718097961   
+Geodesic::particle_yv[87]         = 0.42094081223075636   
+Geodesic::particle_yv[88]         = 0.44825643620422301   
+Geodesic::particle_yv[89]         = 0.47380299681287757   
+Geodesic::particle_yv[90]         = 0.49747967345311056   
+Geodesic::particle_yv[91]         = 0.51919302509906795   
+Geodesic::particle_yv[92]         = 0.53885735907169008   
+Geodesic::particle_yv[93]         = 0.55639506922856674   
+Geodesic::particle_yv[94]         = 0.57173694223992622   
+Geodesic::particle_yv[95]         = 0.58482243074202744   
+Geodesic::particle_yv[96]         = 0.59559989228994403   
+Geodesic::particle_yv[97]         = 0.60402679316670027   
+Geodesic::particle_yv[98]         = 0.61006987624442000   
+Geodesic::particle_yv[99]         = 0.61370529223501769   
+Geodesic::particle_zv[0]         = 0.00000000000000000
+Geodesic::particle_zv[1]         = 0.00000000000000000
+Geodesic::particle_zv[2]         = 0.00000000000000000
+Geodesic::particle_zv[3]         = 0.00000000000000000
+Geodesic::particle_zv[4]         = 0.00000000000000000
+Geodesic::particle_zv[5]         = 0.00000000000000000
+Geodesic::particle_zv[6]         = 0.00000000000000000
+Geodesic::particle_zv[7]         = 0.00000000000000000
+Geodesic::particle_zv[8]         = 0.00000000000000000
+Geodesic::particle_zv[9]         = 0.00000000000000000
+Geodesic::particle_zv[10]         = 0.00000000000000000
+Geodesic::particle_zv[11]         = 0.00000000000000000
+Geodesic::particle_zv[12]         = 0.00000000000000000
+Geodesic::particle_zv[13]         = 0.00000000000000000
+Geodesic::particle_zv[14]         = 0.00000000000000000
+Geodesic::particle_zv[15]         = 0.00000000000000000
+Geodesic::particle_zv[16]         = 0.00000000000000000
+Geodesic::particle_zv[17]         = 0.00000000000000000
+Geodesic::particle_zv[18]         = 0.00000000000000000
+Geodesic::particle_zv[19]         = 0.00000000000000000
+Geodesic::particle_zv[20]         = 0.00000000000000000
+Geodesic::particle_zv[21]         = 0.00000000000000000
+Geodesic::particle_zv[22]         = 0.00000000000000000
+Geodesic::particle_zv[23]         = 0.00000000000000000
+Geodesic::particle_zv[24]         = 0.00000000000000000
+Geodesic::particle_zv[25]         = 0.00000000000000000
+Geodesic::particle_zv[26]         = 0.00000000000000000
+Geodesic::particle_zv[27]         = 0.00000000000000000
+Geodesic::particle_zv[28]         = 0.00000000000000000
+Geodesic::particle_zv[29]         = 0.00000000000000000
+Geodesic::particle_zv[30]         = 0.00000000000000000
+Geodesic::particle_zv[31]         = 0.00000000000000000
+Geodesic::particle_zv[32]         = 0.00000000000000000
+Geodesic::particle_zv[33]         = 0.00000000000000000
+Geodesic::particle_zv[34]         = 0.00000000000000000
+Geodesic::particle_zv[35]         = 0.00000000000000000
+Geodesic::particle_zv[36]         = 0.00000000000000000
+Geodesic::particle_zv[37]         = 0.00000000000000000
+Geodesic::particle_zv[38]         = 0.00000000000000000
+Geodesic::particle_zv[39]         = 0.00000000000000000
+Geodesic::particle_zv[40]         = 0.00000000000000000
+Geodesic::particle_zv[41]         = 0.00000000000000000
+Geodesic::particle_zv[42]         = 0.00000000000000000
+Geodesic::particle_zv[43]         = 0.00000000000000000
+Geodesic::particle_zv[44]         = 0.00000000000000000
+Geodesic::particle_zv[45]         = 0.00000000000000000
+Geodesic::particle_zv[46]         = 0.00000000000000000
+Geodesic::particle_zv[47]         = 0.00000000000000000
+Geodesic::particle_zv[48]         = 0.00000000000000000
+Geodesic::particle_zv[49]         = 0.00000000000000000
+Geodesic::particle_zv[50]         = 0.00000000000000000
+Geodesic::particle_zv[51]         = 0.00000000000000000
+Geodesic::particle_zv[52]         = 0.00000000000000000
+Geodesic::particle_zv[53]         = 0.00000000000000000
+Geodesic::particle_zv[54]         = 0.00000000000000000
+Geodesic::particle_zv[55]         = 0.00000000000000000
+Geodesic::particle_zv[56]         = 0.00000000000000000
+Geodesic::particle_zv[57]         = 0.00000000000000000
+Geodesic::particle_zv[58]         = 0.00000000000000000
+Geodesic::particle_zv[59]         = 0.00000000000000000
+Geodesic::particle_zv[60]         = 0.00000000000000000
+Geodesic::particle_zv[61]         = 0.00000000000000000
+Geodesic::particle_zv[62]         = 0.00000000000000000
+Geodesic::particle_zv[63]         = 0.00000000000000000
+Geodesic::particle_zv[64]         = 0.00000000000000000
+Geodesic::particle_zv[65]         = 0.00000000000000000
+Geodesic::particle_zv[66]         = 0.00000000000000000
+Geodesic::particle_zv[67]         = 0.00000000000000000
+Geodesic::particle_zv[68]         = 0.00000000000000000
+Geodesic::particle_zv[69]         = 0.00000000000000000
+Geodesic::particle_zv[70]         = 0.00000000000000000
+Geodesic::particle_zv[71]         = 0.00000000000000000
+Geodesic::particle_zv[72]         = 0.00000000000000000
+Geodesic::particle_zv[73]         = 0.00000000000000000
+Geodesic::particle_zv[74]         = 0.00000000000000000
+Geodesic::particle_zv[75]         = 0.00000000000000000
+Geodesic::particle_zv[76]         = 0.00000000000000000
+Geodesic::particle_zv[77]         = 0.00000000000000000
+Geodesic::particle_zv[78]         = 0.00000000000000000
+Geodesic::particle_zv[79]         = 0.00000000000000000
+Geodesic::particle_zv[80]         = 0.00000000000000000
+Geodesic::particle_zv[81]         = 0.00000000000000000
+Geodesic::particle_zv[82]         = 0.00000000000000000
+Geodesic::particle_zv[83]         = 0.00000000000000000
+Geodesic::particle_zv[84]         = 0.00000000000000000
+Geodesic::particle_zv[85]         = 0.00000000000000000
+Geodesic::particle_zv[86]         = 0.00000000000000000
+Geodesic::particle_zv[87]         = 0.00000000000000000
+Geodesic::particle_zv[88]         = 0.00000000000000000
+Geodesic::particle_zv[89]         = 0.00000000000000000
+Geodesic::particle_zv[90]         = 0.00000000000000000
+Geodesic::particle_zv[91]         = 0.00000000000000000
+Geodesic::particle_zv[92]         = 0.00000000000000000
+Geodesic::particle_zv[93]         = 0.00000000000000000
+Geodesic::particle_zv[94]         = 0.00000000000000000
+Geodesic::particle_zv[95]         = 0.00000000000000000
+Geodesic::particle_zv[96]         = 0.00000000000000000
+Geodesic::particle_zv[97]         = 0.00000000000000000
+Geodesic::particle_zv[98]         = 0.00000000000000000
+Geodesic::particle_zv[99]         = 0.00000000000000000

@@ -19,11 +19,14 @@ schedule Geodesics_init at CCTK_INITIAL
 # Main integration step.
 #
 # Called once per grid component (Carpet level mode: once per refinement
-# level).  Each call acquires that level's grid-function pointers and
-# geometry into LD[level]; the particles are integrated exactly once per
-# iteration, on rank 0 at the finest-level call (see the trigger logic in
-# Geodesic_integrate.c).  A single-level run is therefore one call and one
-# integration per iteration -- the same behavior as the old unigrid mode.
+# level per substep).  Each call acquires that level's grid-function
+# pointers and geometry into LD[level].  Under time subcycling the
+# particles are integrated exactly once per call-batch, on the finest-level
+# call (rank 0), where the batch tracking + regrid decay live in the
+# trigger logic of Geodesic_integrate.c; the step size is the elapsed
+# cctk_time between firings (the finest level's dt).  A single-level run
+# is one call and one integration per iteration -- the same behavior as the
+# old unigrid mode.
 #
 # Multi-process: only rank 0 integrates and writes the dump (the particle
 # arrays are per-rank global storage; rank 0 holds the tracked state).
