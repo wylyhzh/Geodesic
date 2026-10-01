@@ -342,9 +342,15 @@ typedef struct {
      1 = "fourd": true 4D tensor product -- 5-node order-4 space x 3-node
                   order-2 time Lagrange over the three stored ADMBase levels,
                   giving both the value and all four derivatives from one
-                  consistent interpolant.  Falls back to the plain AEI path
-                  on boundary / level failure.  Only affects
-                  metric_interp = local27 (sinterp_mode 0), use_robust,
+                  consistent interpolant.
+     2 = "fourdh": same 4D tensor product applied to the nodal 4-metric
+                  deviation h = g - eta (g composed exactly at each node
+                  from that node's alpha/beta/gamma; eta = diag(-1,1,1,1)
+                  added back at the sample point).  Slower (one 4-metric
+                  composition per node), meant for the strong-curvature
+                  robust path.
+     Both fall back to the plain AEI path on boundary / level failure.
+     Only affects metric_interp = local27 (sinterp_mode 0), use_robust,
                   strong_christ_off = 0. */
   CCTK_INT  robust_metric_interp;
   /* smoke test (par Geodesic::smoke_timedep_eps, default 0 = disabled):

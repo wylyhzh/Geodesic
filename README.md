@@ -179,6 +179,7 @@ that provides the ADMBase grid fields.
 | `Exact` | metric source: `no` = grid, `yes` = analytic Kerr--Schild |
 | `metric_interp` | grid-mode sampler: `local27` (default, 27-point Lagrange fit), `aei` (fourth-order pointwise, AEILocalInterp), `carpet` (quadratic pointwise, self-contained) |
 | `time_interp` | grid-mode time handling: `off` (default, level-0 value + 2nd-order dt(g)) or `linear` (blend of the two stored levels + 1st-order dt(g)) |
+| `robust_metric_interp` | robust-path (local27, `adaptive_interp = on`) interpolation engine: `aei` (default), `fourd` (4D tensor product of the ADM fields), `fourdh` (same 4D tensor product applied to the nodal 4-metric deviation h = g - eta, with g composed exactly at each node from that node's alpha/beta/gamma and eta added back at the sample point; slower, strong-curvature path only) |
 | `geodesic_amr_levels` | number of Carpet refinement levels used for the stencil (1-4, default 3); must equal `Carpet::refinement_levels` for an AMR run |
 | `M` / `a` | Kerr mass and spin used by `Exact = yes` (built-in analytic formulas) |
 | `initial_radius` / `excised_radius` | safe shell for the `respawn` policy: outside `initial_radius`, inside `excised_radius` is rejected |

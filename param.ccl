@@ -381,13 +381,24 @@ KEYWORD log_metric_interp "Robust-path metric value: log|.| space (yes) or regul
 # time s = geodesic_time_theta.  Value and all four derivatives come from one
 # consistent interpolant at the particle's true time (value O(dt^3), time
 # derivative O(dt^2) -- more accurate and more consistent than the AEI 2-level
-# blend).  On boundary / level failure it falls back to the plain AEI path,
+# blend).  "fourdh" is the same 4D tensor product, but applied to the metric
+# deviation h = g - eta instead of the ADM fields: at each interpolation NODE
+# the 4-metric g_mn is composed exactly from that node's alpha/beta/gamma and
+# h_mn = g_mn - eta_mn (eta = diag(-1,1,1,1)) is interpolated; eta is added
+# back at the sample point.  eta is constant, so dh = dg and the derivative
+# path is unchanged.  Compared with "fourd" (interpolate ADM fields, compose
+# g at the sample point), "fourdh" (compose g at the nodes, interpolate g)
+# keeps the interpolation in the g-frame and is more consistent with the
+# composed 4-metric; it is slower (one 4-metric composition per node) and is
+# meant for the strong-curvature robust path where speed does not matter.
+# On boundary / level failure both fall back to the plain AEI path,
 # so a static run is bit-identical to the "aei" setting.  Only affects
 # metric_interp = local27 (sinterp_mode 0), use_robust, strong_christ_off = 0.
-KEYWORD robust_metric_interp "Robust-path (strong_christ_off=hybrid) interpolation engine: true 4D tensor product (fourd) or AEI order-4 (aei, default)"
+KEYWORD robust_metric_interp "Robust-path (strong_christ_off=hybrid) interpolation engine: AEI order-4 (aei, default), true 4D tensor product of the ADM fields (fourd), or 4D tensor product of the nodal 4-metric deviation h = g - eta (fourdh)"
 {
-  "aei"   :: "AEI order-4 pointwise (5-node space x 2-level time blend; current default, log-space optional via log_metric_interp)"
-  "fourd" :: "true 4D tensor product: 5-node order-4 space x 3-node order-2 time Lagrange over levels [t,t-dt,t-2dt]; value+all-derivatives from one interpolant; falls back to AEI on boundary/level failure"
+  "aei"    :: "AEI order-4 pointwise (5-node space x 2-level time blend; current default, log-space optional via log_metric_interp)"
+  "fourd"  :: "true 4D tensor product: 5-node order-4 space x 3-node order-2 time Lagrange over levels [t,t-dt,t-2dt]; value+all-derivatives from one interpolant; falls back to AEI on boundary/level failure"
+  "fourdh" :: "like fourd, but interpolates h_mn = g_mn - eta_mn with g composed exactly at each node from that node's alpha/beta/gamma; eta added back at the sample point; falls back to AEI on boundary/level failure"
 } "aei"
 
 # ------------------ smoke test for the time-varying code path ------------------

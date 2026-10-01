@@ -2210,14 +2210,21 @@ static int log_metric_at_point(int m, const double y[8], double gdn[4][4])
 static int fourd_metric_at_point(int m, const double y[8], double gdn[4][4]);
 static int fourd_christoffel_at_point(int m, const double y[8],
                                       double cf2[4][4][4]);
+static int fourdh_metric_at_point(int m, const double y[8], double gdn[4][4]);
+static int fourdh_christoffel_at_point(int m, const double y[8],
+                                       double cf2[4][4][4]);
 
 /* Robust-path metric value: 4D tensor product when robust_metric_interp is
-   on (the default AEI strong-region path), else log-space when
+   on (mode 1 = fourd: interpolate the ADM fields, compose g at the sample
+   point; mode 2 = fourdh: compose g at each node and interpolate h = g - eta,
+   eta added back at the sample point), else log-space when
    log_metric_interp is on, else plain AEI; on any boundary failure fall back
    to AEI (which has boundary extrapolation). */
 static int robust_metric_at_point(int m, const double y[8], double gdn[4][4])
 {
-  if (gstate.robust_metric_interp && fourd_metric_at_point(m, y, gdn) == 0)
+  if (gstate.robust_metric_interp == 1 && fourd_metric_at_point(m, y, gdn) == 0)
+    return 0;
+  if (gstate.robust_metric_interp == 2 && fourdh_metric_at_point(m, y, gdn) == 0)
     return 0;
   if (gstate.log_metric_interp && log_metric_at_point(m, y, gdn) == 0)
     return 0;
@@ -2402,21 +2409,26 @@ static int interp_4d_space(int tl, double x, double y, double z,
 
 /* 4D robust-path metric value.  The value is the full tensor product: for each
    of the 3 time levels, the 5-node spatial interpolation is blended with the
-   3-node time weights, then compose_4metric gives the 4-metric.  Returns 0 on
-   success, -1 on boundary / level failure (caller falls back to AEI). */
+   3-node time weights, then compose_4metric gives the 4-metric.  When the past
+   time levels are unusable (metric_static: not filled yet / unreadable, or the
+   particle's old_level_bad) only level 0 is read (s = 1 pins the time weights
+   to (1,0,0)); reading the garbage past levels would poison the blend through
+   0 * NaN.  Returns 0 on success, -1 on boundary / level failure (caller falls
+   back to AEI). */
 static int fourd_metric_at_point(int m, const double y[8], double gdn[4][4])
 {
-  const double s = (gstate.pgeodesic[m].old_level_bad) ? 1.0
-                                                      : geodesic_time_theta(m, y[0]);
+  const int t1only = (gstate.pgeodesic[m].old_level_bad || gview.metric_static) ? 1 : 0;
+  const double s = t1only ? 1.0 : geodesic_time_theta(m, y[0]);
+  const int nlvl = t1only ? 1 : 3;
   double g31t[3][10];
-  for (int lvl = 0; lvl < 3; lvl++) {
+  for (int lvl = 0; lvl < nlvl; lvl++) {
     if (interp_4d_space(lvl, y[1], y[2], y[3], g31t[lvl], NULL) != 0)
       return -1;
   }
   double g31tot[10];
   for (int f = 0; f < 10; f++) {
     double V = 0.0;
-    for (int lvl = 0; lvl < 3; lvl++) V += fourd_tw(lvl, s) * g31t[lvl][f];
+    for (int lvl = 0; lvl < nlvl; lvl++) V += fourd_tw(lvl, s) * g31t[lvl][f];
     g31tot[f] = V;
   }
   compose_4metric(g31tot, NULL, gdn, NULL, NULL);
@@ -2426,7 +2438,9 @@ static int fourd_metric_at_point(int m, const double y[8], double gdn[4][4])
 /* 4D robust-path Christoffel symbols.  For each time level, the 5-node spatial
    interpolation (value + spatial derivatives) is blended with the 3-node time
    weights for the metric value AND spatial derivatives; the time derivative is
-   the 3-node Lagrange derivative of the per-level metric values.  Returns 1 on
+   the 3-node Lagrange derivative of the per-level metric values.  When the past
+   time levels are unusable (metric_static / old_level_bad) only level 0 is
+   read and d_t g = 0, matching the AEI branch's static handling.  Returns 1 on
    success, 0 on boundary / level failure (caller falls back to AEI). */
 static int fourd_christoffel_at_point(int m, const double y[8], double cf2[4][4][4])
 {
@@ -2436,31 +2450,253 @@ static int fourd_christoffel_at_point(int m, const double y[8], double cf2[4][4]
   double g31tot[10], dg31tot[10][3];
   const double dt = gview.dt;
   if (dt <= 0.0) return 0;
-  const double s = (gstate.pgeodesic[m].old_level_bad) ? 1.0
-                                                      : geodesic_time_theta(m, y[0]);
-  for (int lvl = 0; lvl < 3; lvl++) {
+  const int t1only = (gstate.pgeodesic[m].old_level_bad || gview.metric_static) ? 1 : 0;
+  const double s = t1only ? 1.0 : geodesic_time_theta(m, y[0]);
+  const int nlvl = t1only ? 1 : 3;
+  for (int lvl = 0; lvl < nlvl; lvl++) {
     if (interp_4d_space(lvl, y[1], y[2], y[3], g31t[lvl], dg31t[lvl]) != 0)
       return 0;
     compose_4metric(g31t[lvl], dg31t[lvl], gdn_lvl[lvl], NULL, NULL);
   }
   for (int f = 0; f < 10; f++) {
     double V = 0.0;
-    for (int lvl = 0; lvl < 3; lvl++) V += fourd_tw(lvl, s) * g31t[lvl][f];
+    for (int lvl = 0; lvl < nlvl; lvl++) V += fourd_tw(lvl, s) * g31t[lvl][f];
     g31tot[f] = V;
     for (int a = 0; a < 3; a++) {
       double D = 0.0;
-      for (int lvl = 0; lvl < 3; lvl++) D += fourd_tw(lvl, s) * dg31t[lvl][f][a];
+      for (int lvl = 0; lvl < nlvl; lvl++) D += fourd_tw(lvl, s) * dg31t[lvl][f][a];
       dg31tot[f][a] = D;
     }
   }
   compose_4metric(g31tot, dg31tot, gdn, dgd, gup);
   /* overwrite dgd[0] (zeroed by compose_4metric) with the 3-node Lagrange
-     time derivative of the per-level metric values, in physical time units.
-     gdn_lvl[lvl] is symmetric, so dgd[0][mu][nu] is already symmetric. */
-  for (int lvl = 0; lvl < 3; lvl++)
+     time derivative of the per-level metric values, in physical time units
+     (0 when the past levels are unusable).  gdn_lvl[lvl] is symmetric, so
+     dgd[0][mu][nu] is already symmetric. */
+  if (t1only)
+  {
     for (int mu = 0; mu < 4; mu++)
       for (int nu = 0; nu < 4; nu++)
-        dgd[0][mu][nu] = fourd_tw_a(lvl, s) / dt * gdn_lvl[lvl][mu][nu];
+        dgd[0][mu][nu] = 0.0;
+  }
+  else
+  {
+    for (int lvl = 0; lvl < 3; lvl++)
+      for (int mu = 0; mu < 4; mu++)
+        for (int nu = 0; nu < 4; nu++)
+          dgd[0][mu][nu] = fourd_tw_a(lvl, s) / dt * gdn_lvl[lvl][mu][nu];
+  }
+  cf2_pointwise(dgd, gup, cf2);
+  return 1;
+}
+
+/* ===================== fourdh: 4D interpolation of h = g - eta ========== */
+/* Same 4D tensor-product machinery as fourd above, but the interpolated
+   field is the metric deviation h_mn = g_mn - eta_mn (eta = diag(-1,1,1,1)):
+   at each interpolation NODE the 4-metric is composed exactly from that
+   node's alpha/beta/gamma (compose_4metric), h is taken, and the 10
+   independent components of h are interpolated with the same 5-node space x
+   3-node time Lagrange weights; eta is added back at the sample point.
+   eta is constant, so dh = dg and the derivative path needs no change.
+   Compared with fourd (interpolate the ADM fields, compose g at the sample
+   point) this keeps the interpolation in the composed-metric frame, which is
+   more consistent; it is slower (one 4-metric composition per node, 125 per
+   time level) and is meant for the strong-curvature robust path where speed
+   does not matter.  Falls back to the plain AEI path on boundary / level
+   failure. */
+
+/* the 10 independent components (mu <= nu) of a symmetric 4-tensor */
+static const int fourdh_mu[10] = {0,0,0,0,1,1,1,2,2,3};
+static const int fourdh_nu[10] = {0,1,2,3,1,2,3,2,3,3};
+
+/* h <-> g conversion in place on a symmetric 4-tensor: h = g - eta,
+   eta = diag(-1,1,1,1) */
+static inline void fourdh_sub_eta(double g[4][4])
+{
+  g[0][0] += 1.0; g[1][1] -= 1.0; g[2][2] -= 1.0; g[3][3] -= 1.0;
+}
+static inline void fourdh_add_eta(double h[4][4])
+{
+  h[0][0] -= 1.0; h[1][1] += 1.0; h[2][2] += 1.0; h[3][3] += 1.0;
+}
+
+/* 5-node order-4 spatial tensor-product interpolation of the nodal 4-metric
+   deviation h = g - eta at level tl.  Same stencil / weight logic as
+   interp_4d_space (log_w5 / log_w5a), but the nodal values are the 10
+   independent components of h_mn with g composed exactly at each node from
+   that node's alpha/beta/gamma.  Fills h (symmetric) and, if dh is non-NULL,
+   the spatial derivatives dh[mu][nu][k] = d_k h_mn in physical units
+   (symmetric in mu,nu).  Returns -1 if the 5-node stencil does not lie
+   inside the safe (non-ghost) region; the caller then falls back to AEI. */
+static int interp_4d_space_h(int tl, double x, double y, double z,
+                             double h[4][4], double dh[4][4][3])
+{
+  const CCTK_REAL *fields[10] = {
+      gview.gxx[tl], gview.gxy[tl], gview.gxz[tl],
+      gview.gyy[tl], gview.gyz[tl], gview.gzz[tl],
+      gview.alp[tl], gview.betax[tl], gview.betay[tl], gview.betaz[tl]
+  };
+  const double o[3] = {gview.origin_space[0], gview.origin_space[1], gview.origin_space[2]};
+  const double dinv[3] = {gview.delta_inv[0], gview.delta_inv[1], gview.delta_inv[2]};
+  const double rlb[3] = {gview.r_lbnd[0], gview.r_lbnd[1], gview.r_lbnd[2]};
+  const double rub[3] = {gview.r_ubnd[0], gview.r_ubnd[1], gview.r_ubnd[2]};
+  const double fp[3] = {(x - o[0]) * dinv[0], (y - o[1]) * dinv[1], (z - o[2]) * dinv[2]};
+  const int c[3] = {(int)lround(fp[0]), (int)lround(fp[1]), (int)lround(fp[2])};
+  const double p[3] = {fp[0] - (double)c[0], fp[1] - (double)c[1], fp[2] - (double)c[2]};
+  /* the 5-node stencil must lie inside the safe (non-ghost) region */
+  for (int ax = 0; ax < 3; ax++) {
+    double sli = (rlb[ax] - o[ax]) * dinv[ax];
+    double sui = (rub[ax] - o[ax]) * dinv[ax];
+    if (c[ax] - 2 < sli || c[ax] + 2 > sui) {
+      if (getenv("GEODESIC_DBG_STENCIL")) { static int n_st = 0;
+        if (n_st < 10) { fprintf(stderr, "[STEN] tl=%d ax=%d c=%d sli=%.3f sui=%.3f pos=(%.4f %.4f %.4f) lsh=(%d %d %d) o=(%.4f %.4f %.4f) dx=(%.6f %.6f %.6f) dt=%g lvl=%d\n",
+                                 tl, ax, c[ax], sli, sui, x, y, z,
+                                 (int)gview.lsh[0], (int)gview.lsh[1], (int)gview.lsh[2],
+                                 o[0], o[1], o[2],
+                                 1.0/dinv[0], 1.0/dinv[1], 1.0/dinv[2], gview.dt,
+                                 (int)gview.level); n_st++; } }
+      return -1;
+    }
+  }
+  double w[3][5], dw[3][5];
+  for (int ax = 0; ax < 3; ax++)
+    for (int a = -2; a <= 2; a++) {
+      w[ax][a + 2] = log_w5(a, p[ax]);
+      dw[ax][a + 2] = log_w5a(a, p[ax]) * dinv[ax];   /* dW/d(coord) */
+    }
+  for (int mu = 0; mu < 4; mu++)
+    for (int nu = 0; nu < 4; nu++) {
+      h[mu][nu] = 0.0;
+      if (dh) { dh[mu][nu][0] = 0.0; dh[mu][nu][1] = 0.0; dh[mu][nu][2] = 0.0; }
+    }
+  for (int ii = 0; ii < 5; ii++)
+    for (int jj = 0; jj < 5; jj++)
+      for (int kk = 0; kk < 5; kk++) {
+        /* nodal 4-metric deviation: compose g exactly at this node, h = g - eta */
+        double g31node[10], gn[4][4];
+        for (int f = 0; f < 10; f++)
+          g31node[f] = fields[f][LD_INDEX(c[0] + ii - 2, c[1] + jj - 2, c[2] + kk - 2)];
+        compose_4metric(g31node, NULL, gn, NULL, NULL);
+        fourdh_sub_eta(gn);
+        const double wv = w[0][ii] * w[1][jj] * w[2][kk];
+        const double d0 = dw[0][ii] * w[1][jj] * w[2][kk];
+        const double d1 = w[0][ii] * dw[1][jj] * w[2][kk];
+        const double d2 = w[0][ii] * w[1][jj] * dw[2][kk];
+        for (int cmp = 0; cmp < 10; cmp++) {
+          const int mu = fourdh_mu[cmp], nu = fourdh_nu[cmp];
+          const double hv = gn[mu][nu];
+          h[mu][nu] += wv * hv;
+          if (dh) {
+            dh[mu][nu][0] += d0 * hv;
+            dh[mu][nu][1] += d1 * hv;
+            dh[mu][nu][2] += d2 * hv;
+          }
+        }
+      }
+  /* symmetric lower triangle */
+  for (int mu = 1; mu < 4; mu++)
+    for (int nu = 0; nu < mu; nu++) {
+      h[mu][nu] = h[nu][mu];
+      if (dh) {
+        dh[mu][nu][0] = dh[nu][mu][0];
+        dh[mu][nu][1] = dh[nu][mu][1];
+        dh[mu][nu][2] = dh[nu][mu][2];
+      }
+    }
+  return 0;
+}
+
+/* fourdh robust-path metric value: per time level the nodal-h spatial
+   interpolation (values only), blended with the 3-node time weights, eta
+   added back at the sample point.  When the past time levels are unusable
+   (metric_static / old_level_bad) only level 0 is read (see
+   fourd_metric_at_point).  Returns 0 on success, -1 on boundary / level
+   failure (caller falls back to AEI). */
+static int fourdh_metric_at_point(int m, const double y[8], double gdn[4][4])
+{
+  const int t1only = (gstate.pgeodesic[m].old_level_bad || gview.metric_static) ? 1 : 0;
+  const double s = t1only ? 1.0 : geodesic_time_theta(m, y[0]);
+  const int nlvl = t1only ? 1 : 3;
+  double h_lvl[3][4][4];
+  for (int lvl = 0; lvl < nlvl; lvl++) {
+    if (interp_4d_space_h(lvl, y[1], y[2], y[3], h_lvl[lvl], NULL) != 0)
+      return -1;
+  }
+  for (int cmp = 0; cmp < 10; cmp++) {
+    const int mu = fourdh_mu[cmp], nu = fourdh_nu[cmp];
+    double V = 0.0;
+    for (int lvl = 0; lvl < nlvl; lvl++) V += fourd_tw(lvl, s) * h_lvl[lvl][mu][nu];
+    gdn[mu][nu] = V;
+  }
+  for (int mu = 1; mu < 4; mu++)
+    for (int nu = 0; nu < mu; nu++)
+      gdn[mu][nu] = gdn[nu][mu];
+  fourdh_add_eta(gdn);
+  return 0;
+}
+
+/* fourdh robust-path Christoffel symbols: per time level the nodal-h
+   interpolation (value + spatial derivatives) gives the per-level 4-metric
+   g_lvl = h_lvl + eta; the metric value and spatial derivatives are blended
+   with the 3-node time weights (eta is constant, so the blend of h equals
+   the blend of g minus eta and dh = dg); the time derivative is the 3-node
+   Lagrange derivative of the per-level metric values.  When the past time
+   levels are unusable (metric_static / old_level_bad) only level 0 is read
+   and d_t g = 0, matching the AEI branch's static handling.  Returns 1 on
+   success, 0 on boundary / level / inversion failure (caller falls back to
+   AEI). */
+static int fourdh_christoffel_at_point(int m, const double y[8], double cf2[4][4][4])
+{
+  double h_lvl[3][4][4], dh_lvl[3][4][4][3];
+  double gdn_lvl[3][4][4];
+  double gdn[4][4], dgd[4][4][4], gup[4][4];
+  double beta_up[3], gamma_dn[3][3], gamma_up[3][3];
+  const double dt = gview.dt;
+  if (dt <= 0.0) return 0;
+  const int t1only = (gstate.pgeodesic[m].old_level_bad || gview.metric_static) ? 1 : 0;
+  const double s = t1only ? 1.0 : geodesic_time_theta(m, y[0]);
+  const int nlvl = t1only ? 1 : 3;
+  for (int lvl = 0; lvl < nlvl; lvl++) {
+    if (interp_4d_space_h(lvl, y[1], y[2], y[3], h_lvl[lvl], dh_lvl[lvl]) != 0)
+      return 0;
+    for (int mu = 0; mu < 4; mu++)
+      for (int nu = 0; nu < 4; nu++)
+        gdn_lvl[lvl][mu][nu] = h_lvl[lvl][mu][nu];
+    fourdh_add_eta(gdn_lvl[lvl]);
+  }
+  for (int cmp = 0; cmp < 10; cmp++) {
+    const int mu = fourdh_mu[cmp], nu = fourdh_nu[cmp];
+    double V = 0.0;
+    for (int lvl = 0; lvl < nlvl; lvl++) V += fourd_tw(lvl, s) * h_lvl[lvl][mu][nu];
+    gdn[mu][nu] = gdn[nu][mu] = V;
+    for (int a = 0; a < 3; a++) {
+      double D = 0.0;
+      for (int lvl = 0; lvl < nlvl; lvl++) D += fourd_tw(lvl, s) * dh_lvl[lvl][mu][nu][a];
+      dgd[a + 1][mu][nu] = dgd[a + 1][nu][mu] = D;
+    }
+  }
+  fourdh_add_eta(gdn);
+  /* time derivative: 3-node Lagrange derivative of the per-level metric
+     values, in physical time units; 0 when the past levels are unusable
+     (dgd[0] symmetric by construction) */
+  if (t1only)
+  {
+    for (int mu = 0; mu < 4; mu++)
+      for (int nu = 0; nu < 4; nu++)
+        dgd[0][mu][nu] = 0.0;
+  }
+  else
+  {
+    for (int mu = 0; mu < 4; mu++)
+      for (int nu = 0; nu < 4; nu++) {
+        double D = 0.0;
+        for (int lvl = 0; lvl < 3; lvl++)
+          D += fourd_tw_a(lvl, s) / dt * gdn_lvl[lvl][mu][nu];
+        dgd[0][mu][nu] = D;
+      }
+  }
+  if (!build_gup_from_gdn(gdn, NULL, beta_up, gamma_dn, gamma_up, gup))
+    return 0;
   cf2_pointwise(dgd, gup, cf2);
   return 1;
 }
@@ -2694,7 +2930,10 @@ static int christoffel_at_point(int m, const double y[8], double bg, double cf2[
          and derivatives come from one consistent 4D interpolant and whose metric
          value agrees with fourd_metric_at_point (the value used by
          metric_at_point's robust branch, so the u.u = -1 renormalization is in
-         the same frame).  Otherwise use the AEI order-4 pointwise Christoffel
+         the same frame).  "fourdh" is the same machinery applied to the nodal
+         4-metric deviation h = g - eta (fourdh_christoffel_at_point), matching
+         fourdh_metric_at_point's frame.  Otherwise use the AEI order-4
+         pointwise Christoffel
          (aei_christoffel_at_point), which interpolates the metric in AEI's
          5-node order-4 Lagrange stencil in *both* space and time.  The AEI
          value matches the robust interpolant in metric_at_point (AEI and/or
@@ -2704,12 +2943,31 @@ static int christoffel_at_point(int m, const double y[8], double bg, double cf2[
          (sadaptive && use_robust, func_ode), so it is exactly the strong-
          curvature / abnormal-lr region.  On engine failure we fall through to
          the local27 robust path. */
-      if (gstate.robust_metric_interp) {
+      if (gstate.robust_metric_interp == 1) {
         if (fourd_christoffel_at_point(m, y, cf2))
+        {
+          if (getenv("GEODESIC_DBG_ENGINE")) { static int n_eng = 0;
+            if (n_eng < 40) { fprintf(stderr, "[ENG] m=%d t=%.6f mode=%d eng=fourd OK\n",
+                                      m, y[0], (int)gstate.robust_metric_interp); n_eng++; } }
           return 1;
+        }
+      }
+      if (gstate.robust_metric_interp == 2) {
+        if (fourdh_christoffel_at_point(m, y, cf2))
+        {
+          if (getenv("GEODESIC_DBG_ENGINE")) { static int n_eng = 0;
+            if (n_eng < 40) { fprintf(stderr, "[ENG] m=%d t=%.6f mode=%d eng=fourdh OK\n",
+                                      m, y[0], (int)gstate.robust_metric_interp); n_eng++; } }
+          return 1;
+        }
       }
       if (aei_christoffel_at_point(m, y, cf2))
+      {
+        if (getenv("GEODESIC_DBG_ENGINE")) { static int n_eng2 = 0;
+          if (n_eng2 < 40) { fprintf(stderr, "[ENG] m=%d t=%.6f mode=%d eng=aei FALLBACK\n",
+                                    m, y[0], (int)gstate.robust_metric_interp); n_eng2++; } }
         return 1;
+      }
     }
     else
     {
@@ -3646,13 +3904,14 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
               for (int nu=0;nu<4;nu++)
                 gdn[mu][nu] = 0.0;
             metric_at_point(mi, ys, ys[0], gdn);
-            /* raw rl in the new frame */
+            /* raw rl in the new frame (full contraction uc_mu u^mu) */
             double uc[4] = {0,0,0,0};
             for (int mu=0;mu<4;mu++)
               for (int nu=0;nu<4;nu++)
                 uc[mu] += gdn[mu][nu]*u[nu];
+            rl = 0.0;
             for (int mu=0;mu<4;mu++)
-              rl = uc[mu]*u[mu];
+              rl += uc[mu]*u[mu];
           }
         }
       }
@@ -3703,6 +3962,31 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
       for (int mu=0; mu<4; ++mu) rl += u_cov[mu]*u[mu];
 
       gstate.pgeodesic[mi].rl_last = rl;   /* reported after the loop */
+
+      /* step-start velocity-component check: the same discriminant as the
+         end-of-step check below, but evaluated on the just-renormalized
+         step-start 4-velocity u[].  The step has not started yet, so the
+         promotion needs no re-do -- the robust frame is simply used from
+         this step on (sticky). */
+      if (gstate.sinterp_mode == 0 && gstate.sadaptive
+          && !gstate.pgeodesic[mi].use_robust)
+      {
+        int vel_abn = 0;
+        if (gstate.u0_thr > 0.0 && fabs(u[0]) > gstate.u0_thr)
+          vel_abn = 1;
+        if (gstate.ui_thr > 0.0 &&
+            (fabs(u[1]) > gstate.ui_thr || fabs(u[2]) > gstate.ui_thr ||
+             fabs(u[3]) > gstate.ui_thr))
+          vel_abn = 1;
+        if (vel_abn)
+        {
+          gstate.pgeodesic[mi].use_robust = 1;
+          if (getenv("GEODESIC_DBG_FLIP"))
+            fprintf(stderr, "[FLIP] m=%d t=%.6f pos=(%.6f %.6f %.6f) "
+                            "u=(%.9g %.9g %.9g %.9g) rl=%.9g (step-start vel-comp)\n",
+                    mi, ys[0], ys[1], ys[2], ys[3], u[0], u[1], u[2], u[3], rl);
+        }
+      }
     }
 
     /* start-of-step snapshot (taken after the step-start renorm): if the
@@ -4622,7 +4906,8 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   gstate.ui_thr      = ui_threshold;
   gstate.strong_christ_off = (strcmp(strong_christoffel, "l27") == 0) ? 1 : 0;
   gstate.log_metric_interp = (strcmp(log_metric_interp, "yes") == 0) ? 1 : 0;
-  gstate.robust_metric_interp = (strcmp(robust_metric_interp, "fourd") == 0) ? 1 : 0;
+  gstate.robust_metric_interp = (strcmp(robust_metric_interp, "fourd") == 0) ? 1
+                              : (strcmp(robust_metric_interp, "fourdh") == 0) ? 2 : 0;
   gstate.smoke_eps = smoke_timedep_eps;
   gstate.cur_gh = cctkGH;
 
