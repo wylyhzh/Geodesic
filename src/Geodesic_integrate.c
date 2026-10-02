@@ -48,6 +48,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <errno.h>
+#include <stdlib.h>                    /* atoi (GEODESIC_ENGINE_N debug cap) */
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -2955,17 +2956,35 @@ static int christoffel_at_point(int m, const double y[8], double bg, double cf2[
       if (gstate.robust_metric_interp == 2) {
         if (fourdh_christoffel_at_point(m, y, cf2))
         {
-          if (getenv("GEODESIC_DBG_ENGINE")) { static int n_eng = 0;
-            if (n_eng < 40) { fprintf(stderr, "[ENG] m=%d t=%.6f mode=%d eng=fourdh OK\n",
-                                      m, y[0], (int)gstate.robust_metric_interp); n_eng++; } }
+          if (getenv("GEODESIC_DBG_ENGINE")) {
+            static int n_eng = 0, eng_max = -1;
+            if (eng_max < 0) {
+              const char *env = getenv("GEODESIC_ENGINE_N");
+              eng_max = (env ? atoi(env) : 10000);   /* 0 = unlimited */
+            }
+            if (eng_max == 0 || n_eng < eng_max) {
+              fprintf(stderr, "[ENG] m=%d t=%.6f pos=(%.4f %.4f %.4f) mode=%d eng=fourdh OK\n",
+                    m, y[0], y[1], y[2], y[3], (int)gstate.robust_metric_interp);
+              n_eng++;
+            }
+          }
           return 1;
         }
       }
       if (aei_christoffel_at_point(m, y, cf2))
       {
-        if (getenv("GEODESIC_DBG_ENGINE")) { static int n_eng2 = 0;
-          if (n_eng2 < 40) { fprintf(stderr, "[ENG] m=%d t=%.6f mode=%d eng=aei FALLBACK\n",
-                                    m, y[0], (int)gstate.robust_metric_interp); n_eng2++; } }
+        if (getenv("GEODESIC_DBG_ENGINE")) {
+          static int n_eng2 = 0, eng_max2 = -1;
+          if (eng_max2 < 0) {
+            const char *env2 = getenv("GEODESIC_ENGINE_N");
+            eng_max2 = (env2 ? atoi(env2) : 10000);   /* 0 = unlimited */
+          }
+          if (eng_max2 == 0 || n_eng2 < eng_max2) {
+            fprintf(stderr, "[ENG] m=%d t=%.6f pos=(%.4f %.4f %.4f) mode=%d eng=aei FALLBACK\n",
+                  m, y[0], y[1], y[2], y[3], (int)gstate.robust_metric_interp);
+            n_eng2++;
+          }
+        }
         return 1;
       }
     }
