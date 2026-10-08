@@ -72,23 +72,22 @@ REAL particle_tv[100] "Initial particle u^t = dt/dtau (auto-corrected)"
   *:* :: "Any value"
 } 1.0
 
-# ------------------ optional initial radial perturbation ------------------
-# Inward (centripetal) radial 4-velocity kick added to every particle's
-# initial u^i, so that initially-circular geodesics visibly deviate from a
-# circular orbit (become eccentric / precessing).  Magnitude is in the same
-# units as particle_xv (contravariant u^i); 0.0 disables the kick.
-# 0.05 == |u^phi| of the circular orbit: a strong inward drift, orbit
-# clearly departs from circular.
-REAL particle_radial_kick "Inward radial 4-velocity kick |u^r| added at init; 0.0 disables"
-{
-  0.0:* :: "non-negative, in u^i units"
-} 0.05
-
 # ------------------ integration ------------------
 REAL step "Coordinate time step of the particle integration per Cactus iteration (0.0 = elapsed time since the previous integration)"
 {
   0.0:* :: "0.0 uses the elapsed time since the previous integration (the finest level's dt under subcycling, the grid dt for single-level runs); capped to the grid dt when the grid metric is time-varying"
 } 0.0
+
+# Maximum number of tau-steps (Runge-Kutta sub-steps) the ODE loop may take
+# for one particle within a single Cactus iteration.  Near the black-hole
+# horizons the step shrinks and many sub-steps are needed, so a large cap makes
+# integration slow.  Lower it to speed up runs; the historical 100002 is rarely
+# needed for well-resolved runs.  Too low a value may abort a particle that
+# needs more sub-steps.  Default 2000.
+INT max_iter_cap "Max ODE tau-steps per particle per Cactus iteration (tau-loop cap; default 2000)"
+{
+  1:* :: "Must be >= 1"
+} 2000
 
 # Exact=yes: metric/Christoffel use exact Kerr-Schild analytic values;
 # Exact=no: metric/Christoffel from grid (ADMBase) via 27-point polynomial fit.
@@ -248,9 +247,9 @@ CCTK_REAL amr_radius_z "AMR region half-extent z"
 # Ignored when Exact = yes (the analytic Kerr-Schild metric is used).
 KEYWORD metric_interp "Spatial metric/Christoffel sampler: local27, aei, or carpet"
 {
-  "local27" :: "27-point Lagrange polynomial fit (default)"
-  "aei"     :: "AEILocalInterp point-wise Lagrange (order 4)"
-  "carpet"  :: "CarpetInterp point-wise (single process)"
+  "local27"  :: "27-point Lagrange polynomial fit (default)"
+  "aei"      :: "AEILocalInterp point-wise Lagrange (order 4)"
+  "carpet"   :: "CarpetInterp point-wise (single process)"
 } "local27"
 
 # ------------------ time interpolation of the grid metric ------------------
@@ -399,22 +398,5 @@ KEYWORD robust_metric_interp "Robust-path (strong_christ_off=hybrid) interpolati
   "aei"    :: "AEI order-4 pointwise (5-node space x 2-level time blend; current default, log-space optional via log_metric_interp)"
   "fourd"  :: "true 4D tensor product: 5-node order-4 space x 3-node order-2 time Lagrange over levels [t,t-dt,t-2dt]; value+all-derivatives from one interpolant; falls back to AEI on boundary/level failure"
   "fourdh" :: "like fourd, but interpolates h_mn = g_mn - eta_mn with g composed exactly at each node from that node's alpha/beta/gamma; eta added back at the sample point; falls back to AEI on boundary/level failure"
+  "poly"   :: "node-exact 4D tensor product: local27 27-point quadratic space fit x 3-node order-2 time Lagrange over levels [t,t-dt,t-2dt]; metric value exactly zero-error on all 81 spacetime grid nodes; falls back to AEI on boundary/level failure"
 } "aei"
-
-# ------------------ smoke test for the time-varying code path ------------------
-# The two stored ADMBase time levels coincide in a static-metric run, so
-# time_interp = linear and the (g0 - g1)/dt derivative are exact no-ops and
-# cannot be exercised.  This hook multiplies the OLDER (t - dt) level's
-# sampled values (metric samples and, for local27, the pointwise Christoffel
-# samples) by (1 - smoke_timedep_eps) inside the Geodesic interpolators,
-# WITHOUT touching the grid arrays (no persistence through ADMBase_Static).
-# 0.0 (default) is a strict no-op: the runs are bit-identical to the
-# un-hooked build.  With a small positive eps the two levels differ, so a
-# static run can smoke-test the linear path: no crash / no NaN,
-# linear != off, and linear -> off as eps -> 0.  Diagnostic only; do not
-# use for production runs.  Ignored when time_interp = off (the off path
-# never reads the old level for the metric value) or metric_interp = carpet.
-REAL smoke_timedep_eps "Smoke test: scale the old (t - dt) metric level by (1 - eps); 0 disables (default)"
-{
-  0.0:0.5 :: "0 disables; keep small"
-} 0.0

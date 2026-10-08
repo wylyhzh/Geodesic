@@ -140,6 +140,7 @@ typedef struct PARTICLEGEODESIC
   CCTK_REAL pgd1[4][4][POLY27];
   CCTK_INT  pgd1c[4][4];
 
+
   /* time_interp = linear: 1 if the OLDER time level's stencil samples
      are invalid (all-zero or non-finite) so the current level must be
      used for the metric/Christoffel blend (theta pinned to 1).  This
@@ -180,6 +181,16 @@ typedef struct PARTICLEGEODESIC
      Carried in the MPI payload so that ownership transfers across
      ranks in multi-process AMR inherit the correct path. */
   CCTK_INT  use_robust;
+
+  /* per-particle, set by cf2_fitting: 1 = the local27 (27-point) fit at
+     the current position was degenerate / invalid (all-zero or non-finite
+     4-metric), so the official pgd/pgd1/pcf2 coefficients were NOT
+     committed (the last good fit is kept).  While set, metric_at_point and
+     christoffel_at_point fall back to the AEI extrapolant for this
+     particle (metric AND Christoffel together, same frame).  Reset to 0
+     when a valid fit is committed.  Derived state: recomputed whenever the
+     AMR level / stencil changes, so it is NOT carried in the MPI payload. */
+  CCTK_INT  l27_bad;
 
   /* current owning map (block).  0 = center Cartesian block for all
      particles initially.  Updated on a cross-block event; grid data is
@@ -349,15 +360,28 @@ typedef struct {
                   added back at the sample point).  Slower (one 4-metric
                   composition per node), meant for the strong-curvature
                   robust path.
-     Both fall back to the plain AEI path on boundary / level failure.
+     3 = "poly" : node-exact 4D tensor product -- the AEI 5-node order-4
+                  spatial Lagrange molecule (exact on each level's 5x5x5 =
+                  125 stencil nodes, a strict superset of the 27-node local27
+                  stencil) times a 3-node order-2 time Lagrange over the three
+                  stored ADMBase levels [t, t-dt, t-2dt].  The full 125x3 =
+                  375-spacetime-node interpolant is bit-exact on every stored
+                  grid node (the 5-node molecule reproduces each level value on
+                  its 5 nodes per axis, and the time weights are
+                  Kronecker-delta on the 3 levels), so metric error on grid
+                  points is exactly zero.  Spatial accuracy/order (O(dx^4)) is
+                  identical to the plain AEI path, so it is numerically stable
+                  (no renormalization failures); the 3-node time Lagrange is a
+                  strict improvement over AEI's 2-level linear blend.  Same
+                  fourd_tw/fourd_tw_a time weights as fourd, so the frame
+                  agrees with fourd/fourdh/aei at the nodes.  Falls back to
+                  the plain AEI path on boundary / level failure (old_level_bad
+                  or metric_static pins the blend to the current level only).
+     aei/fourd/fourdh/poly fall back to the plain AEI path on boundary / level
+     failure.
      Only affects metric_interp = local27 (sinterp_mode 0), use_robust,
                   strong_christ_off = 0. */
   CCTK_INT  robust_metric_interp;
-  /* smoke test (par Geodesic::smoke_timedep_eps, default 0 = disabled):
-     the sampled values of the OLDER time level are multiplied by
-     (1 - smoke_eps) inside the interpolators so the two levels differ
-     in a static run; see the param.ccl entry.  0.0 is a strict no-op. */
-  CCTK_REAL smoke_eps;
   /* aei: interpolation + coordinate-system handles (resolved lazily on
      the first grid-mode integration; -1 until then) */
   int aei_handle;

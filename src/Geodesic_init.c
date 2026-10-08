@@ -65,21 +65,17 @@ void Geodesics_init(CCTK_ARGUMENTS)
   int i;
 
   /* CCTK_INITIAL is traversed once per refinement level in local mode
-     (Carpet).  Particle initialisation must run exactly once, so the
-     guard below keeps only the level-0 call of map 0 (the center
-     block owns all particles); on a plain unigrid run levfac is 1
-     and the guard is a no-op.  Only map 0's level-0 call is the
-     legitimate init call in a multipatch run. */
+     (Carpet).  Keep only the level-0 call so the arrays are seeded exactly
+     once per run.  NOTE: the particle arrays are DISTRIB=CONSTANT, i.e.
+     each rank owns an independent copy, so the seed MUST run on EVERY rank
+     (not just map 0) or the non-master ranks are left with uninitialised
+     (garbage) arrays that the mmpi sync then propagates as NaN/dead
+     particles.  The old "map 0 only" MultiPatch guard was therefore wrong.
+     On a plain unigrid run levfac[0]==1 so the level guard is a no-op. */
   if ((int)lrint(log2((double)cctk_levfac[0])) != 0) return;
-  /* Guard: MultiPatch thorn is only active in multipatch runs.  In a plain
-     single-patch (unigrid/AMR) run the alias is not registered, so we must
-     not call MultiPatch_GetMap; treat the run as map 0. */
-  if (CCTK_IsFunctionAliased("MultiPatch_GetMap") && MultiPatch_GetMap(cctkGH) != 0)
-    return;
 
   if (particle_n > particle_n_total)
     CCTK_WARN(CCTK_WARN_ABORT, "Error: particle_n > particle_n_total.");
-
   if (particle_rand_seed)
   {
     gstate.seed = particle_rand_seed;
@@ -140,21 +136,7 @@ void Geodesics_init(CCTK_ARGUMENTS)
       particle_tyv[i] = particle_yv[i];
       particle_tzv[i] = particle_zv[i];
 
-      /* inward (centripetal) radial 4-velocity kick so circular orbits
-         visibly deviate; 0 disables (see particle_radial_kick in param.ccl) */
-      if (particle_radial_kick > 0.0)
-      {
-        double r = sqrt(particle_tx[i]*particle_tx[i] +
-                        particle_ty[i]*particle_ty[i] +
-                        particle_tz[i]*particle_tz[i]);
-        if (r > 1.0e-12)
-        {
-          double kr = -(particle_radial_kick) / r;
-          particle_txv[i] += kr * particle_tx[i];
-          particle_tyv[i] += kr * particle_ty[i];
-          particle_tzv[i] += kr * particle_tz[i];
-        }
-      }
+
     }
 
     /* ----------------------------------------------------------------------------------------
@@ -192,21 +174,7 @@ void Geodesics_init(CCTK_ARGUMENTS)
       particle_tyv[i] = 0.0;
       particle_tzv[i] = 0.0;
 
-      /* inward (centripetal) radial 4-velocity kick so circular orbits
-         visibly deviate; 0 disables (see particle_radial_kick in param.ccl) */
-      if (particle_radial_kick > 0.0)
-      {
-        double r = sqrt(particle_tx[i]*particle_tx[i] +
-                        particle_ty[i]*particle_ty[i] +
-                        particle_tz[i]*particle_tz[i]);
-        if (r > 1.0e-12)
-        {
-          double kr = -(particle_radial_kick) / r;
-          particle_txv[i] += kr * particle_tx[i];
-          particle_tyv[i] += kr * particle_ty[i];
-          particle_tzv[i] += kr * particle_tz[i];
-        }
-      }
+
     }
   }
 }

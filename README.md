@@ -5,7 +5,8 @@ A parallel test-particle geodesic tracker thorn for the
 
 - **Paper:** Yuhua Li, *Geodesic: a parallel test-particle geodesic tracker
   for the Einstein Toolkit* (2026, preprint draft — PDF included in
-  [doc/geodesic_paper.pdf](doc/geodesic_paper.pdf); comments welcome.
+  [doc/geodesic_paper.pdf](doc/geodesic_paper.pdf), Chinese translation in
+  [doc/geodesic_paper_zh.pdf](doc/geodesic_paper_zh.pdf); comments welcome.
   To be submitted to arXiv, gr-qc cross-listed with astro-ph.HE).
 - **Licence:** GPLv2+ (see [COPYING](COPYING))
 - **Maintainer:** Yuhua Li <liyhts@yeah.net>
@@ -43,7 +44,7 @@ Two metric sources are supported:
   ADMBase time levels; `time_interp = linear` instead linearly
   blends the two stored levels with the particle's fractional
   coordinate time and uses the 1st-order difference `(g0 - g1) / dt`
-  (ignored for `metric_interp = carpet`).  Either way the mode works
+  (not supported for `metric_interp = carpet`: rejected at startup).  Either way the mode works
   for time-dependent metrics, not only stationary ones.  A
   stationary metric is detected automatically (the oldest two levels
   agree to relative 1e-12 on a subsample), in which case `dt(g) = 0`
@@ -57,6 +58,72 @@ Two metric sources are supported:
   (`Geodesic::M`, `Geodesic::a`; the formulas are built into the thorn),
   independent of the grid.  Useful as a reference/verification mode;
   no grid data are needed for the metric itself.
+
+## Interpolation modes
+
+There are two independent metric regimes, selected by `Geodesic::Exact`.
+They use different inputs and ignore different parameters, so they are not
+two settings of one interpolator.
+
+### `Exact = "yes"` -- analytic Kerr--Schild (grid-independent)
+
+- Metric and Christoffel symbols are the exact analytic Kerr--Schild
+  solution of a **single** black hole (mass `M`, spin `a`; formulas built
+  into the thorn).  No grid is sampled.
+- `metric_interp`, `time_interp`, `robust_metric_interp`,
+  `adaptive_interp`, and all AMR/stencil machinery are **ignored**.  Only
+  `Exact`, `M`, `a` matter for the metric.
+- Time is handled by feeding the particle's coordinate time straight into the
+  analytic formulas: there are no stored time levels, no blend, and no
+  "missing past level" case.
+- The metric is exact, so the only error is the **ODE integrator** itself.
+  Grid-convergence questions (dx, `time_interp`, order) do not apply.
+- This is a single Kerr hole in Kerr--Schild coordinates -- not a numeric
+  evolution and not a binary.  It is the reference/verification mode used by
+  `circ_orbit` and `ellipse_orbit_amr`.
+
+### `Exact = "no"` (default) -- grid: five valid combinations
+
+Metric and Christoffels are sampled from the ADMBase grid.  Two parameters
+combine:
+
+- `metric_interp` (spatial sampler): `local27` (default) / `aei` / `carpet`
+- `time_interp` (time handling): `off` (default) / `linear`
+
+That is 3 x 2 = 6 pairs, but **`carpet` is `off`-only** (`linear` is
+rejected at startup and marks every particle `outbd`), so **five combinations
+are valid**:
+
+| # | `metric_interp` | `time_interp` | what it does |
+|---|-----------------|---------------|--------------|
+| 1 | local27 | off | 27-point fit on the **current** level; 2nd-order backward time derivative.  The old level is sampled only to feed the robust path's `(g0-g1)/dt`. |
+| 2 | local27 | linear | 27-point fit on **both** levels; metric value = 2-level linear blend; 1st-order `(g0-g1)/dt`. |
+| 3 | aei | off | AEI 5-node order-4 pointwise, current level, plus its own time derivative. |
+| 4 | aei | linear | AEI pointwise as above, plus a 2-level linear blend of the metric. |
+| 5 | carpet | off | Carpet pointwise, current level, plus carpet's 2nd-order 3-point time difference. |
+| -- | carpet | linear | **unsupported** (startup abort + `outbd`). |
+
+**Semantics to keep straight**
+
+- **`off` is not "no time".**  It means "no 2-level *blend*."  Every sampler
+  still computes a time derivative in its own way.  `linear` only adds a 2-level
+  linear *blend* of the metric value and switches the time derivative to
+  1st-order -- it is **not** a new sampler.
+- **`linear` applies to `local27` and `aei` only**, never `carpet`.
+- **"Stabilization" is a separate layer, not `time_interp`.**  The
+  strong-curvature robust path (`robust_metric_interp` = `aei`/`fourd`/
+  `fourdh`/`poly` with `adaptive_interp = on`) is what prevents NaN /
+  superluminal drops.  It is independent of `time_interp` but **needs the old
+  time level** for its `(g0-g1)/dt` -- which is why `local27` samples the old
+  level even in `off` mode (historically, not sampling it caused the `l27`
+  particle-drop bug).
+- **AMR is level/stencil handling, not a separate "no-time" algorithm.**  A
+  particle's stencil is drawn from the finest level that contains it in its
+  safety region.  When the *past* level is not yet filled at an AMR cell
+  (first integration, or a freshly-grown refinement region), the code flags it
+  and falls back to the current level only.  That fallback is the closest
+  thing to "no time interpolation" -- but it is a fallback *inside* the same
+  samplers, driven by AMR cell state, not by a separate parameter.
 
 ## Features
 
@@ -107,6 +174,14 @@ Kerr--Schild formulas used by `Exact = yes` are built in.  Activate
   path has not been run yet; the testsuite contains a 2-rank test
   (`test/circ_orbit_mpi`) for it that is not part of the currently
   executed test set.
+- Concretely: a multi-process grid run (`Exact = no`) silently
+  produces wrong trajectories.  The integration runs on rank 0, but a
+  particle whose position falls inside another rank's grid patch gets
+  no valid field samples there: in a 4-process Kerr test the particle
+  barely moved (t = 100: x ~= 11.89, tau ~= 1.46 instead of the
+  single-process values) and was dropped shortly after.  Grid-mode
+  convergence/production runs must therefore be single process
+  (OpenMP threads are fine and scale; MPI ranks are not).
 - The `Exact = no` mode reads the metric and its time derivative from
   the ADMBase grid: time-varying metrics need the ADMBase
   metric/lapse/shift fields at `timelevels >= 3`, and within one
@@ -145,6 +220,7 @@ included, so all reported results can be reproduced directly:
 | [par/conv50.par](par/conv50.par), [par/conv100.par](par/conv100.par), [par/conv200.par](par/conv200.par), [par/convexact.par](par/convexact.par) | grid-convergence study (Sec. 5.3) |
 | [par/scale.par](par/scale.par) | strong scaling with 10^4 particles (Sec. 6) |
 | [par/interp_amr_carpet.par](par/interp_amr_carpet.par), [par/interp_amr_aei.par](par/interp_amr_aei.par), [par/interp_amr_l27.par](par/interp_amr_l27.par) | the same orbit as [par/conv100.par](par/conv100.par) under 3-level AMR, with the three `metric_interp` samplers, for a line-by-line comparison against the unigrid conv100 dump |
+| [par/aei_2048.par](par/aei_2048.par) | GW150914 non-stationary robustness run (Sec. 5.6): TwoPunctures BBH, moving-box AMR, 2048 Cactus steps, 100 particles |
 
 The Geodesic-specific part of the example file is:
 
@@ -176,10 +252,11 @@ that provides the ADMBase grid fields.
 | `particle_x/y/z[0..99]` | initial positions of the first `particle_n` particles |
 | `particle_tv/xv/yv/zv[0..99]` | initial 4-velocity `u^mu` (see above) |
 | `step` | coordinate-time advance per Cactus iteration; 0 uses `cctk_delta_time` |
+| `max_iter_cap` | max ODE tau-steps per particle per Cactus iteration (default 2000) |
 | `Exact` | metric source: `no` = grid, `yes` = analytic Kerr--Schild |
 | `metric_interp` | grid-mode sampler: `local27` (default, 27-point Lagrange fit), `aei` (fourth-order pointwise, AEILocalInterp), `carpet` (quadratic pointwise, self-contained) |
 | `time_interp` | grid-mode time handling: `off` (default, level-0 value + 2nd-order dt(g)) or `linear` (blend of the two stored levels + 1st-order dt(g)) |
-| `robust_metric_interp` | robust-path (local27, `adaptive_interp = on`) interpolation engine: `aei` (default), `fourd` (4D tensor product of the ADM fields), `fourdh` (same 4D tensor product applied to the nodal 4-metric deviation h = g - eta, with g composed exactly at each node from that node's alpha/beta/gamma and eta added back at the sample point; slower, strong-curvature path only) |
+| `robust_metric_interp` | robust-path (local27, `adaptive_interp = on`) interpolation engine: `aei` (default, AEI order-4 pointwise), `fourd` (4D tensor product of the ADM fields: 5-node order-4 space x 3-node time), `fourdh` (same applied to the nodal 4-metric deviation h = g - eta, g composed exactly at each node; slower, strong-curvature path only), `poly` (node-exact 4D tensor product: local27 27-point quadratic space fit x 3-node order-2 time Lagrange over levels [t, t-dt, t-2dt]; metric value is exactly zero-error on all 81 spacetime grid nodes, fixing the spatial node-drift of fourd/fourdh) |
 | `geodesic_amr_levels` | number of Carpet refinement levels used for the stencil (1-4, default 3); must equal `Carpet::refinement_levels` for an AMR run |
 | `M` / `a` | Kerr mass and spin used by `Exact = yes` (built-in analytic formulas) |
 | `initial_radius` / `excised_radius` | safe shell for the `respawn` policy: outside `initial_radius`, inside `excised_radius` is rejected |
