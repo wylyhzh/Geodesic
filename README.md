@@ -277,7 +277,8 @@ the official `RunTest.pl` infrastructure.  The convenient launcher is
 
 - `./run_tests.sh` (no argument) runs the 8-test default set, which
   covers all four metric-sampling back-ends and both metric families
-  (stationary Kerr grid and the two-puncture merger background):
+  (stationary Kerr grid and the two-puncture frozen-initial-data
+  background; see the paper for the ML_BSSN-evolved merger runs):
   `conv100`, `conv100_l27`, `conv100_local27`, `conv100_aei`,
   `conv100_carpet`, `circ_orbit`, `tp_local27_025`,
   `tp_far_local27_025_t80`.
