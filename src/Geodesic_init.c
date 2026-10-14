@@ -103,17 +103,6 @@ void Geodesics_init(CCTK_ARGUMENTS)
     if (gstate.zmin_safe < particle_rand_zmin && particle_rand_zmin < gstate.zmax_safe && particle_rand_zmin <= particle_rand_zmax) gstate.zmin_safe = particle_rand_zmin;
     if (gstate.zmax_safe > particle_rand_zmax && particle_rand_zmax > gstate.zmin_safe && particle_rand_zmin <= particle_rand_zmax) gstate.zmax_safe = particle_rand_zmax;
 
-    /* AMR region centre / half-extent, used by the acquire phase to rebuild
-       each fine-level patch origin (see Geodesic_integrate.c).  Defaults are
-       (0,0,0) centre and zero radii; set the radii in the par for multi-rank
-       AMR runs so the split directions are centred on the rank's portion. */
-    gstate.amr_center[0] = amr_center_x;
-    gstate.amr_center[1] = amr_center_y;
-    gstate.amr_center[2] = amr_center_z;
-    gstate.amr_radius[0] = amr_radius_x;
-    gstate.amr_radius[1] = amr_radius_y;
-    gstate.amr_radius[2] = amr_radius_z;
-
     /* fixed seed => reproducible runs
        if you want different random values every run, replace with:
          unsigned int seed = (unsigned int)time(NULL);

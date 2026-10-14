@@ -238,7 +238,7 @@ Geodesic::particle_middle_sp     = 0.0
 # AMR: the particle stencil is drawn from the finest level that contains
 # the particle (must equal Carpet::max_refinement_levels for an AMR run)
 Geodesic::geodesic_amr_levels        = 3
-# spatial metric / Christoffel sampler: carpet / aei / local27 -- the
+# spatial metric / Christoffel sampler: carpet / aei / l27 -- the
 # only science setting that differs between the three comparison files
 Geodesic::metric_interp              = "aei"
 Geodesic::Exact                  = "no"

@@ -22,12 +22,14 @@ REAL a "Kerr black-hole spin (used when Exact = yes)"
 } 0.0
 
 # ------------------ number of particles ------------------
-# particle_n is capped at 100: cactus_sim -Ov prints one record per
-# particle array element, and no cactus_sim parameter has ever exceeded
-# 100 (the historical limit of this thorn's particle arrays).
-INT particle_n "Number of fixed particles (max 100). 0 disables particle evolution."
+# Explicit per-particle parameters are declared for the first 1000
+# particles (matching the particle_n / particle_n_total ranges).  Runs
+# with more than 1000 explicitly listed particles are not supported
+# through parfiles; use particle_n (fixed part) <= 1000 and fill the
+# rest with random initial conditions via particle_n_total.
+INT particle_n "Number of fixed particles (max 1000). 0 disables particle evolution."
 {
-  0:100 :: "Allowed range"
+  0:1000 :: "Allowed range"
 } 0
 
 INT particle_n_total  "Number of total particles. 0 disables particle evolution. particle_n_total >= particle_n"
@@ -36,38 +38,38 @@ INT particle_n_total  "Number of total particles. 0 disables particle evolution.
 } 0
 
 # ------------------ initial coordinates ------------------
-REAL particle_x[100] "Initial particle x coordinate"
+REAL particle_x[1000] "Initial particle x coordinate"
 {
   *:* :: "Any value"
 } 1.0
 
-REAL particle_y[100] "Initial particle y coordinate"
+REAL particle_y[1000] "Initial particle y coordinate"
 {
   *:* :: "Any value"
 } 1.0
 
-REAL particle_z[100] "Initial particle z coordinate"
+REAL particle_z[1000] "Initial particle z coordinate"
 {
   *:* :: "Any value"
 } 4.0
 
 # ------------------ initial 4-velocity u^mu = dx^mu / dtau ------------------
-REAL particle_xv[100] "Initial particle u^x = dx/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
+REAL particle_xv[1000] "Initial particle u^x = dx/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
 {
   *:* :: "Any value"
 } 0.0
 
-REAL particle_yv[100] "Initial particle u^y = dy/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
+REAL particle_yv[1000] "Initial particle u^y = dy/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
 {
   *:* :: "Any value"
 } 0.0
 
-REAL particle_zv[100] "Initial particle u^z = dz/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
+REAL particle_zv[1000] "Initial particle u^z = dz/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
 {
   *:* :: "Any value"
 } 0.0
 
-REAL particle_tv[100] "Initial particle u^t = dt/dtau (auto-corrected)"
+REAL particle_tv[1000] "Initial particle u^t = dt/dtau (auto-corrected)"
 {
   *:* :: "Any value"
 } 1.0
@@ -201,202 +203,41 @@ CCTK_INT geodesic_amr_levels "Number of Carpet refinement levels (max = GEODESIC
 {
   1:16 :: "between 1 and GEODESIC_MAX_LEVELS (16)"
 } 3
-# AMR region center and half-extent (physical units) used to rebuild each
-# fine-level patch's origin (the patch is centred on the AMR region in a
-# full-extent direction, or on the rank's half of the AMR region in a
-# split direction of a 2x2 (y,z) multi-rank run).  For the common case
-# where the AMR region sits on the domain centre, amr_center = (0,0,0).
-CCTK_REAL amr_center_x "AMR region centre x"
-{
-  *:* :: "any value"
-} 0.0
-CCTK_REAL amr_center_y "AMR region centre y"
-{
-  *:* :: "any value"
-} 0.0
-CCTK_REAL amr_center_z "AMR region centre z"
-{
-  *:* :: "any value"
-} 0.0
-CCTK_REAL amr_radius_x "AMR region half-extent x"
-{
-  0.0:* :: "non-negative"
-} 0.0
-CCTK_REAL amr_radius_y "AMR region half-extent y"
-{
-  0.0:* :: "non-negative"
-} 0.0
-CCTK_REAL amr_radius_z "AMR region half-extent z"
-{
-  0.0:* :: "non-negative"
-} 0.0
 
 # ------------------ spatial metric interpolation (grid mode, Exact=no) ------------------
 # How the particle samples the grid metric / Christoffel symbols:
-#   local27 -- the default: a 27-point (3x3x3) Lagrange polynomial fit
-#              of the metric and Christoffel symbols around the particle
-#              (the historical behavior; bit-identical to previous runs).
+#   l27     -- the simplest sampler: a 27-point (3x3x3) Lagrange polynomial
+#              fit of the metric and of the nodal 6th-order-FD Christoffel
+#              symbols (the l27 "differentiate-then-interpolate"
+#              convention) around the particle, from the current time
+#              level only.  Node-exact on the 27 stencil nodes.  If a
+#              staged fit is degenerate / non-finite the particle is
+#              dropped by the loss policy (no fallback interpolant).
+#   local27 -- the default: a self-contained 125-node (5x5x5) quartic
+#              tensor-product polynomial fit of the metric (and of the
+#              nodal 6th-order-FD Christoffel symbols) around the
+#              particle, fitted with the precomputed separable inverse
+#              Vandermonde (= the 125x125 MtxA analogue); the three
+#              stored time levels are blended with a 3-node Lagrange in
+#              the particle's coordinate time.  Node-exact on all 125
+#              grid nodes.  Uses no interpolator from another thorn.
 #   aei     -- point-wise Lagrange interpolation via AEILocalInterp
 #              (order-4 tensor-product), evaluated at the particle
 #              position; the 4-metric and its derivatives are composed
 #              from the interpolated 3+1 fields and the Christoffel
-#              symbols are evaluated point-wise.
-#   carpet  -- point-wise interpolation via CarpetInterp
-#              (CCTK_InterpGridArrays -> DriverInterpolate).  Single-process
-#              only (the particle loop is run serially).
+#              symbols are evaluated point-wise.  The two stored time
+#              levels are linearly blended in the particle's coordinate
+#              time.
+#   carpet  -- point-wise sampler with the same AEILocalInterp order-4
+#              spatial molecule as aei; the time derivative is the
+#              carpet-style 2nd-order 3-point difference of the full
+#              4-metric.  Like aei, it is thread-safe and runs under
+#              the owner-computes multi-process mode.
 # Ignored when Exact = yes (the analytic Kerr-Schild metric is used).
-KEYWORD metric_interp "Spatial metric/Christoffel sampler: local27, aei, or carpet"
+KEYWORD metric_interp "Spatial metric/Christoffel sampler: l27, local27, aei, or carpet"
 {
-  "local27"  :: "27-point Lagrange polynomial fit (default)"
+  "l27"      :: "simplest 27-point Lagrange fit (level 0 only; particle dropped on fit failure)"
+  "local27"  :: "125-node 5x5x5 quartic tensor-product fit (default; self-contained, no AEI)"
   "aei"      :: "AEILocalInterp point-wise Lagrange (order 4)"
-  "carpet"   :: "CarpetInterp point-wise (single process)"
+  "carpet"   :: "AEI order-4 spatial molecule + carpet-style time derivative"
 } "local27"
-
-# ------------------ time interpolation of the grid metric ------------------
-# Whether the grid metric is interpolated between the two stored time
-# levels during the particle step (grid mode, Exact=no):
-#   off    -- the default: the metric value is taken from time level 0
-#             (the grid's current time) and the time derivative from the
-#             stored time levels (2nd-order backward difference; 0 for a
-#             stationary metric).  The historical behavior.
-#   linear -- the metric value is linearly interpolated between time
-#             level 1 (t - dt) and time level 0 (t) using the particle's
-#             fractional coordinate time within the step, and the time
-#             derivative is the 1st-order difference (g0 - g1)/dt.  The
-#             Christoffel symbols are then evaluated point-wise from the
-#             interpolated metric.  (For a time-varying metric the two
-#             stored time levels must be readable, e.g. Carpet::init_fill_timelevels
-#             = "yes"; with a static metric the two levels coincide.)
-# Ignored when Exact = yes or metric_interp = carpet.
-KEYWORD time_interp "Time interpolation of the grid metric: off or linear"
-{
-  "off"    :: "metric from time level 0, 2nd-order time derivative (default)"
-  "linear" :: "linear blend of the two time levels, 1st-order time derivative"
-} "off"
-
-# ------------------ adaptive (blend-then-inverse) Christoffel for local27 ------------------
-# Whether the local27 sampler computes the Christoffel symbols by
-# (a) fitting the 4-METRIC from the 27-cell stencil, (optionally blending
-#     the two stored time levels), inverting it and differentiating
-#     point-wise -- "blend-then-inverse"; this is robust in strong-field
-#     regions (it avoids interpolating the rapidly-varying Christoffel
-#     directly, which caused superluminal particle drops).  OR
-# (b) the historical behaviour: fitting/evaluating the Christoffel
-#     symbols themselves (a 27-point polynomial of the pointwise Christoffel
-#     fit, optionally blended between the two time levels).
-#   on  (default) -- blend-then-inverse (robust; the recommended choice).
-#   off             -- historical (fit Christoffel directly).  Useful for
-#                      A/B comparison against the robust path.
-# Only affects metric_interp = local27 (sinterp_mode 0).  aei and carpet use
-# their own point-wise interpolators and are unaffected.
-KEYWORD adaptive_interp "Local27 Christoffel: adaptive blend-then-inverse (on, default) vs historical direct Christoffel fit (off)"
-{
-  "on"  :: "fit metric, (blend time levels), invert, differentiate (robust; default)"
-  "off" :: "historical: fit/evaluate the Christoffel symbols directly"
-} "on"
-
-# ------------------ strong-curvature trigger for the robust local27 path ------------------
-# When the cheap (direct-fit / Christoffel-blend) local27 path is no longer
-# trustworthy (deep potential well / poorly-resolved metric), promote the
-# particle to the robust (blend-then-inverse) path.  The flag is STICKY: once
-# set it stays for the particle's whole life.  Only affects
-# metric_interp = local27 (sinterp_mode 0) with adaptive_interp = on;
-# aei/carpet and Exact are unaffected.
-KEYWORD strong_curv_crit "Strong-curvature trigger for the robust local27 path: u_dot_u (default) or alpha"
-{
-  "u_dot_u" :: "trigger when the raw (pre-renorm) u·u > u_dot_u_threshold (default); u·u should be -1"
-  "alpha"   :: "trigger when the lapse alpha = 1/sqrt(-g^00) < alpha_threshold (default 0.5)"
-} "u_dot_u"
-
-REAL u_dot_u_threshold "u_dot_u trigger: promote when raw u·u > this value (default -0.01; -1 = u·u correct)"
-{
-  -1e+10:1e+10 :: "should be near -1 while the cheap path is accurate"
-} -0.01
-
-REAL alpha_threshold "alpha trigger: promote when lapse alpha = 1/sqrt(-g^00) < this value (default 0.5)"
-{
-  0.0:2.0 :: "lapse; 0.5 ~ Schwarzschild horizon (alpha = 1 - M/r)"
-} 0.5
-
-# ------------------ velocity-component magnitude checks (added discriminant) ------------------
-# u·u is renormalized to -1, so the u_dot_u / lapse criteria can look healthy
-# even when a particle is moving near light speed (|u^0|,|u^i| >> 1).  These
-# thresholds add an independent check on the (normalized) 4-velocity components:
-#   u0_threshold > 0 -> promote when |u^0| (dt/dtau, time comp.) exceeds it;
-#   ui_threshold   > 0 -> promote when any |u^i| (spatial comp.) exceeds it.
-# 0 disables that component's check, so the defaults (0) keep existing
-# behaviour unchanged until the user tunes the values.  Applied at the
-# step-start promotion and as an in-step re-do trigger for the robust path.
-# Only affects metric_interp = local27 (sinterp_mode 0).
-REAL u0_threshold "velocity-component trigger: promote when |u^0| (time) > this value; 0 = off (default)"
-{
-  0.0:1e+10 :: "|u^0| = dt/dtau; 0 = time-component check off"
-} 0.0
-
-REAL ui_threshold "velocity-component trigger: promote when any |u^i| (spatial) > this value; 0 = off (default)"
-{
-  0.0:1e+10 :: "spatial 4-velocity components; 0 = spatial-component check off"
-} 0.0
-
-# ------------------ strong-region Christoffel source (local27, adaptive_interp=on) ------------------
-# How the robust (use_robust) path builds its Christoffel in the strong region:
-#   "hybrid" (default): metric VALUE from AEI order-4 pointwise, Christoffel
-#       DERIVATIVES from l27 poly27 fits (the current strong-region behaviour).
-#   "l27": all-l27 — metric value AND derivatives from l27 (robust blend-then-
-#       inverse).  Pure local27; no AEI values.  A/B-testable against "hybrid".
-# Only affects metric_interp = local27 (sinterp_mode 0). aei/carpet/Exact use
-# their own point-wise interpolators and are unaffected.
-KEYWORD strong_christoffel "Strong-region Christoffel source (local27 robust path): hybrid (AEI value + l27 derivative) or l27 (all-l27)"
-{
-  "hybrid" :: "metric value from AEI order-4, Christoffel derivatives from l27 poly27 (current default)"
-  "l27"    :: "metric value AND derivatives all from l27 (blend-then-inverse); pure local27"
-} "hybrid"
-
-# ------------------ log-space metric interpolation (qwen1.txt) ------------------
-# For the robust (adaptive) local27 path, the metric VALUE is normally from
-# the AEI order-4 (Lagrange) pointwise interpolant.  In the strong-curvature
-# region a plain 4th-order Lagrange fit can oscillate; interpolating the
-# positive-definite ADM fields in log|.| space tames the power-law (1/r)
-# behaviour.  "yes" uses a 5-node order-4 tensor-product Lagrange molecule
-# (identical to AEI a4) on log|.| for gxx/gyy/gzz/lapse and regular space
-# for the six sign-changing fields (off-diagonal metric + shift); it agrees
-# with AEI to O(dx^4) on a smooth metric.  Falls back to plain AEI when the
-# point is too close to the grid boundary for the 5-node stencil.
-# Only affects metric_interp = local27 (sinterp_mode 0) with use_robust.
-KEYWORD log_metric_interp "Robust-path metric value: log|.| space (yes) or regular AEI space (no, default)"
-{
-  "no"  :: "plain AEI order-4 metric values (current default)"
-  "yes" :: "log|.| space for gxx/gyy/gzz/lapse; regular space for the rest"
-} "no"
-
-# ------------------ robust-path interpolation engine (true 4D) --------------
-# For the local27 robust (use_robust) path with strong_christ_off = "hybrid"
-# (the AEI strong-region path), "aei" uses the AEI order-4 pointwise
-# interpolant (5-node space x 2-level time blend) for both the metric value
-# and the Christoffel, as before.  "fourd" replaces it with a true 4D
-# tensor product: a 5-node order-4 Lagrange molecule in space (identical to
-# AEI a4) times a 3-node order-2 Lagrange over the three stored ADMBase
-# levels [0]=t, [1]=t-dt, [2]=t-2dt, evaluated at the particle's fractional
-# time s = geodesic_time_theta.  Value and all four derivatives come from one
-# consistent interpolant at the particle's true time (value O(dt^3), time
-# derivative O(dt^2) -- more accurate and more consistent than the AEI 2-level
-# blend).  "fourdh" is the same 4D tensor product, but applied to the metric
-# deviation h = g - eta instead of the ADM fields: at each interpolation NODE
-# the 4-metric g_mn is composed exactly from that node's alpha/beta/gamma and
-# h_mn = g_mn - eta_mn (eta = diag(-1,1,1,1)) is interpolated; eta is added
-# back at the sample point.  eta is constant, so dh = dg and the derivative
-# path is unchanged.  Compared with "fourd" (interpolate ADM fields, compose
-# g at the sample point), "fourdh" (compose g at the nodes, interpolate g)
-# keeps the interpolation in the g-frame and is more consistent with the
-# composed 4-metric; it is slower (one 4-metric composition per node) and is
-# meant for the strong-curvature robust path where speed does not matter.
-# On boundary / level failure both fall back to the plain AEI path,
-# so a static run is bit-identical to the "aei" setting.  Only affects
-# metric_interp = local27 (sinterp_mode 0), use_robust, strong_christ_off = 0.
-KEYWORD robust_metric_interp "Robust-path (strong_christ_off=hybrid) interpolation engine: AEI order-4 (aei, default), true 4D tensor product of the ADM fields (fourd), or 4D tensor product of the nodal 4-metric deviation h = g - eta (fourdh)"
-{
-  "aei"    :: "AEI order-4 pointwise (5-node space x 2-level time blend; current default, log-space optional via log_metric_interp)"
-  "fourd"  :: "true 4D tensor product: 5-node order-4 space x 3-node order-2 time Lagrange over levels [t,t-dt,t-2dt]; value+all-derivatives from one interpolant; falls back to AEI on boundary/level failure"
-  "fourdh" :: "like fourd, but interpolates h_mn = g_mn - eta_mn with g composed exactly at each node from that node's alpha/beta/gamma; eta added back at the sample point; falls back to AEI on boundary/level failure"
-  "poly"   :: "node-exact 4D tensor product: local27 27-point quadratic space fit x 3-node order-2 time Lagrange over levels [t,t-dt,t-2dt]; metric value exactly zero-error on all 81 spacetime grid nodes; falls back to AEI on boundary/level failure"
-} "aei"

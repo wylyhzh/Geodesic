@@ -189,6 +189,7 @@ Geodesic::particle_middle_sp     = 0.0
 Geodesic::Exact                  = "no"
 Geodesic::rverbose               = "yes"
 Geodesic::particle_dump_every   = 100
+Geodesic::particle_dump_file     = "conv100/geodesic_particles.txt"
 Geodesic::step                   = 0.0
 Geodesic::particle_n_total       = 1
 Geodesic::particle_n             = 1

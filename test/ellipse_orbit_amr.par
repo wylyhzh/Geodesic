@@ -35,25 +35,20 @@
 #   level 2: box [-18,18]^3, dx = 0.25
 #   level 3: box [-9,9]^3,   dx = 0.125
 #
-# on a 144^3 base grid of dx = 1 (domain +-72), with 4:1 subcycling on
-# all three refinement layers.  The run exercises the per-level grid
-# acquire (geometry) at every level, the pick_level fallback, the
-# subcycle sync trigger, and particles crossing level boundaries in
-# both directions (the near-pericentre particles fall in, pass
-# Rp = 7.5 and come back out over three full radial oscillations; t
-# advances to 3300 ~ 2.42 radial periods).  Single process:
-# multi-process AMR runs are not supported (README, Limitations).
+# on a 144^3 base grid of dx = 1 (domain +-72).  Subcycling is NOT
+# enabled in this run (Time::subcycling is off), so all four levels
+# advance together with dt = 0.1 and cctk_itlast = 256 counts plain
+# Cactus steps.  The run exercises the per-level grid acquire
+# (geometry) at every level, the pick_level fallback, and particles
+# crossing level boundaries in both directions (the near-pericentre
+# particles fall in, pass Rp = 7.5 and come back out; with
+# Geodesic::step = 100 the particle coordinate time advances to
+# 25600, about 19 radial periods).  Single process.
 #
-# The full particle state is dumped at every coarse step to
+# The full particle state is dumped at every Cactus step to
 # ellipse_orbit_amr/geodesic_particles.txt (relative to the test run
 # directory); the testsuite compares it with the reference data in
 # test/ellipse_orbit_amr/.
-#
-# cctk_itlast counts finest-level substeps: with 4:1 subcycling on
-# three layers, itlast = 256 gives the same number of coarse (level-0)
-# steps (32) as itlast = 32 in the unigrid tests and itlast = 128 in
-# the two-layer circ_orbit_amr test; with Geodesic::step = 100 the
-# particle coordinate time again advances to 3300.
 #
 # CarpetRegrid2 convention: num_levels_1 is one larger than the
 # highest refinement level (the radius arrays are 1-based and index 0

@@ -20,7 +20,6 @@ Time::timestep           =  0.1
 #------------------------------------------------------------------------------
 
 ActiveThorns = "Boundary CartGrid3D CoordBase Fortran InitBase LocalReduce SymBase Time"
-ActiveThorns = "AEILocalInterp LocalInterp"
 ActiveThorns = "MoL Periodic Slab SpaceMask"
 ActiveThorns = "Carpet CarpetInterp CarpetIOASCII CarpetIOHDF5 CarpetIOScalar CarpetLib CarpetIOBasic CarpetReduce CarpetSlab LoopControl"
 ActiveThorns = "IOUtil Formaline"
@@ -194,6 +193,7 @@ Geodesic::particle_rand_seed     = 123456789
 Geodesic::particle_loss_policy   = "respawn"
 
 Geodesic::Exact                  = "no"
+Geodesic::metric_interp          = "l27"
 Geodesic::rverbose               = "no"
 Geodesic::step                   = 0.0
 Geodesic::particle_n_total       = 10000

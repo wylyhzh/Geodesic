@@ -112,15 +112,13 @@ extern CCTK_INT MultiPatch_LocalToGlobal (const CCTK_POINTER_TO_CONST cctkGH ,
    the AMR machinery (each OpenMP thread points it at the level of the
    particle it is currently integrating, switch_to_level()).
 */
-GeodesicState gstate = { .seed = 123456789u, .dispno = -10,
+GeodesicState gstate = { .seed = 123456789u,
                          .l0_seen_iter = -1, .last_integ_iter = -1,
                          .last_dump_iter = -1,
                          .last_integ_time = 0.0,
                          .batch_iter = -1, .batch_maxlvl = -1,
                          .samr_levels = 1, .nlev_seen = 1,
-                         .aei_handle = -1, .aei_coordsys = -1,
-                         .log_metric_interp = 0,
-                         .robust_metric_interp = 0 };
+                         .aei_handle = -1, .aei_coordsys = -1 };
 
 /* ============================ AMR support (max GEODESIC_MAX_LEVELS levels) ====
 
@@ -241,10 +239,16 @@ static int metric_is_static(const LevelData *L)
    a 1p MultiPatch block.  The probe confirmed: z=0 particle rejected when
    the safe region started 7 cells from the edge.)
    The aei/carpet branches (sinterp_mode 1/2) are pointwise (a 3-node
-   quadratic {tp-2,tp-1,tp}), so a margin of 2 cells is correct for them. */
+   quadratic {tp-2,tp-1,tp}), so a margin of 2 cells is correct for them.
+   The local27 branch (sinterp_mode 3) fits a 5x5x5 stencil (nodes
+   tp-2..tp+2) whose nodal Christoffels take 6th-order FD derivatives
+   (+/-3 around each node): the full read window is [tp-5, tp+5], hence
+   margin 5. */
 static int safe_margin_cells(void)
 {
-  return (gstate.sinterp_mode == 0) ? 3 : 2;
+  if (gstate.sinterp_mode == 0) return 3;
+  if (gstate.sinterp_mode == 3) return 5;
+  return 2;
 }
 
 /* in-range test for one direction of one level:
@@ -271,32 +275,6 @@ static int pick_level(const double y[], int map)
     const LevelData *L = &gstate.LD[map][l];
     if (in_level_dir(y, L, 0) && in_level_dir(y, L, 1) &&
         in_level_dir(y, L, 2))
-      return l;
-  }
-  return -1;
-}
-
-/* finest level (of the given map) whose `margin`-cell safe region contains y;
-   -1 if none.  param margin (not safe_margin_cells()) so the pointwise
-   AEI/carpet path (margin 2, 3-node quadratic + boundary extrapolation)
-   can be tested independently of the local27 path (margin 3, 6th-order FD).
-   Degenerate (too-thin) safe regions fall back to the interior box, matching
-   in_level_dir. */
-static int pick_level_margin(const double y[], int map, int margin)
-{
-  for (int l = gstate.samr_levels-1; l >= 0; l--)
-  {
-    if (!gstate.LD[map][l].valid) continue;
-    const LevelData *L = &gstate.LD[map][l];
-    int in = 1;
-    for (int d = 0; d < 3; d++)
-    {
-      double lo = L->origin[d] + (CCTK_REAL)margin * L->dx[d];
-      double hi = L->origin[d] + (CCTK_REAL)(L->lsh[d]-1-margin) * L->dx[d];
-      if (lo > hi) { lo = L->i_lbnd[d]; hi = L->i_ubnd[d]; }
-      if (y[d+1] < lo || y[d+1] > hi) { in = 0; break; }
-    }
-    if (in)
       return l;
   }
   return -1;
@@ -499,15 +477,28 @@ int cf2_fitting(int m, const double y[]);
 void geodesics_integrate(CCTK_ARGUMENTS);
 
 /* forward declarations of the grid-mode sampler helpers defined
-   further below (the time_interp = linear branch of cf2_fitting uses
-   them before their definition) */
-static void metric_27_sample_tl(int m, int tl, int i4, int i5, int i6, gd_data *out);
+   further below */
 static void fit_metric_poly27(int m, const gd_data src[3][3][3],
                               CCTK_REAL dst[4][4][POLY27],
                               CCTK_INT dstc[4][4]);
-static void fit_cf2_poly27(const double G[27][4][4][4],
-                           CCTK_REAL dst[4][4][4][POLY27],
-                           CCTK_INT dstc[4][4][4]);
+static void metric_at_cell_tl(int tl, int ix, int iy, int iz, gd_data *out);
+static void pointwise_cf2_tl(int m, CCTK_INT tl, CCTK_INT i1, CCTK_INT i2, CCTK_INT i3,
+                             double cf2out[4][4][4]);
+/* local27 (sinterp_mode 3) helpers, defined further below */
+static void p125_eval_deriv(const CCTK_REAL c[POLY125],
+                            double tx, double ty, double tz,
+                            double *val, double *dtx, double *dty, double *dtz);
+static void fit_metric_poly125(const gd_data src[125],
+                               CCTK_REAL dst[4][4][POLY125],
+                               CCTK_INT dstc[4][4]);
+static void fit_cf2_poly125(const double G[125][4][4][4],
+                            CCTK_REAL dst[4][4][4][POLY125],
+                            CCTK_INT dstc[4][4][4]);
+static void local27_time_weights(int m, double y0, double w[3], int *nlev);
+static int local27_christoffel_analytic(int m, const double y[8], double cf2[4][4][4]);
+/* 1D 3-node (order-2) time-Lagrange weights, defined further below */
+static inline double fourd_tw(int lvl, double s);
+static inline double fourd_tw_a(int lvl, double s);
 
 /* ============================================================================================
    6th-order FD for metric derivatives (your original)
@@ -666,38 +657,48 @@ static inline CCTK_REAL poly27_eval(const double y[], int m,
     c[26]*tx2*ty2*tz2;
 }
 
-/* Poly27 basis exponents: term k = tx^A[k] ty^B[k] tz^C[k], the tensor
-   product {0,1,2}^3 in EXACTLY the order of the c[0..26] terms used by
-   poly27_eval (monomials: 1, tx, ty, tz, tx^2, ty^2, tz^2, tx ty, ...). */
-static const int P27_A[27] = {0,1,0,0,2,0,0,1,1,0,2,2,1,0,1,0,1,2,2,0,2,1,1,2,2,1,2};
-static const int P27_B[27] = {0,0,1,0,0,2,0,1,0,1,1,0,2,2,0,1,1,2,0,2,1,2,1,2,1,2,2};
-static const int P27_C[27] = {0, 0, 0, 1, 0, 0, 2, 0, 1, 1, 0, 1, 0, 1, 2, 2, 1, 0, 2, 2, 1, 1, 2, 1, 2, 2, 2};
-
-/* value of tx^a ty^b tz^c for a,b,c in {0,1,2} (normalized coords) */
-static inline double p27_monom(int a, int b, int c, double tx, double ty, double tz)
+/* ============================================================================================
+   local27 (sinterp_mode 3): 125-term quartic tensor-product polynomial
+   (5 nodes per axis, offsets {-2..+2} from 'below'; term index
+   k = a*25 + b*5 + c is tx^a ty^b tz^c, coefficients from the V5INV
+   separable fit).  Nested evaluation gives the value and all three
+   spatial derivatives w.r.t. the NORMALIZED coords (tx,ty,tz) in one
+   pass (~200 FLOPs; physical derivatives require division by dx at the
+   caller).
+   ============================================================================================ */
+static void p125_eval_deriv(const CCTK_REAL c[POLY125],
+                            double tx, double ty, double tz,
+                            double *val, double *dtx, double *dty, double *dtz)
 {
-  double x = 1.0; if (a==1) x = tx; else if (a==2) x = tx*tx;
-  double y = 1.0; if (b==1) y = ty; else if (b==2) y = ty*ty;
-  double z = 1.0; if (c==1) z = tz; else if (c==2) z = tz*tz;
-  return x*y*z;
-}
-
-/* Derivatives of the 27-term polynomial w.r.t. the NORMALIZED coords tx,ty,tz.
-   dP/dtx etc. (physical derivatives require division by dx,dy,dz at caller). */
-static void p27_deriv(double tx, double ty, double tz,
-                      const double c[27],
-                      double *dtx, double *dty, double *dtz)
-{
-  *dtx = *dty = *dtz = 0.0;
-  for (int k = 0; k < 27; ++k)
+  double px[5], py[5], pz[5];
+  int a, b;
+  px[0] = 1.0; py[0] = 1.0; pz[0] = 1.0;
+  for (int i = 1; i < 5; i++) { px[i] = px[i-1]*tx; py[i] = py[i-1]*ty; pz[i] = pz[i-1]*tz; }
+  double v = 0.0, vx = 0.0, vy = 0.0, vz = 0.0;
+  for (a = 0; a < 5; a++)
   {
-    const double v = c[k];
-    if (v == 0.0) continue;
-    const int a = P27_A[k], b = P27_B[k], cc = P27_C[k];
-    if (a >= 1) *dtx += v * (double)a * p27_monom(a-1, b, cc, tx, ty, tz);
-    if (b >= 1) *dty += v * (double)b * p27_monom(a, b-1, cc, tx, ty, tz);
-    if (cc>= 1) *dtz += v * (double)cc * p27_monom(a, b, cc-1, tx, ty, tz);
+    /* P_a   = sum_b ty^b      Q_ab(tz)
+       dP_a  = sum_b b ty^{b-1} Q_ab(tz)          (d/dty)
+       dR_a  = sum_b ty^b      Q'_ab(tz)          (d/dtz) */
+    double Pa = 0.0, dPa = 0.0, dRa = 0.0;
+    for (b = 0; b < 5; b++)
+    {
+      const CCTK_REAL *cp = c + a*25 + b*5;
+      double Q  = cp[0] + cp[1]*pz[1] + cp[2]*pz[2] + cp[3]*pz[3] + cp[4]*pz[4];
+      double dQ = cp[1] + 2.0*cp[2]*pz[1] + 3.0*cp[3]*pz[2] + 4.0*cp[4]*pz[3];
+      Pa  += py[b]*Q;
+      dRa += py[b]*dQ;
+      if (b > 0) dPa += (double)b * py[b-1] * Q;
+    }
+    v  += px[a]*Pa;
+    vy += px[a]*dPa;
+    vz += px[a]*dRa;
+    if (a > 0) vx += (double)a * px[a-1] * Pa;
   }
+  if (val) *val = v;
+  if (dtx) *dtx = vx;
+  if (dty) *dty = vy;
+  if (dtz) *dtz = vz;
 }
 
 /* ============================================================================================
@@ -719,15 +720,17 @@ void cf2_grid (int m, int i1, int i2, int i3)
   i5 = i2;
   i6 = i3;
 
-  /* absolute grid indices (1-based): the stencil reads cells
-     (point-1, point, point+1).  With below = origin+(point-1)*dx and
-     tx = (y-below)/dx those cells sit at tx = -0.5, +0.5, +1.5, i.e. at
-     {-1, 0, +1} in a frame centered on the center cell (tx-0.5).  A
-     particle in the center cell has tx = 0.5 (centered 0) = the middle
-     stencil node, so NO additional shift of tx is applied. */
-  i1 = i1 + gstate.pgeodesic[m].point[1] - 1;
-  i2 = i2 + gstate.pgeodesic[m].point[2] - 1;
-  i3 = i3 + gstate.pgeodesic[m].point[3] - 1;
+  /* absolute grid indices (1-based): the stencil reads the three nodes
+     (point-1, point, point+1) (0-based), centred on the particle's
+     nearest node 'point' (= the reference node of 'below' =
+     origin+point*dx).  With tx = (y-below)/dx the three nodes sit at
+     tx = -1, 0, +1 -- exactly the {-1,0,1} node set of MtxA (middle
+     column 13 = reference node) -- and the particle has
+     tx in [-0.5, +0.5): always inside the stencil, pure interpolation
+     (no extrapolation). */
+  i1 = i1 + gstate.pgeodesic[m].point[1];
+  i2 = i2 + gstate.pgeodesic[m].point[2];
+  i3 = i3 + gstate.pgeodesic[m].point[3];
 
   index = LD_INDEX(i1-1, i2-1, i3-1);
 
@@ -863,7 +866,8 @@ void cf2_grid (int m, int i1, int i2, int i3)
 /* ============================================================================================
    pointwise_cf2_tl: Christoffel symbols (2nd kind) at ONE grid point
    (absolute 1-based indices i1,i2,i3) from a single metric time level
-   tl (0 = t, 1 = t - dt), for the time_interp = linear path.
+   tl (0 = t, 1 = t - dt), for the local27 (sinterp_mode 3) per-level
+   Christoffel sampling (both levels of each stencil are precomputed).
    Operation-identical to the cf2_grid core (3+1 inverse from the level
    fields, 6th-order FD spatial metric derivatives at the same level)
    except:
@@ -969,10 +973,10 @@ static void pointwise_cf2_tl(int m, CCTK_INT tl, CCTK_INT i1, CCTK_INT i2, CCTK_
 /* A 4-metric is "usable" for the geodesic integration iff it is finite and
    has the Lorentzian signature we need: g_tt < 0 and a positive-definite
    spatial part (diagonal spatial components > 0).  This rejects the
-   degenerate all-zero fit (g_tt = 0, g_ii = 0) that poisons the local27
-   cheap path, as well as any non-finite fit.  It is a *conservative* test:
-   it may over-trigger (switching to the AEI extrapolant, which is still a
-   valid metric), but it never lets a bad metric through. */
+   degenerate all-zero fit (g_tt = 0, g_ii = 0) that poisons the l27 cheap
+   path, as well as any non-finite fit.  It is a *conservative* test: it
+   may over-trigger (dropping the particle via the l27_bad gate), but it
+   never lets a bad metric through. */
 static int metric_valid(const double gdn[4][4])
 {
   int mu,nu;
@@ -988,7 +992,6 @@ int cf2_fitting (int m, const double y[])
 {
   CCTK_INT i, j1, j2, j3, j4, j5, j6, j7, j8;
   const int pm = gstate.pgeodesic[m].cur_map;   /* owning block */
-  gd_data gd1buf[3][3][3]; /* time-level-1 metric samples (t - dt) */
 
   /* threshold for "constant field" detection */
   const double rel_eps = 1e-8;
@@ -1011,28 +1014,9 @@ int cf2_fitting (int m, const double y[])
                      : (gstate.multi_exact ? 0 : pick_level(y, pm));
   if (lvl < 0)
   {
-    /* local27 (sinterp_mode 0): the margin-3 (6th-order FD) safe region
-       rejects the particle, but the particle may still be inside the grid
-       of a coarser region that the pointwise AEI interpolant (3-node
-       quadratic, margin 2 + boundary extrapolation) can handle.  Fall back
-       to AEI (via the l27_bad gate in metric_at_point /
-       christoffel_at_point) instead of dropping.  pick_level_margin picks the
-       finest level whose margin-2 region contains the point.  If the point
-       is just outside that margin-2 region (i.e. in the shadow zone but still
-       inside the level-0 grid), fall back to the coarsest level (0), whose
-       grid always contains any in-domain point; the AEI extrapolant handles
-       it.  (For truly out-of-domain points aei_interp_point fails and the
-       particle is dropped as before.) */
-    if (gstate.sinterp_mode == 0 && !gstate.multi_amr)
-    {
-      int aei_lvl = pick_level_margin(y, pm, 2);
-      if (aei_lvl < 0) aei_lvl = 0;   /* shadow zone: coarsest grid contains it */
-      gstate.pgeodesic[m].outbd = 0;
-      gstate.pgeodesic[m].level = aei_lvl;
-      gstate.pgeodesic[m].l27_bad = 1;   /* gate to AEI extrapolant */
-      switch_to_level(pm, aei_lvl);
-      return 0;
-    }
+    /* The margin-3 (6th-order FD) safe region rejects the particle.  No
+       mode has an extrapolant fallback in this version (l27 is fully
+       self-contained by design), so the particle is dropped. */
     gstate.pgeodesic[m].outbd = 1;
     return 0;
   }
@@ -1054,10 +1038,10 @@ int cf2_fitting (int m, const double y[])
      The clip below would then centre the 27-point stencil 4+ cells away,
      giving a huge extrapolation and a garbage fit (superluminal velocity
      -> drop).  A particle in the *face cell* (tpoint within [1, lsh-1])
-     is fine with the clip (half-cell extrapolation), so only the genuine
-     out-of-box case falls back to the AEI extrapolant (the same l27_bad
-     gate the single-process shadow-zone path uses).  In single-proc runs
-     the owning box is the full grid, so a particle is never out-of-box. */
+     is fine (the centred stencil still contains the particle), so only the
+     genuine out-of-box case is dropped (l27_bad gate; l27 has no
+     extrapolant in this version).  In single-proc runs the owning box is
+     the full grid, so a particle is never out-of-box. */
   if (gstate.multi_amr && gstate.sinterp_mode == 0 &&
       lvl >= 0 && lvl < gstate.samr_levels)
   {
@@ -1066,47 +1050,61 @@ int cf2_fitting (int m, const double y[])
        (i_lbnd/i_ubnd), which sits ~4-7 cells inside the grid edge.  A
        particle claimed to this rank but lying OUTSIDE the interior box is
        in the gap/shadow zone (between the interior edge and the grid edge).
-       The full local27 stencil (margin-3 + 6th-order FD, 4 cells each way)
-       is not guaranteed to fit there, so gate to the AEI extrapolant (a 3-node
-       quadratic with margin-2 + boundary extrapolant), which is designed to
-       handle exactly these near-boundary points and is what the single-process
-       shadow-zone path uses.  In single-proc the owning box is the full grid,
-       so a particle is never out-of-box. */
+       The full l27 stencil (margin-3 + 6th-order FD, 4 cells each way) is
+       not guaranteed to fit there, so the particle is dropped (l27_bad
+       gate; l27 has no extrapolant in this version).  In single-proc the
+       owning box is the full grid, so a particle is never out-of-box. */
     double yx = y[1], yy = y[2], yz = y[3];
     if (yx <  L->i_lbnd[0] || yy <  L->i_lbnd[1] || yz <  L->i_lbnd[2] ||
         yx >= L->i_ubnd[0] || yy >= L->i_ubnd[1] || yz >= L->i_ubnd[2])
     {
-      gstate.pgeodesic[m].l27_bad = 1;   /* gate to AEI extrapolant */
+      gstate.pgeodesic[m].l27_bad = 1;   /* gate to the drop policy */
       return 0;
     }
   }
 
-  /* debug: tpoint / geometry for a single particle (gated by GEODESIC_DBG_TPT50) */
-
-  /* local27 (sinterp_mode 0): clip the index into the stencil-safe range.
-     The local patch (full 1p, or a per-rank sub-patch in the multi_amr
-     case) maps tpoint into [3, lsh-4] under the 3-cell safe margin, but
-     every grid read here goes through
-     g4dn(), which accepts only valid cells (1-based ix in [1, lsh]) and
-     the full read window is [tp-4, tp+4] (the 3x3x3 cf2_grid stencil plus
-     the 6th-order FD padding) -- so the safe range is [5, lsh-4], one
-     cell inside the box's first boundary face.  A particle sitting in that
-     face cell (e.g. a z=0 particle on the z+ rank, the shared boundary of
-     the 2x2 decomposition) would map to tp=4 and read ix=0 out of bounds.
-     Clipping tp to [5, lsh-4] keeps every read (including the direct
-     LD_INDEX reads in cf2_grid) inside valid cells.  The polynomial is
-     still evaluated at the true y: for a boundary-face particle the local
-     coordinate reaches -0.5, a half-cell extrapolation of the quartic
-     surface fit that is negligible for a smooth metric; for interior
-     particles the clip never fires. */
+  /* l27 (sinterp_mode 0): clip the index into the stencil-safe range.
+     Every grid read here goes through g4dn() or a direct LD_INDEX, which
+     accept only valid cells (1-based ix in [1, lsh]).  The stencil is the
+     three nodes (tpoint-1, tpoint, tpoint+1) (0-based), centred on the
+     nearest node tpoint (= reference node of 'below'), and cf2_grid
+     additionally takes 6th-order FD metric derivatives at each stencil
+     node (+/-3 nodes around it), so the full read window around the
+     centred stencil is [tpoint-4, tpoint+4] (0-based) -- the safe range
+     for tpoint is [4, lsh-5], one cell inside the box's first boundary
+     face.  A particle sitting in a face cell (e.g. a z=0 particle on the
+     z+ rank, the shared boundary of the 2x2 decomposition) would
+     otherwise map to tp=3 and read ix=0 out of bounds.  Clipping tp to
+     [4, lsh-5] keeps every read (including the direct LD_INDEX reads in
+     cf2_grid) inside valid cells.  For interior particles the clip never
+     fires and the particle sits at tx in [-0.5, +0.5] relative to
+     'below', inside the centred stencil (pure interpolation);
+     near-boundary particles that the clip pushes out of the stencil are
+     dropped instead (l27_bad gate). */
   if (gstate.sinterp_mode == 0 && !gstate.sexact)
+  {
+    for (i=1; i<4; i++)
+    {
+      if (tpoint[i] < 4)
+        tpoint[i] = 4;
+      if (tpoint[i] > gstate.LD[pm][lvl].lsh[i-1] - 5)
+        tpoint[i] = gstate.LD[pm][lvl].lsh[i-1] - 5;
+    }
+  }
+  /* local27 (sinterp_mode 3): the 5x5x5 stencil reads nodes tp-2..tp+2 and the
+     nodal Christoffels take 6th-order FD derivatives (+/-3 around each
+     node), so the full read window is [tp-5, tp+5] (0-based); the safe
+     range for tpoint is [5, lsh-6].  Same rationale as the mode-0 clip
+     above (keep every read inside valid cells; interior particles are
+     unaffected). */
+  if (gstate.sinterp_mode == 3 && !gstate.sexact)
   {
     for (i=1; i<4; i++)
     {
       if (tpoint[i] < 5)
         tpoint[i] = 5;
-      if (tpoint[i] > gstate.LD[pm][lvl].lsh[i-1] - 4)
-        tpoint[i] = gstate.LD[pm][lvl].lsh[i-1] - 4;
+      if (tpoint[i] > gstate.LD[pm][lvl].lsh[i-1] - 6)
+        tpoint[i] = gstate.LD[pm][lvl].lsh[i-1] - 6;
     }
   }
 
@@ -1132,7 +1130,13 @@ int cf2_fitting (int m, const double y[])
 
     for (i=1; i<4; i++)
     {
-      gstate.pgeodesic[m].below[i] = gstate.LD[pm][lvl].origin[i-1] + (tpoint[i] - 1) * gstate.LD[pm][lvl].dx[i-1];
+      /* below = position of node tpoint, the particle's NEAREST node
+         (tpoint = lrint(u+0.5)): the stencil nodes {tpoint-1, tpoint,
+         tpoint+1} sit at tx = (y-below)/dx in {-1,0,+1} (the MtxA node
+         set, middle node = below) and the particle in [-0.5,+0.5) --
+         always strictly inside the stencil, so poly27_eval/cf2_func are
+         pure interpolations (no extrapolation). */
+      gstate.pgeodesic[m].below[i] = gstate.LD[pm][lvl].origin[i-1] + tpoint[i] * gstate.LD[pm][lvl].dx[i-1];
       gstate.pgeodesic[m].dxp[i-1] = gstate.LD[pm][lvl].dx[i-1];
     }
 
@@ -1142,95 +1146,15 @@ int cf2_fitting (int m, const double y[])
        no sampling is needed. */
     if (!gstate.sexact && gstate.sinterp_mode == 0)
     {
-      if (!gstate.stime_interp)
-      {
-        /* original path: metric + Christoffel symbols on the stencil
-           (level 0 / current time).  Also sample the OLDER (t-dt) level
-           into gd1buf: the robust (blend-then-inverse) path needs the
-           1st-order time derivative (g0 - g1)/dt, which requires both
-           time levels.  The historical off path never read the old level,
-           so pgd1 stayed all-zero and the (g0 - g1)/dt term was spurious
-           (the l27 particle-drop bug). */
-        for (j1=0; j1<3; j1++)
-          for (j2=0; j2<3; j2++)
-            for (j3=0; j3<3; j3++)
-            {
-              cf2_grid(m, j1, j2, j3);
-              metric_27_sample_tl(m, 1, j1, j2, j3, &gd1buf[j1][j2][j3]);
-            }
-        /* old-level validity: all-zero or non-finite stencil samples mean the
-           past time level(s) are not filled at this AMR cell (first
-           integration, or a newly-grown refinement region).  Both stored
-           past levels (1 and 2) must be valid for the 3-node time blend
-           (robust_metric_interp = "fourd"/"fourdh"/"poly"); scan all of
-           them so that a missing level-2 forces the robust path to fall
-           back to the current level only.  Flag it so the robust path pins
-           theta to 1 (current level).  Same detection as the linear branch. */
-        {
-          int old_bad = 0;
-          double maxabs = 0.0;
-          for (j1=0; j1<3 && !old_bad; j1++)
-            for (j2=0; j2<3 && !old_bad; j2++)
-              for (j3=0; j3<3 && !old_bad; j3++)
-                for (i=0; i<4; i++)
-                  for (j4=0; j4<4; j4++)
-                  {
-                    double v = gd1buf[j1][j2][j3].gd[i][j4];
-                    if (!isfinite(v))
-                      old_bad = 1;
-                    if (isfinite(v) && fabs(v) > maxabs)
-                      maxabs = fabs(v);
-                  }
-          if (!old_bad && maxabs < 1e-100)
-            old_bad = 1;
-          gstate.pgeodesic[m].old_level_bad = old_bad ? 1 : 0;
-        }
-      }
-      else
-      {
-        /* local27+linear: 4-metric only, both time levels
-           (time level 0 -> pgeodesic[m].gd, time level 1 -> gd1buf) */
-        for (j1=0; j1<3; j1++)
-          for (j2=0; j2<3; j2++)
-            for (j3=0; j3<3; j3++)
-            {
-              metric_27_sample_tl(m, 0, j1, j2, j3, &gstate.pgeodesic[m].gd[j1][j2][j3]);
-              metric_27_sample_tl(m, 1, j1, j2, j3, &gd1buf[j1][j2][j3]);
-            }
-        /*
-         * Detect an invalid OLDER time level: if every one of the 27
-         * stencil cells holds an all-zero (or non-finite) 4-metric on
-         * level 1, the past time level is not filled at this AMR cell
-         * (typical at the very first integration, when the particle's
-         * coordinate time lags the grid, or when the refinement region
-         * has just grown over the particle).  Flag it so the linear
-         * blend below (and christoffel_at_point) can fall back to the
-         * current level. */
-        {
-          int old_bad = 0;
-          double maxabs = 0.0;
-          for (j1=0; j1<3 && !old_bad; j1++)
-            for (j2=0; j2<3 && !old_bad; j2++)
-              for (j3=0; j3<3 && !old_bad; j3++)
-                for (i=0; i<4; i++)
-                  for (j4=0; j4<4; j4++)
-                  {
-                    double v = gd1buf[j1][j2][j3].gd[i][j4];
-                    if (!isfinite(v))
-                      old_bad = 1;
-                    if (isfinite(v) && fabs(v) > maxabs)
-                      maxabs = fabs(v);
-                  }
-          if (!old_bad && maxabs < 1e-100)
-            old_bad = 1;
-          gstate.pgeodesic[m].old_level_bad = old_bad ? 1 : 0;
-        }
-        /* [REBUILD_DBG] env GEODESIC_DBG_REBUILD: dump the 27x16 stencil
-           samples (current level pgeodesic[m].gd + old level gd1buf) with
-           their non-finite counts and magnitudes, to locate whether the
-           nan enters through grid sampling (current/old level) at this
-           level/patch or only appears in the fits. */
-      }
+      /* l27 (sinterp_mode 0): the 27-point stencil of the CURRENT time
+         level only: cf2_grid fills the nodal 4-metric (pgeodesic[m].gd)
+         and the nodal Christoffel symbols (cf2g) from the 6th-order FD
+         metric derivatives + nodal inverse.  The historical level-0-only
+         sampling: no past-time-level read in this mode. */
+      for (j1=0; j1<3; j1++)
+        for (j2=0; j2<3; j2++)
+          for (j3=0; j3<3; j3++)
+            cf2_grid(m, j1, j2, j3);
     }
     /* sinterp_mode 1/2 (aei/carpet): no stencil sampling (pointwise) */
   }
@@ -1256,11 +1180,30 @@ int cf2_fitting (int m, const double y[])
      --------------------------------------------- */
   if (!gstate.sexact)
   {
-  /* the legacy local27+off path fits Christoffel + metric;
-     local27+linear fits only the metric (both time levels);
-     aei/carpet fit nothing (pointwise interpolation) */
-  if (gstate.sinterp_mode == 0 && !gstate.stime_interp)
+  /* l27 fits the Christoffel symbols and the metric (current level only);
+     local27 and aei/carpet fit nothing here (the 125-node fits
+     below / pointwise interpolation) */
+  if (gstate.sinterp_mode == 0)
   {
+  /* NaN-poison gate: cf2_grid's 6th-order FD window reads the cells
+     point-3..point+3 around each stencil node, so a single non-finite
+     grid cell (e.g. the Kerr-Schild r = 0 coordinate singularity) can
+     poison the nodal Christoffel samples even when all 27 stencil
+     nodes themselves are finite.  If any sample is non-finite the pcf2
+     fit below is useless; l27_bad is forced after the metric staging
+     (which would otherwise clear it) and the particle is then dropped
+     by the loss policy (no fallback interpolant in this mode).
+     Re-evaluated at every refit (non-sticky), consistent with the
+     metric staging. */
+  int cf2_fin = 1, s5, s6, s7, sa, sb, sc;
+  for (s5=0; s5<3 && cf2_fin; s5++)
+  for (s6=0; s6<3 && cf2_fin; s6++)
+  for (s7=0; s7<3 && cf2_fin; s7++)
+    for (sa=0; sa<4 && cf2_fin; sa++)
+      for (sb=0; sb<4 && cf2_fin; sb++)
+        for (sc=0; sc<4 && cf2_fin; sc++)
+          if (!isfinite((double)gstate.pgeodesic[m].cf2g[s7][s6][s5].cf2[sa][sb][sc]))
+            cf2_fin = 0;
   /* ---------------------------------------------
      Polynomial fitting: Christoffel coefficients
      --------------------------------------------- */
@@ -1339,7 +1282,7 @@ int cf2_fitting (int m, const double y[])
      (metric_valid) is it copied into the official pgd/pgdc slot.  If it is
      invalid (degenerate all-zero / non-finite 4-metric), the last good
      coefficients are kept and l27_bad is set, so the metric/Christoffel
-     path falls back to AEI for this step.
+     path drops the particle for this refit (loss policy).
      --------------------------------------------- */
   {
     CCTK_REAL tmp_pgd[4][4][POLY27];
@@ -1367,98 +1310,153 @@ int cf2_fitting (int m, const double y[])
     }
     else
     {
-      /* keep the last good coefficients; fall back to AEI this step */
+      /* keep the last good coefficients; drop the particle this refit */
       gstate.pgeodesic[m].l27_bad = 1;
     }
   }
-
-  /* old level (t - dt): fit its metric from the gd1buf stencil samples.
-     Operation-identical to the current-level pgd fit (same constant-field
-     shortcut).  Used only by the robust (blend-then-inverse) path, which
-     needs the 1st-order time derivative (g0 - g1)/dt.  When
-     adaptive_interp = off or the particle never enters the strong-curvature
-     region this array is simply unused. */
-  fit_metric_poly27(m, gd1buf,
-                    gstate.pgeodesic[m].pgd1, gstate.pgeodesic[m].pgd1c);
-  } /* end local27+off: Christoffel/metric fitting */
-  else if (gstate.sinterp_mode == 0)
+  if (!cf2_fin)
   {
-    /* local27+linear: fit the 4-metric on both time levels (used by
-       metric_at_point), and fit the pointwise Christoffel symbols at
-       the 27 stencil cells on each time level into pcf2 (t) and
-       pcf2_1 (t - dt); the particle Christoffel is then the linear
-       time blend of the two polynomial evaluations (see
-       christoffel_at_point) */
+    /* Christoffel stencil samples were non-finite (FD-window poison):
+       the pcf2 fit above is invalid.  The metric staging just run may
+       have cleared the flag, so re-set it here; the cheap Christoffel
+       path (func_ode) and the metric path (metric_at_point) then drop
+       the particle (loss policy) for this refit. */
+    gstate.pgeodesic[m].l27_bad = 1;
+  }
+
+  } /* end l27: Christoffel/metric fitting */
+  else if (gstate.sinterp_mode == 3)
+  {
+    /* local27: 125-node (5x5x5) quartic tensor-product fits on the three
+       stored time levels.  Per level: sample the nodal 4-metrics
+       (metric_at_cell_tl) and the nodal Christoffel symbols
+       (pointwise_cf2_tl: 6th-order FD metric derivatives + nodal
+       inverse, the l27 convention), fit the 125-term polynomial (the
+       separable V5INV transforms = the 125x125 inverse Vandermonde), and
+       probe the level-1 / level-2 metric-sample validity.  The particle
+       Christoffel is the nlev-level time-Lagrange blend of the level
+       fits (fast path); when the nodal Christoffels are NaN-poisoned
+       (some 6th-order FD window hits the central singularity / excised
+       region) the Christoffel is assembled analytically from the metric
+       fits (local27_christoffel_analytic).  Fully self-contained: no AEI
+       thorn, no CarpetInterp. */
+    double cf2n[125][4][4][4];   /* nodal Christoffel, one level at a time */
+    gd_data g125[125];           /* nodal 4-metric, one level at a time */
+    CCTK_REAL tmp_g[3][4][4][POLY125];
+    CCTK_INT tmp_gc[3][4][4];
+    int cf2_fin = 1, mu, nu, dd;
+    for (CCTK_INT tl=0; tl<3; tl++)
     {
-      /* stage current-level metric into a preparation zone, validate at the
-         particle position, commit only if valid (same as the off branch) */
-      CCTK_REAL tmp_pgd[4][4][POLY27];
-      CCTK_INT  tmp_pgd_c[4][4];
-      fit_metric_poly27(m, gstate.pgeodesic[m].gd, tmp_pgd, tmp_pgd_c);
-      double gtmp[4][4];
-      int mu,nu,good;
-      for (mu=0;mu<4;mu++)
-        for (nu=0;nu<4;nu++)
-          gtmp[mu][nu]=0.0;
-      for (mu=0;mu<4;mu++)
-        for (nu=mu;nu<4;nu++)
-        gtmp[mu][nu] = poly27_eval(y,m,tmp_pgd[mu][nu],tmp_pgd_c[mu][nu]);
-      good = metric_valid(gtmp);
-      if (good)
+      /* 125 stencil nodes (offsets -2..+2 from tpoint), level tl */
+      for (CCTK_INT ix=0; ix<5; ix++)
+      for (CCTK_INT iy=0; iy<5; iy++)
+      for (CCTK_INT iz=0; iz<5; iz++)
       {
+        int i1 = (int)(ix-2) + gstate.pgeodesic[m].point[1];
+        int i2 = (int)(iy-2) + gstate.pgeodesic[m].point[2];
+        int i3 = (int)(iz-2) + gstate.pgeodesic[m].point[3];
+        /* i1..i3 are 0-based node indices (point[] is 0-based):
+           metric_at_cell_tl takes 0-based directly; pointwise_cf2_tl
+           subtracts 1 internally (LD_INDEX(i-1)), so it takes 1-based. */
+        metric_at_cell_tl((int)tl, i1, i2, i3, &g125[ix*25+iy*5+iz]);
+        if (cf2_fin)
+          pointwise_cf2_tl(m, tl, i1+1, i2+1, i3+1, cf2n[ix*25+iy*5+iz]);
+      }
+      fit_metric_poly125(g125, tmp_g[tl], tmp_gc[tl]);
+      /* NaN-poison gate: the 6th-order FD window of some stencil node can
+         reach non-finite cells even when the 125 nodes themselves are
+         finite; any non-finite nodal Christoffel kills the level fit.
+         (Scanned only while cf2_fin, so a later level's un-filled cf2n
+         is never read.) */
+      if (cf2_fin)
+      {
+        for (int k=0; k<125 && cf2_fin; k++)
+        for (mu=0; mu<4 && cf2_fin; mu++)
+        for (nu=0; nu<4 && cf2_fin; nu++)
+        for (dd=0; dd<4 && cf2_fin; dd++)
+          if (!isfinite((double)cf2n[k][mu][nu][dd]))
+            cf2_fin = 0;
+        if (cf2_fin)
+          fit_cf2_poly125(cf2n, gstate.pgeodesic[m].pcf2_125[tl],
+                          gstate.pgeodesic[m].pcf2_125c[tl]);
+      }
+      /* older-level validity from this level's metric samples
+         (all-zero or non-finite -> the past level is not filled) */
+      if (tl == 1)
+      {
+        int old_bad = 0; double maxabs = 0.0;
+        for (int k=0; k<125 && !old_bad; k++)
+        for (mu=0; mu<4 && !old_bad; mu++)
+        for (nu=0; nu<4 && !old_bad; nu++)
+        {
+          double v = g125[k].gd[mu][nu];
+          if (!isfinite(v))
+            old_bad = 1;
+          else if (fabs(v) > maxabs)
+            maxabs = fabs(v);
+        }
+        gstate.pgeodesic[m].old_level_bad =
+          (!old_bad && maxabs < 1e-100) ? 1 : old_bad;
+      }
+      if (tl == 2)
+      {
+        int lvl2_bad = 0; double maxabs = 0.0;
+        for (int k=0; k<125 && !lvl2_bad; k++)
+        for (mu=0; mu<4 && !lvl2_bad; mu++)
+        for (nu=0; nu<4 && !lvl2_bad; nu++)
+        {
+          double v = g125[k].gd[mu][nu];
+          if (!isfinite(v))
+            lvl2_bad = 1;
+          else if (fabs(v) > maxabs)
+            maxabs = fabs(v);
+        }
+        gstate.pgeodesic[m].local27_lvl2_bad =
+          (!lvl2_bad && maxabs < 1e-100) ? 1 : lvl2_bad;
+      }
+    }
+    /* stage the blended metric at the particle position, validate, commit
+       (the last good fits are kept if it is invalid; the particle is then
+       dropped via local27_bad -- no AEI fallback in this mode) */
+    {
+      double tx = (y[1]-gstate.pgeodesic[m].below[1])/gview.delta_space[0];
+      double ty = (y[2]-gstate.pgeodesic[m].below[2])/gview.delta_space[1];
+      double tz = (y[3]-gstate.pgeodesic[m].below[3])/gview.delta_space[2];
+      double w[3]; int nlev;
+      local27_time_weights(m, y[0], w, &nlev);
+      double gtmp[4][4];
+      for (mu=0;mu<4;mu++) for (nu=0;nu<4;nu++) gtmp[mu][nu]=0.0;
+      for (mu=0;mu<4;mu++)
+      for (nu=mu;nu<4;nu++)
+      {
+        double g = 0.0;
+        for (int l=0; l<nlev; l++)
+        {
+          double cv;
+          p125_eval_deriv(tmp_g[l][mu][nu], tx,ty,tz, &cv,NULL,NULL,NULL);
+          g += w[l]*cv;
+        }
+        gtmp[mu][nu] = g;
+      }
+      if (metric_valid(gtmp))
+      {
+        for (int l=0; l<3; l++)
         for (mu=0;mu<4;mu++)
-          for (nu=0;nu<4;nu++)
-          {
-            for (j4=0;j4<POLY27;j4++)
-              gstate.pgeodesic[m].pgd[mu][nu][j4] = tmp_pgd[mu][nu][j4];
-            gstate.pgeodesic[m].pgdc[mu][nu] = tmp_pgd_c[mu][nu];
-          }
-        gstate.pgeodesic[m].l27_bad = 0;
+        for (nu=0;nu<4;nu++)
+        {
+          for (int j4=0;j4<POLY125;j4++)
+            gstate.pgeodesic[m].pgd125[l][mu][nu][j4] = tmp_g[l][mu][nu][j4];
+          gstate.pgeodesic[m].pgd125c[l][mu][nu] = tmp_gc[l][mu][nu];
+        }
+        gstate.pgeodesic[m].local27_bad = 0;
       }
       else
-      {
-        gstate.pgeodesic[m].l27_bad = 1;
-      }
+        gstate.pgeodesic[m].local27_bad = 1;
     }
-    fit_metric_poly27(m, gd1buf,
-                      gstate.pgeodesic[m].pgd1, gstate.pgeodesic[m].pgd1c);
-    {
-      double G0[27][4][4][4], G1[27][4][4][4];
-      CCTK_INT i1, i2, i3;
-      int cc = 0;
-      for (j5=0; j5<3; j5++)
-      for (j6=0; j6<3; j6++)
-      for (j7=0; j7<3; j7++)
-      {
-        i1 = j5+gstate.pgeodesic[m].point[1]-1;
-        i2 = j6+gstate.pgeodesic[m].point[2]-1;
-        i3 = j7+gstate.pgeodesic[m].point[3]-1;
-        pointwise_cf2_tl(m, 0, i1, i2, i3, G0[cc]);
-        pointwise_cf2_tl(m, 1, i1, i2, i3, G1[cc]);
-        cc++;
-      }
-      fit_cf2_poly27(G0, gstate.pgeodesic[m].pcf2, gstate.pgeodesic[m].pcf2c);
-      fit_cf2_poly27(G1, gstate.pgeodesic[m].pcf2_1, gstate.pgeodesic[m].pcf2_1c);
-    }
+    if (!cf2_fin)
+      gstate.pgeodesic[m].local27_cf2_bad = 1;
   }
   } /* end if (!gstate.sexact): Christoffel/metric fitting */
-
-  /* temporary debug: fit sanity (gated by GEODESIC_DEBUG_FIT, particle 0 only) */
-
-  /* temporary debug: Kerr-Schild index/origin cross-check, gated by
-     GEODESIC_KSCHECK.  For a subset of particles (m % 4 == 0) print the
-     current-level origin/dx/lsh, the 1-based center node, the particle
-     position, and the full spatial metric read via g4dn at that node.
-     The closed-form Kerr-Schild (a=0) values at the same node are compared
-     in scratch/ks_check.py to expose any index/origin offset.  DELETE ME. */
-
-  {
-    /* temporary debug: 3x3x3 metric-neighborhood cross-check, gated by
-       GEODESIC_DEBUG_NBG, for the first 16 particles.  Prints gxx(tl=0) on a
-       3x3x3 stencil about the particle's current node so we can see whether
-       a NaN is localised to one grid node (data corruption at that node) or
-       is an artefact of the read.  DELETE ME. */
-  }
 
   gstate.pgeodesic[m].flag = 1;
   return 1;
@@ -1556,10 +1554,8 @@ static int build_gup_from_gdn(const double gdn[4][4],
 }
 
 /* ============================================================================================
-   Grid-mode sampler helpers (metric_interp = local27/aei/carpet,
-   time_interp = off/linear).  See the parfile keywords; the
-   local27+off combination reproduces the original code path
-   bit-for-bit (those branches are left untouched above).
+   Grid-mode sampler helpers (metric_interp = l27 / local27 / aei /
+   carpet).  See the parfile keywords for the mode meanings.
    ============================================================================================ */
 
 /* ADMBase fields in the fixed order used by aei/carpet interpolation
@@ -1571,42 +1567,6 @@ static const char *const adm_field[10] = { "ADMBASE::gxx", "ADMBASE::gxy", "ADMB
 static int adm_varidx[10];
 static int adm_varidx_ok = 0;
 
-/* 27-term basis: value and normalized derivatives at (x,y,z) =
-   (y[]-below)/dx  (physical derivatives = returned values / dx_i) */
-static inline void poly27_eval_d(const double y[], int m, const CCTK_REAL c[POLY27],
-                                 const CCTK_INT is_const,
-                                 CCTK_REAL *val, CCTK_REAL *dvx, CCTK_REAL *dvy, CCTK_REAL *dvz)
-{
-  if (is_const)
-  {
-    *val = c[0];
-    *dvx = *dvy = *dvz = 0.0;
-    return;
-  }
-  const CCTK_REAL x  = (y[1]-gstate.pgeodesic[m].below[1])/gview.delta_space[0];
-  const CCTK_REAL yy = (y[2]-gstate.pgeodesic[m].below[2])/gview.delta_space[1];
-  const CCTK_REAL zz = (y[3]-gstate.pgeodesic[m].below[3])/gview.delta_space[2];
-  *val = c[0]+c[1]*x+c[2]*yy+c[3]*zz+c[4]*x*x+c[5]*yy*yy+c[6]*zz*zz
-       + c[7]*x*yy+c[8]*x*zz+c[9]*yy*zz
-       + c[10]*x*x*yy+c[11]*x*x*zz+c[12]*x*yy*yy+c[13]*yy*yy*zz
-       + c[14]*x*zz*zz+c[15]*yy*zz*zz+c[16]*x*yy*zz
-       + c[17]*x*x*yy*yy+c[18]*x*x*zz*zz+c[19]*yy*yy*zz*zz
-       + c[20]*x*x*yy*zz+c[21]*x*yy*yy*zz+c[22]*x*yy*zz*zz
-       + c[23]*x*x*yy*yy*zz+c[24]*x*x*yy*zz*zz+c[25]*x*yy*yy*zz*zz+c[26]*x*x*yy*yy*zz*zz;
-  *dvx = c[1]+2.0*c[4]*x+c[7]*yy+c[8]*zz+2.0*c[10]*x*yy+2.0*c[11]*x*zz+c[12]*yy*yy
-       + c[14]*zz*zz+c[16]*yy*zz+2.0*c[17]*x*yy*yy+2.0*c[18]*x*zz*zz
-       + 2.0*c[20]*x*yy*zz+c[21]*yy*yy*zz+c[22]*yy*zz*zz+2.0*c[23]*x*yy*yy*zz
-       + 2.0*c[24]*x*yy*zz*zz+c[25]*yy*yy*zz*zz+2.0*c[26]*x*yy*yy*zz*zz;
-  *dvy = c[2]+2.0*c[5]*yy+c[7]*x+c[9]*zz+c[10]*x*x+2.0*c[12]*x*yy+2.0*c[13]*yy*zz
-       + c[15]*zz*zz+c[16]*x*zz
-       + 2.0*c[17]*x*x*yy+2.0*c[19]*yy*zz*zz+c[20]*x*x*zz+2.0*c[21]*x*yy*zz
-       + c[22]*x*zz*zz+2.0*c[23]*x*x*yy*zz+c[24]*x*x*zz*zz+2.0*c[25]*x*yy*zz*zz
-       + 2.0*c[26]*x*x*yy*zz*zz;
-  *dvz = c[3]+c[8]*x+c[9]*yy+2.0*c[6]*zz+c[11]*x*x+c[13]*yy*yy+2.0*c[14]*x*zz
-       + 2.0*c[15]*yy*zz+c[16]*x*yy+2.0*c[18]*x*x*zz+2.0*c[19]*yy*yy*zz
-       + c[20]*x*x*yy+c[21]*x*yy*yy+2.0*c[22]*x*yy*zz+c[23]*x*x*yy*yy
-       + 2.0*c[24]*x*x*yy*zz+2.0*c[25]*x*yy*yy*zz+2.0*c[26]*x*x*yy*yy*zz*zz;
-}
 
 /* 3+1 -> 4-metric at one cell of time level tl (mirrors the metric block
    of cf2_grid, which reads time level 0) */
@@ -1626,15 +1586,6 @@ static void metric_at_cell_tl(int tl, int ix, int iy, int iz, gd_data *out)
   out->gd[0][3]=out->gd[3][0]=shift_z;
   out->gd[1][1]=gxxL; out->gd[1][2]=out->gd[2][1]=gxyL; out->gd[1][3]=out->gd[3][1]=gxzL;
   out->gd[2][2]=gyyL; out->gd[2][3]=out->gd[3][2]=gyzL; out->gd[3][3]=gzzL;
-}
-
-/* metric sample of the 3x3x3 stencil (local indices i4,i5,i6 in 0..2)
-   at time level tl: raw index = i + point[] - 2, as in cf2_grid */
-static void metric_27_sample_tl(int m, int tl, int i4, int i5, int i6, gd_data *out)
-{
-  metric_at_cell_tl(tl, i4+gstate.pgeodesic[m].point[1]-2,
-                    i5+gstate.pgeodesic[m].point[2]-2,
-                    i6+gstate.pgeodesic[m].point[3]-2, out);
 }
 
 /* compose 4-metric, dgd[deriv][mu][nu] (row 0 left zero for the caller)
@@ -1711,47 +1662,6 @@ static void cf2_pointwise(const double dgd[4][4][4], const double gup[4][4], dou
   for (j1=0;j1<4;j1++) for (j2=0;j2<4;j2++) for (j3=0;j3<j2;j3++) cf2[j1][j2][j3]=cf2[j1][j3][j2];
 }
 
-/* Christoffel at the particle position from the local27 METRIC fits
-   (pgd, pgd1), i.e. the adaptive (blend-then-inverse) approach at a
-   single spatial level.  Metric value, spatial derivatives and inverse
-   come from the current level (pgd); the time derivative is the 2-level
-   difference (g0 - g1)/dt using the old level (pgd1), or 0 when the old
-   level is unavailable (old_level_bad).  This is the robust replacement
-   for the direct Christoffel-polynomial fit (cf2_func / pcf2), which was
-   inaccurate in strong-field regions.  Used by the local27 sampler when
-   adaptive_interp = on (default). */
-static int cf2_metric_off(int m, const double y[], double cf2[4][4][4])
-{
-  double gdn[4][4], dgd[4][4][4], gup[4][4];
-  double beta_up[3], gamma_dn[3][3], gamma_up[3][3];
-  double g0, g1, dx, dy, dz;
-  int mu, nu, d;
-  const int oldbad = gstate.pgeodesic[m].old_level_bad;
-  const double tx = (y[1]-gstate.pgeodesic[m].below[1])/gview.delta_space[0];
-  const double ty = (y[2]-gstate.pgeodesic[m].below[2])/gview.delta_space[1];
-  const double tz = (y[3]-gstate.pgeodesic[m].below[3])/gview.delta_space[2];
-  for (mu=0;mu<4;mu++) for (nu=0;nu<4;nu++) for (d=0;d<4;d++) dgd[d][mu][nu]=0.0;
-  for (mu=0;mu<4;mu++) for (nu=0;nu<4;nu++) gdn[mu][nu]=0.0;
-  for (mu=0;mu<4;mu++)
-    for (nu=mu;nu<4;nu++)
-    {
-      g0 = poly27_eval(y,m,gstate.pgeodesic[m].pgd[mu][nu],gstate.pgeodesic[m].pgdc[mu][nu]);
-      gdn[mu][nu]=g0; gdn[nu][mu]=g0;
-      p27_deriv(tx,ty,tz,gstate.pgeodesic[m].pgd[mu][nu], &dx,&dy,&dz);
-      dgd[1][mu][nu]=dx/gview.delta_space[0]; dgd[1][nu][mu]=dgd[1][mu][nu];
-      dgd[2][mu][nu]=dy/gview.delta_space[1]; dgd[2][nu][mu]=dgd[2][mu][nu];
-      dgd[3][mu][nu]=dz/gview.delta_space[2]; dgd[3][nu][mu]=dgd[3][mu][nu];
-      if (oldbad) g1 = g0;
-      else
-        g1 = poly27_eval(y,m,gstate.pgeodesic[m].pgd1[mu][nu],gstate.pgeodesic[m].pgd1c[mu][nu]);
-      dgd[0][mu][nu]=(g0-g1)/gview.dt; dgd[0][nu][mu]=dgd[0][mu][nu];
-    }
-  if (!build_gup_from_gdn(gdn,NULL,beta_up,gamma_dn,gamma_up,gup))
-    return 0;
-  cf2_pointwise(dgd,gup,cf2);
-  return 1;
-}
-
 
 
 /* 27-point metric fit (operation-identical to the original pgd fit in
@@ -1793,48 +1703,136 @@ static void fit_metric_poly27(int m, const gd_data src[3][3][3],
   }
 }
 
-/* 27-point fit of the pointwise Christoffel symbols (2nd kind) at the
-   stencil cells, for one time level (the caller precomputes both
-   levels with pointwise_cf2_tl); operation-identical to the off-path
-   Christoffel fit (same constant-field shortcut).  Fitting the
-   Christoffels directly -- instead of fitting the metric and its
-   6th-order FD derivatives separately and combining pointwise -- is
-   what brings the time_interp = linear Christoffel to off-path
-   accuracy. */
-static void fit_cf2_poly27(const double G[27][4][4][4],
-                           CCTK_REAL dst[4][4][4][POLY27],
-                           CCTK_INT dstc[4][4][4])
+/* ============================================================================================
+   local27 (sinterp_mode 3): 125-node fits (one time level each).
+   Node order: j = ix*25 + iy*5 + iz (ix outermost), node offsets {-2..+2}
+   from the stencil centre.  The fit is three separable 5x5 V5INV
+   transforms per component -- exactly the 125x125 inverse Vandermonde
+   (MtxA125 = V5INV ^| V5INV ^| V5INV) -- with the same constant-field
+   shortcut as the 27-point fits.  Grid points inside the stencil are
+   reproduced exactly (each 5-node transform is identity on its nodes).
+   ============================================================================================ */
+
+/* 125-node metric fit (10 independent components) for ONE time level */
+static void fit_metric_poly125(const gd_data src[125],
+                               CCTK_REAL dst[4][4][POLY125],
+                               CCTK_INT dstc[4][4])
 {
   const double rel_eps = 1e-8;
-  double ly[27];
-  int j1,j2,j3,j4,j5,j6,j7,j8;
+  double ly[125], t1[5][25], t2[5][25];
+  int mu, nu, k, a, b, c;
+  for (mu=0;mu<4;mu++)
+  for (nu=mu;nu<4;nu++)
+  {
+    double tmpy=0.0, tol=0.0; int vary=0;
+    for (k=0;k<125;k++)
+    {
+      ly[k] = src[k].gd[mu][nu];
+      if (k==0) { tmpy=ly[0]; tol=fabs(tmpy)*rel_eps+rel_eps; vary=0; }
+      else if (!vary) { if (ly[k]>tmpy+tol || ly[k]<tmpy-tol) vary=1; }
+    }
+    if (vary)
+    {
+      /* pass x: t1[a][iy*5+iz] = sum_ix V5INV[a][ix] ly[ix*25+iy*5+iz] */
+      for (a=0;a<5;a++)
+      for (int iy=0;iy<5;iy++)
+      for (int iz=0;iz<5;iz++)
+      {
+        double s=0.0;
+        for (int ix=0;ix<5;ix++) s += V5INV[a][ix]*ly[ix*25+iy*5+iz];
+        t1[a][iy*5+iz]=s;
+      }
+      /* pass y: t2[a][b*5+iz] = sum_iy V5INV[b][iy] t1[a][iy*5+iz] */
+      for (a=0;a<5;a++)
+      for (b=0;b<5;b++)
+      for (int iz=0;iz<5;iz++)
+      {
+        double s=0.0;
+        for (int iy=0;iy<5;iy++) s += V5INV[b][iy]*t1[a][iy*5+iz];
+        t2[a][b*5+iz]=s;
+      }
+      /* pass z: dst[k=a*25+b*5+c] = sum_iz V5INV[c][iz] t2[a][b*5+iz] */
+      for (a=0;a<5;a++)
+      for (b=0;b<5;b++)
+      for (c=0;c<5;c++)
+      {
+        double s=0.0;
+        for (int iz=0;iz<5;iz++) s += V5INV[c][iz]*t2[a][b*5+iz];
+        dst[mu][nu][a*25+b*5+c]=s;
+      }
+      dstc[mu][nu]=0;
+    }
+    else
+    {
+      for (k=1;k<POLY125;k++) dst[mu][nu][k]=0.0;
+      dst[mu][nu][0]=tmpy;
+      dstc[mu][nu]=1;
+    }
+  }
+  /* symmetry in the lower indices: g_{mu nu} = g_{nu mu} */
+  for (mu=1;mu<4;mu++)
+  for (nu=0;nu<mu;nu++)
+  {
+    for (k=0;k<POLY125;k++) dst[mu][nu][k]=dst[nu][mu][k];
+    dstc[mu][nu]=dstc[nu][mu];
+  }
+}
+
+/* 125-node fit of the pointwise Christoffel symbols at the 5x5x5 stencil
+   nodes for ONE time level (the caller precomputes the three levels with
+   pointwise_cf2_tl); same constant-field shortcut and lower-index
+   symmetry as fit_cf2_poly27. */
+static void fit_cf2_poly125(const double G[125][4][4][4],
+                            CCTK_REAL dst[4][4][4][POLY125],
+                            CCTK_INT dstc[4][4][4])
+{
+  const double rel_eps = 1e-8;
+  double ly[125], t1[5][25], t2[5][25];
+  int j1, j2, j3, k, a, b, c;
   for (j1=0;j1<4;j1++)
   for (j2=0;j2<4;j2++)
   for (j3=j2;j3<4;j3++)
   {
-    j8=0; double tmpy=0.0, tol=0.0; int vary=0;
-    for (j5=0;j5<3;j5++) for (j6=0;j6<3;j6++) for (j7=0;j7<3;j7++)
+    double tmpy=0.0, tol=0.0; int vary=0;
+    for (k=0;k<125;k++)
     {
-      ly[j8] = G[j7*9+j6*3+j5][j1][j2][j3];
-      if (j8==0) { tmpy=ly[0]; tol=fabs(tmpy)*rel_eps+rel_eps; vary=0; }
-      else if (!vary) { if (ly[j8]>tmpy+tol || ly[j8]<tmpy-tol) vary=1; }
-      j8++;
+      ly[k] = G[k][j1][j2][j3];
+      if (k==0) { tmpy=ly[0]; tol=fabs(tmpy)*rel_eps+rel_eps; vary=0; }
+      else if (!vary) { if (ly[k]>tmpy+tol || ly[k]<tmpy-tol) vary=1; }
     }
     if (vary)
     {
-      for (j4=0;j4<lN;j4++)
+      for (a=0;a<5;a++)
+      for (int iy=0;iy<5;iy++)
+      for (int iz=0;iz<5;iz++)
       {
-        dst[j1][j2][j3][j4] = 0.0;
-        for (j5=0;j5<lN;j5++)
-          dst[j1][j2][j3][j4] += MtxA[j4][j5]*ly[j5];
+        double s=0.0;
+        for (int ix=0;ix<5;ix++) s += V5INV[a][ix]*ly[ix*25+iy*5+iz];
+        t1[a][iy*5+iz]=s;
       }
-      dstc[j1][j2][j3] = 0;
+      for (a=0;a<5;a++)
+      for (b=0;b<5;b++)
+      for (int iz=0;iz<5;iz++)
+      {
+        double s=0.0;
+        for (int iy=0;iy<5;iy++) s += V5INV[b][iy]*t1[a][iy*5+iz];
+        t2[a][b*5+iz]=s;
+      }
+      for (a=0;a<5;a++)
+      for (b=0;b<5;b++)
+      for (c=0;c<5;c++)
+      {
+        double s=0.0;
+        for (int iz=0;iz<5;iz++) s += V5INV[c][iz]*t2[a][b*5+iz];
+        dst[j1][j2][j3][a*25+b*5+c]=s;
+      }
+      dstc[j1][j2][j3]=0;
     }
     else
     {
-      for (j4=1;j4<lN;j4++) dst[j1][j2][j3][j4] = 0.0;
-      dst[j1][j2][j3][0] = tmpy;
-      dstc[j1][j2][j3] = 1;
+      for (k=1;k<POLY125;k++) dst[j1][j2][j3][k]=0.0;
+      dst[j1][j2][j3][0]=tmpy;
+      dstc[j1][j2][j3]=1;
     }
   }
   /* symmetry in the lower indices: Gamma^mu_{ab} = Gamma^mu_{ba} */
@@ -1842,7 +1840,7 @@ static void fit_cf2_poly27(const double G[27][4][4][4],
   for (j2=1;j2<4;j2++)
   for (j3=0;j3<j2;j3++)
   {
-    for (j4=0;j4<lN;j4++) dst[j1][j2][j3][j4] = dst[j1][j3][j2][j4];
+    for (k=0;k<POLY125;k++) dst[j1][j2][j3][k] = dst[j1][j3][j2][k];
     dstc[j1][j2][j3] = dstc[j1][j3][j2];
   }
 }
@@ -1908,78 +1906,6 @@ static int aei_interp_point(int tl, double x, double y, double z,
   return 0;
 }
 
-/* CarpetInterp pointwise: order-2 (quadratic) Lagrange tensor product on
-   the thread-local gview slot-0 arrays, all 10 fields at once.  The point
-   maps to the nearest node tp (0-based, as in cf2_fitting; clamped to
-   [2, lsh-1] so the 3x3x3 stencil never leaves the interior cells; a
-   boundary particle gets the same half-cell-scale extrapolation as the
-   multi_amr clip in cf2_fitting), and the value is a tensor product of
-   the one-dimensional quadratic weights through the stencil nodes
-   {tp-2, tp-1, tp}, evaluated at the true point.  Spatial derivatives are the analytic derivatives of the same
-   quadratic interpolant (same order as the old 7-point centered
-   differences).  Only the TLS gview copy is touched, so the routine is
-   thread-safe and works on every rank (the old implementation called
-   the CarpetInterp driver, which does collective MPI and is neither). */
-static int carpet_interp_point(int tl, double x, double y, double z,
-                               double g31[10], double dg31[10][3])
-{
-  const double *fp[10] = {
-    gview.gxx[tl], gview.gxy[tl], gview.gxz[tl], gview.gyy[tl],
-    gview.gyz[tl], gview.gzz[tl], gview.alp[tl],
-    gview.betax[tl], gview.betay[tl], gview.betaz[tl]
-  };
-  const double q[3] = { x, y, z };
-  double w[3][3], dw[3][3];
-  int i0[3], f, ax, ay, az, k;
-  for (k = 0; k < 3; k++)
-  {
-    CCTK_INT tp;
-    double u = (q[k] - gview.origin_space[k]) * gview.delta_inv[k];
-    double r;
-    tp = (CCTK_INT)lrint(floor(u + 0.5));   /* 0-based nearest node, as in
-                                               cf2_fitting (node n sits at
-                                               origin + n*dx) */
-    if (tp < 2) tp = 2;
-    if (tp > gview.lsh[k] - 1) tp = gview.lsh[k] - 1;
-    i0[k] = (int)(tp - 1);                  /* stencil center node, in [1, lsh-2]
-                                               (stencil = {i0-1, i0, i0+1}) */
-    r = u - i0[k];                          /* in [0.5, 1.5] (the particle is
-                                               within half a cell of node tp =
-                                               i0+1); [0, 1] / [1, 2] at the
-                                               domain boundary (extrapolation,
-                                               cf2_fitting) */
-    w[k][0]  = 0.5 * r * (r - 1.0);
-    w[k][1]  = 1.0 - r * r;
-    w[k][2]  = 0.5 * r * (r + 1.0);
-    dw[k][0] = r - 0.5;
-    dw[k][1] = -2.0 * r;
-    dw[k][2] = r + 0.5;
-  }
-  for (f = 0; f < 10; f++)
-  {
-    double s[4] = { 0.0, 0.0, 0.0, 0.0 };
-    for (ax = 0; ax < 3; ax++)
-    for (ay = 0; ay < 3; ay++)
-    for (az = 0; az < 3; az++)
-    {
-      double v = fp[f][LD_INDEX(i0[0]+ax-1, i0[1]+ay-1, i0[2]+az-1)];
-      double wv = w[0][ax] * w[1][ay] * w[2][az];
-      s[0] += wv * v;
-      s[1] += dw[0][ax] * w[1][ay] * w[2][az] * v;
-      s[2] += w[0][ax] * dw[1][ay] * w[2][az] * v;
-      s[3] += w[0][ax] * w[1][ay] * dw[2][az] * v;
-    }
-    g31[f] = s[0];
-    if (dg31)
-    {
-      dg31[f][0] = s[1] * gview.delta_inv[0];
-      dg31[f][1] = s[2] * gview.delta_inv[1];
-      dg31[f][2] = s[3] * gview.delta_inv[2];
-    }
-  }
-  return 0;
-}
-
 /* theta of the particle's coordinate time y[0] within the level's two
    stored time levels.  L = the particle's level; its levels span
    [L->time - L->dt, L->time].  Absolute mapping (independent of sstep
@@ -2001,260 +1927,106 @@ static inline double geodesic_time_theta(int m, double y0)
   return theta;
 }
 
-/* AEI order-4 pointwise 4-metric at a particle position.  The strong-
-   curvature replacement for the local27 (order-2, 27-point) fit.  Must be
-   called with the same particle (m, y) as aei_christoffel_at_point so the
-   two produce identical metric frames (u.u = -1 renormalization).  Returns
-   0 on success, -1 if the point is outside AEI's boundary/extrapolation
-   tolerance (gdn left untouched in that case). */
-static int aei_metric_at_point(int m, const double y[8], double gdn[4][4])
+/* local27 (sinterp_mode 3): time-Lagrange weights of the stored levels for
+   the particle's coordinate time y0.  The three stored levels sit at the
+   local fractional time s in [-1,1] as level 0 (t) = +1, level 1 (t-dt) = 0,
+   level 2 (t-2dt) = -1, with s = 2*theta - 1 (theta = geodesic_time_theta,
+   clamped to [0,1]).  Degraded blends: old_level_bad -> level 0 only
+   (theta pinned to 1); local27_lvl2_bad -> two-level blend of [t, t-dt] with
+   weights (theta, 1-theta).  nlev = number of active levels (1..3). */
+static void local27_time_weights(int m, double y0, double w[3], int *nlev)
 {
-  double g31[10], dg31[10][3];
-  if (aei_interp_point(0, y[1], y[2], y[3], g31, dg31) != 0)
-    return -1;
-  if (!gstate.stime_interp)
+  double theta = geodesic_time_theta(m, y0);
+  if (gstate.pgeodesic[m].old_level_bad)
   {
-    compose_4metric(g31, dg31, gdn, NULL, NULL);
-    return 0;
+    *nlev = 1;
+    w[0] = 1.0; w[1] = 0.0; w[2] = 0.0;
+    return;
   }
+  if (gstate.pgeodesic[m].local27_lvl2_bad)
   {
-    double g31a[10], dg31a[10][3];
-    double theta = geodesic_time_theta(m, y[0]);
-    if (aei_interp_point(1, y[1], y[2], y[3], g31a, dg31a) != 0)
-      return -1;
-    /* the two stored ADMBase time levels span [t-dt, t]; theta is the
-       particle's absolute phase in that window (geodesic_time_theta),
-       clamped to [0,1] */
-    for (int mu = 0; mu < 10; mu++)
-    {
-      g31[mu] = g31a[mu] + theta * (g31[mu] - g31a[mu]);
-      for (int nu = 0; nu < 3; nu++)
-        dg31[mu][nu] = dg31a[mu][nu] + theta * (dg31[mu][nu] - dg31a[mu][nu]);
-    }
-    compose_4metric(g31, dg31, gdn, NULL, NULL);
-    return 0;
+    *nlev = 2;
+    w[0] = theta; w[1] = 1.0 - theta; w[2] = 0.0;
+    return;
+  }
+  *nlev = 3;
+  {
+    const double s = 2.0*theta - 1.0;
+    w[0] = fourd_tw(0, s);
+    w[1] = fourd_tw(1, s);
+    w[2] = fourd_tw(2, s);
   }
 }
 
-/* ===================== log-space (qwen1.txt) robust metric value ==== */
-
-/* 1D 5-node (order-4) Lagrange weight for node offset a in {-2..+2} at the
-   local coordinate p in [-0.5,0.5) -- the AEI a4 (3d cube size5, centered)
-   convention: center = round(fp), p = fp - center. */
-static inline double log_w5(int a, double p)
-{
-  /* 5-node order-4 Lagrange basis at nodes {-2,-1,0,1,2}, local coord p.
-     Denominators are prod_{k!=a} (a - k): a=-2 -> 24, a=-1 -> -6, a=0 -> 4,
-     a=1 -> -6, a=2 -> 24. */
-  switch (a) {
-    case -2: return (p+1.0)*p*(p-1.0)*(p-2.0)/24.0;
-    case -1: return (p+2.0)*p*(p-1.0)*(p-2.0)/(-6.0);
-    case  0: return (p+2.0)*(p+1.0)*(p-1.0)*(p-2.0)/4.0;
-    case  1: return (p+2.0)*(p+1.0)*p*(p-2.0)/(-6.0);
-    case  2: return (p+2.0)*(p+1.0)*p*(p-1.0)/24.0;
-  }
-  return 0.0;
-}
-
-/* Interpolate all 10 ADM fields at the particle (level tl) with the 5-node
-   order-4 tensor-product molecule: log|.| space for the positive fields
-   (gxx/gyy/gzz/lapse) and regular space for the six sign-changing fields.
-   Fills g31; returns 0 on success, -1 if the point is too close to the grid
-   boundary for the 5-node stencil (or a log field is non-positive). */
-static int interp_log_field_all(int tl, const double y[8], double g31[10])
-{
-  const double x = y[1], yy = y[2], z = y[3];
-  const CCTK_REAL *fields[10] = {
-      gview.gxx[tl], gview.gxy[tl], gview.gxz[tl],
-      gview.gyy[tl], gview.gyz[tl], gview.gzz[tl],
-      gview.alp[tl], gview.betax[tl], gview.betay[tl], gview.betaz[tl]
-  };
-  static const int log_field[10] = { 1,0,0,  1,0,0,  1,0,0,0 };
-  const double o[3] = {gview.origin_space[0], gview.origin_space[1],
-                       gview.origin_space[2]};
-  const double d[3] = {gview.delta_space[0], gview.delta_space[1],
-                       gview.delta_space[2]};
-  const double rlb[3] = {gview.r_lbnd[0], gview.r_lbnd[1], gview.r_lbnd[2]};
-  const double rub[3] = {gview.r_ubnd[0], gview.r_ubnd[1], gview.r_ubnd[2]};
-  double fp[3] = {(x-o[0])/d[0], (yy-o[1])/d[1], (z-o[2])/d[2]};
-  int  c[3]   = {(int)lround(fp[0]), (int)lround(fp[1]), (int)lround(fp[2])};
-  double p[3] = {fp[0]-c[0], fp[1]-c[1], fp[2]-c[2]};
-  /* the 5-node stencil must lie inside the safe (non-ghost) region */
-  for (int ax = 0; ax < 3; ax++) {
-    double sli = (rlb[ax] - o[ax])/d[ax];
-    double sui = (rub[ax] - o[ax])/d[ax];
-    if (c[ax]-2 < sli || c[ax]+2 > sui) return -1;
-  }
-  double w[3][5];
-  for (int ax = 0; ax < 3; ax++)
-    for (int a = -2; a <= 2; a++)
-      w[ax][a+2] = log_w5(a, p[ax]);
-  for (int f = 0; f < 10; f++) {
-    double V = 0.0;
-    for (int ii = 0; ii < 5; ii++)
-      for (int jj = 0; jj < 5; jj++)
-        for (int kk = 0; kk < 5; kk++) {
-          int gi = c[0]+(ii-2), gj = c[1]+(jj-2), gk = c[2]+(kk-2);
-          double fval = fields[f][LD_INDEX(gi,gj,gk)];
-          if (log_field[f]) {
-            if (fval <= 0.0) return -1;   /* guard: log of non-positive */
-            V += w[0][ii]*w[1][jj]*w[2][kk] * log(fval);
-          } else {
-            V += w[0][ii]*w[1][jj]*w[2][kk] * fval;
-          }
-        }
-    g31[f] = log_field[f] ? exp(V) : V;
-  }
-  return 0;
-}
-
-/* Log-space robust-path metric value (qwen1.txt).  The four positive ADM
-   fields (gxx, gyy, gzz, lapse) are interpolated in log|.| space to suppress
-   strong-curvature oscillation; the six sign-changing fields are in regular
-   space.  On a smooth metric this agrees with aei_metric_at_point to O(dx^4)
-   (same 5-node order-4 molecule).  Returns 0 on success, -1 if the point is
-   too close to the grid boundary for the 5-node stencil (caller falls back
-   to AEI, which extrapolates). */
-static int log_metric_at_point(int m, const double y[8], double gdn[4][4])
-{
-  double g31[10];
-  double theta = geodesic_time_theta(m, y[0]);
-  if (gstate.pgeodesic[m].old_level_bad) theta = 1.0;
-  if (gstate.stime_interp) {
-    double g31a[10];
-    if (interp_log_field_all(0, y, g31)  != 0) return -1;
-    if (interp_log_field_all(1, y, g31a) != 0) return -1;
-    for (int mu = 0; mu < 10; mu++)
-      g31[mu] = g31a[mu] + theta*(g31[mu] - g31a[mu]);
-  } else {
-    if (interp_log_field_all(0, y, g31) != 0) return -1;
-  }
-  compose_4metric(g31, NULL, gdn, NULL, NULL);
-  return 0;
-}
-
-/* forward declarations (the 4D robust-interpolation functions are defined
-   further below, after aei_christoffel_at_point) */
-static int fourd_metric_at_point(int m, const double y[8], double gdn[4][4]);
-static int fourd_christoffel_at_point(int m, const double y[8],
-                                      double cf2[4][4][4]);
-static int fourdh_metric_at_point(int m, const double y[8], double gdn[4][4]);
-static int fourdh_christoffel_at_point(int m, const double y[8],
-                                      double cf2[4][4][4]);
-static int poly_metric_at_point(int m, const double y[8], double gdn[4][4]);
-static int poly_christoffel_at_point(int m, const double y[8],
-                                    double cf2[4][4][4]);
-
-/* Robust-path metric value: 4D tensor product when robust_metric_interp is
-   on (mode 1 = fourd: interpolate the ADM fields, compose g at the sample
-   point; mode 2 = fourdh: compose g at each node and interpolate h = g - eta,
-   eta added back at the sample point), else log-space when
-   log_metric_interp is on, else plain AEI; on any boundary failure fall back
-   to AEI (which has boundary extrapolation). */
-static int robust_metric_at_point(int m, const double y[8], double gdn[4][4])
-{
-  if (gstate.robust_metric_interp == 1 && fourd_metric_at_point(m, y, gdn) == 0)
-    return 0;
-  if (gstate.robust_metric_interp == 2 && fourdh_metric_at_point(m, y, gdn) == 0)
-    return 0;
-  if (gstate.robust_metric_interp == 3 && poly_metric_at_point(m, y, gdn) == 0)
-    return 0;
-  if (gstate.log_metric_interp && log_metric_at_point(m, y, gdn) == 0)
-    return 0;
-  return aei_metric_at_point(m, y, gdn);
-}
-
-/* AEI order-4 pointwise Christoffel symbols at a particle position.  The
-   strong-curvature replacement for the local27 blend-then-inversion path;
-   also the core of the dedicated aei sampler's (sinterp_mode 1)
-   `christoffel_at_point` branch.  Must be called with the same particle
-   (m, y) as aei_metric_at_point so the metric frames agree.  Returns 1 on
-   success, 0 on interpolation failure. */
-static int aei_christoffel_at_point(int m, const double y[8], double cf2[4][4][4])
+/* local27 (sinterp_mode 3) fallback: assemble the Christoffel symbols
+   analytically from the 125-node METRIC fits (used when the nodal
+   Christoffel samples are NaN-poisoned).  Metric value and spatial
+   derivatives from the level-0 fit (p125_deriv); the time derivative from
+   the nlev-level time blend of the level fits (fourd_tw_a/dt for 3 levels,
+   (g0 - g1)/dt for 2, 0 for 1); then the 4x4 inverse + cf2_pointwise.
+   Mirrors cf2_metric_off on the 125-node polynomial. */
+static int local27_christoffel_analytic(int m, const double y[8], double cf2[4][4][4])
 {
   double gdn[4][4], dgd[4][4][4], gup[4][4];
-  double g31[10], dg31[10][3];
-  int j1, j2;
-  if (aei_interp_point(0, y[1], y[2], y[3], g31, dg31) != 0)
-    return 0;
-  if (!gstate.stime_interp)
+  double beta_up[3], gamma_dn[3][3], gamma_up[3][3];
+  double w[3], wa[3];
+  int nlev, mu, nu;
+  const double tx = (y[1]-gstate.pgeodesic[m].below[1])/gview.delta_space[0];
+  const double ty = (y[2]-gstate.pgeodesic[m].below[2])/gview.delta_space[1];
+  const double tz = (y[3]-gstate.pgeodesic[m].below[3])/gview.delta_space[2];
+  local27_time_weights(m, y[0], w, &nlev);
   {
-    compose_4metric(g31, dg31, gdn, dgd, gup);
-    if (gview.metric_static)
-    {
-      for (j1 = 0; j1 < 4; j1++)
-        for (j2 = 0; j2 < 4; j2++)
-          dgd[0][j1][j2] = 0.0;
-    }
-    else
-    {
-      double g31a[10], g31b[10], gnn1[4][4], gnn2[4][4];
-      if (aei_interp_point(1, y[1], y[2], y[3], g31a, NULL) != 0)
-        return 0;
-      if (aei_interp_point(2, y[1], y[2], y[3], g31b, NULL) != 0)
-        return 0;
-      compose_4metric(g31a, NULL, gnn1, NULL, NULL);
-      compose_4metric(g31b, NULL, gnn2, NULL, NULL);
-      /* 2nd-order 3-point time difference of the full 4-metric:
-         gdn = level 0 (t), gnn1 = level 1 (t-dt), gnn2 = level 2 (t-2dt) */
-      for (j1 = 0; j1 < 4; j1++)
-        for (j2 = 0; j2 < 4; j2++)
-          dgd[0][j1][j2] = (3.0 * gdn[j1][j2] - 4.0 * gnn1[j1][j2] + gnn2[j1][j2]) * (0.5 / gview.dt);
-    }
-    cf2_pointwise(dgd, gup, cf2);
-    {
-      static int i_cnt = 0;
-      if (getenv("GEODESIC_DBG_CF2_AEI") && m==0 && i_cnt<12) {
-        printf("[AEI] p0 t=%.4f x=%.5f y=%.5f z=%.5f\n", y[0],y[1],y[2],y[3]);
-        printf("[AEI] gdn g00=%.6f g11=%.6f g22=%.6f g01=%.6f g02=%.6f\n",
-               gdn[0][0],gdn[1][1],gdn[2][2],gdn[0][1],gdn[0][2]);
-        printf("[AEI] dgd[1] 00=%.6f 11=%.6f 22=%.6f 12=%.6f\n",
-               dgd[1][0][0],dgd[1][1][1],dgd[1][2][2],dgd[1][1][2]);
-        printf("[AEI] cf2[1] 00=%.6f 11=%.6f 22=%.6f 02=%.6f\n",
-               cf2[1][0][0],cf2[1][1][1],cf2[1][2][2],cf2[1][0][2]);
-        printf("[AEI] gup 00=%.6f 11=%.6f\n", gup[0][0],gup[1][1]);
-        i_cnt++;
-      }
-    }
-    return 1;
-  }
-  {
-    double g31a[10], dg31a[10][3], gnn0[4][4], gnn1[4][4];
     double theta = geodesic_time_theta(m, y[0]);
-    if (aei_interp_point(1, y[1], y[2], y[3], g31a, dg31a) != 0)
-      return 0;
-    compose_4metric(g31, NULL, gnn0, NULL, NULL);
-    compose_4metric(g31a, NULL, gnn1, NULL, NULL);
-    for (j1 = 0; j1 < 10; j1++)
+    if (gstate.pgeodesic[m].old_level_bad) theta = 1.0;
+    if (nlev == 3)
     {
-      g31[j1] = g31a[j1] + theta * (g31[j1] - g31a[j1]);
-      for (j2 = 0; j2 < 3; j2++)
-        dg31[j1][j2] = dg31a[j1][j2] + theta * (dg31[j1][j2] - dg31a[j1][j2]);
+      const double s = 2.0*theta - 1.0;
+      wa[0] = fourd_tw_a(0, s)/gview.dt;
+      wa[1] = fourd_tw_a(1, s)/gview.dt;
+      wa[2] = fourd_tw_a(2, s)/gview.dt;
     }
-    compose_4metric(g31, dg31, gdn, dgd, gup);
-    for (j1 = 0; j1 < 4; j1++)
-      for (j2 = 0; j2 < 4; j2++)
-        dgd[0][j1][j2] = (gnn0[j1][j2] - gnn1[j1][j2]) / gview.dt;
-    cf2_pointwise(dgd, gup, cf2);
-    return 1;
+    else if (nlev == 2)
+      { wa[0] = 1.0/gview.dt; wa[1] = -1.0/gview.dt; wa[2] = 0.0; }
+    else
+      { wa[0] = wa[1] = wa[2] = 0.0; }
   }
+  (void)w;
+  for (mu=0;mu<4;mu++)
+    for (nu=0;nu<4;nu++)
+    {
+      double g0 = 0.0, dx = 0.0, dy = 0.0, dz = 0.0;
+      p125_eval_deriv(gstate.pgeodesic[m].pgd125[0][mu][nu], tx,ty,tz, &g0,&dx,&dy,&dz);
+      gdn[mu][nu] = gdn[nu][mu] = g0;
+      dgd[1][mu][nu] = dgd[1][nu][mu] = dx/gview.delta_space[0];
+      dgd[2][mu][nu] = dgd[2][nu][mu] = dy/gview.delta_space[1];
+      dgd[3][mu][nu] = dgd[3][nu][mu] = dz/gview.delta_space[2];
+      dgd[0][mu][nu] = dgd[0][nu][mu] = wa[0]*g0;
+    }
+  for (mu=0;mu<4;mu++)
+  for (nu=mu;nu<4;nu++)
+  {
+    if (nlev >= 2)
+    {
+      double g1 = 0.0;
+      p125_eval_deriv(gstate.pgeodesic[m].pgd125[1][mu][nu], tx,ty,tz, &g1,NULL,NULL,NULL);
+      dgd[0][mu][nu] += wa[1]*g1;
+      dgd[0][nu][mu] = dgd[0][mu][nu];
+    }
+    if (nlev >= 3)
+    {
+      double g2 = 0.0;
+      p125_eval_deriv(gstate.pgeodesic[m].pgd125[2][mu][nu], tx,ty,tz, &g2,NULL,NULL,NULL);
+      dgd[0][mu][nu] += wa[2]*g2;
+      dgd[0][nu][mu] = dgd[0][mu][nu];
+    }
+  }
+  if (!build_gup_from_gdn(gdn, NULL, beta_up, gamma_dn, gamma_up, gup))
+    return 0;
+  cf2_pointwise(dgd, gup, cf2);
+  return 1;
 }
 
-/* ===================== 4D tensor-product robust interpolation ========== */
-/* True 4D (space 3D x time 1D) Lagrange interpolation for the local27
-   robust (use_robust) path, selected by Geodesic::robust_metric_interp.
-   Space: the 5-node order-4 Lagrange molecule (log_w5, identical to the
-   AEI a4).  Time: a 3-node order-2 Lagrange over the three stored ADMBase
-   levels [0]=t, [1]=t-dt, [2]=t-2dt, evaluated at the particle's fractional
-   time s = geodesic_time_theta in [0,1] (between levels 1 and 0).  The
-   full tensor product gives both the value and all four derivatives (3
-   spatial + 1 time) from one consistent interpolant: value O(dx^4) x
-   O(dt^3), spatial derivatives O(dx^3) x O(dt^3), time derivative O(dt^2).
-   This is strictly more consistent than AEI (value and derivative from the
-   same interpolant evaluated at the particle's true time, not a 2-level
-   blend with a separate difference).  Falls back to the plain AEI path on
-   boundary / level failure.  Only used for strong_christ_off = 0 (the AEI
-   strong-region path); the pure-l27 path is unaffected. */
+/* ===================== 3-node time-Lagrange weights (local27) ============ */
 
 /* 1D 3-node (order-2) Lagrange weight for time level lvl at fractional time
    s in [0,1].  Local node positions: level0 (t) = +1, level1 (t-dt) = 0,
@@ -2281,528 +2053,6 @@ static inline double fourd_tw_a(int lvl, double s)
   return 0.0;
 }
 
-/* analytic derivative of the 5-node order-4 weight log_w5(a, p) with respect
-   to the local coordinate p.  The log_w5 polynomials are exactly the Lagrange
-   basis at nodes -2..2, so dL_j/dp = L_j * sum_{k!=j} 1/(p-k).  Safe for all
-   p because the sum excludes k == a (no division by zero). */
-static inline double log_w5a(int a, double p)
-{
-  double w = log_w5(a, p);
-  double s = 0.0;
-  for (int k = -2; k <= 2; k++)
-    if (k != a) s += 1.0 / (p - (double)k);
-  return w * s;
-}
-
-/* 5-node order-4 spatial tensor-product interpolation of all 10 ADM fields at
-   level tl.  Fills g31[] with values and, if dg31 is non-NULL, the spatial
-   derivatives d/dx, d/dy, d/dz (in physical units) in dg31[][3].  Returns
-   -1 if the 5-node stencil does not lie inside the safe (non-ghost) region;
-   the caller then falls back to AEI, which extrapolates past the boundary. */
-static int interp_4d_space(int tl, double x, double y, double z,
-                           double g31[10], double dg31[10][3])
-{
-  const CCTK_REAL *fields[10] = {
-      gview.gxx[tl], gview.gxy[tl], gview.gxz[tl],
-      gview.gyy[tl], gview.gyz[tl], gview.gzz[tl],
-      gview.alp[tl], gview.betax[tl], gview.betay[tl], gview.betaz[tl]
-  };
-  const double o[3] = {gview.origin_space[0], gview.origin_space[1], gview.origin_space[2]};
-  const double dinv[3] = {gview.delta_inv[0], gview.delta_inv[1], gview.delta_inv[2]};
-  const double rlb[3] = {gview.r_lbnd[0], gview.r_lbnd[1], gview.r_lbnd[2]};
-  const double rub[3] = {gview.r_ubnd[0], gview.r_ubnd[1], gview.r_ubnd[2]};
-  const double fp[3] = {(x - o[0]) * dinv[0], (y - o[1]) * dinv[1], (z - o[2]) * dinv[2]};
-  const int c[3] = {(int)lround(fp[0]), (int)lround(fp[1]), (int)lround(fp[2])};
-  const double p[3] = {fp[0] - (double)c[0], fp[1] - (double)c[1], fp[2] - (double)c[2]};
-  /* the 5-node stencil must lie inside the safe (non-ghost) region */
-  for (int ax = 0; ax < 3; ax++) {
-    double sli = (rlb[ax] - o[ax]) * dinv[ax];
-    double sui = (rub[ax] - o[ax]) * dinv[ax];
-    if (c[ax] - 2 < sli || c[ax] + 2 > sui) return -1;
-  }
-  double w[3][5], dw[3][5];
-  for (int ax = 0; ax < 3; ax++)
-    for (int a = -2; a <= 2; a++) {
-      w[ax][a + 2] = log_w5(a, p[ax]);
-      dw[ax][a + 2] = log_w5a(a, p[ax]) * dinv[ax];   /* dW/d(coord) */
-    }
-  for (int f = 0; f < 10; f++) {
-    double V = 0.0, D0 = 0.0, D1 = 0.0, D2 = 0.0;
-    for (int ii = 0; ii < 5; ii++)
-      for (int jj = 0; jj < 5; jj++)
-        for (int kk = 0; kk < 5; kk++) {
-          double v = fields[f][LD_INDEX(c[0] + ii - 2, c[1] + jj - 2, c[2] + kk - 2)];
-          V  += w[0][ii] * w[1][jj] * w[2][kk] * v;
-          D0 += dw[0][ii] * w[1][jj] * w[2][kk] * v;
-          D1 += w[0][ii] * dw[1][jj] * w[2][kk] * v;
-          D2 += w[0][ii] * w[1][jj] * dw[2][kk] * v;
-        }
-    g31[f] = V;
-    if (dg31) { dg31[f][0] = D0; dg31[f][1] = D1; dg31[f][2] = D2; }
-  }
-  return 0;
-}
-
-/* 4D robust-path metric value.  The value is the full tensor product: for each
-   of the 3 time levels, the 5-node spatial interpolation is blended with the
-   3-node time weights, then compose_4metric gives the 4-metric.  When the past
-   time levels are unusable (metric_static: not filled yet / unreadable, or the
-   particle's old_level_bad) only level 0 is read (s = 1 pins the time weights
-   to (1,0,0)); reading the garbage past levels would poison the blend through
-   0 * NaN.  Returns 0 on success, -1 on boundary / level failure (caller falls
-   back to AEI). */
-static int fourd_metric_at_point(int m, const double y[8], double gdn[4][4])
-{
-  const int t1only = (gstate.pgeodesic[m].old_level_bad || gview.metric_static) ? 1 : 0;
-  const double s = t1only ? 1.0 : geodesic_time_theta(m, y[0]);
-  const int nlvl = t1only ? 1 : 3;
-  double g31t[3][10];
-  for (int lvl = 0; lvl < nlvl; lvl++) {
-    if (interp_4d_space(lvl, y[1], y[2], y[3], g31t[lvl], NULL) != 0)
-      return -1;
-  }
-  double g31tot[10];
-  for (int f = 0; f < 10; f++) {
-    double V = 0.0;
-    for (int lvl = 0; lvl < nlvl; lvl++) V += fourd_tw(lvl, s) * g31t[lvl][f];
-    g31tot[f] = V;
-  }
-  compose_4metric(g31tot, NULL, gdn, NULL, NULL);
-  return 0;
-}
-
-/* 4D robust-path Christoffel symbols.  For each time level, the 5-node spatial
-   interpolation (value + spatial derivatives) is blended with the 3-node time
-   weights for the metric value AND spatial derivatives; the time derivative is
-   the 3-node Lagrange derivative of the per-level metric values.  When the past
-   time levels are unusable (metric_static / old_level_bad) only level 0 is
-   read and d_t g = 0, matching the AEI branch's static handling.  Returns 1 on
-   success, 0 on boundary / level failure (caller falls back to AEI). */
-static int fourd_christoffel_at_point(int m, const double y[8], double cf2[4][4][4])
-{
-  double g31t[3][10], dg31t[3][10][3];
-  double gdn_lvl[3][4][4];
-  double gdn[4][4], dgd[4][4][4], gup[4][4];
-  double g31tot[10], dg31tot[10][3];
-  const double dt = gview.dt;
-  if (dt <= 0.0) return 0;
-  const int t1only = (gstate.pgeodesic[m].old_level_bad || gview.metric_static) ? 1 : 0;
-  const double s = t1only ? 1.0 : geodesic_time_theta(m, y[0]);
-  const int nlvl = t1only ? 1 : 3;
-  for (int lvl = 0; lvl < nlvl; lvl++) {
-    if (interp_4d_space(lvl, y[1], y[2], y[3], g31t[lvl], dg31t[lvl]) != 0)
-      return 0;
-    compose_4metric(g31t[lvl], dg31t[lvl], gdn_lvl[lvl], NULL, NULL);
-  }
-  for (int f = 0; f < 10; f++) {
-    double V = 0.0;
-    for (int lvl = 0; lvl < nlvl; lvl++) V += fourd_tw(lvl, s) * g31t[lvl][f];
-    g31tot[f] = V;
-    for (int a = 0; a < 3; a++) {
-      double D = 0.0;
-      for (int lvl = 0; lvl < nlvl; lvl++) D += fourd_tw(lvl, s) * dg31t[lvl][f][a];
-      dg31tot[f][a] = D;
-    }
-  }
-  compose_4metric(g31tot, dg31tot, gdn, dgd, gup);
-  /* overwrite dgd[0] (zeroed by compose_4metric) with the 3-node Lagrange
-     time derivative of the per-level metric values, in physical time units
-     (0 when the past levels are unusable).  gdn_lvl[lvl] is symmetric, so
-     dgd[0][mu][nu] is already symmetric. */
-  if (t1only)
-  {
-    for (int mu = 0; mu < 4; mu++)
-      for (int nu = 0; nu < 4; nu++)
-        dgd[0][mu][nu] = 0.0;
-  }
-  else
-  {
-    for (int lvl = 0; lvl < 3; lvl++)
-      for (int mu = 0; mu < 4; mu++)
-        for (int nu = 0; nu < 4; nu++)
-          dgd[0][mu][nu] = fourd_tw_a(lvl, s) / dt * gdn_lvl[lvl][mu][nu];
-  }
-  cf2_pointwise(dgd, gup, cf2);
-  return 1;
-}
-
-/* ===================== fourdh: 4D interpolation of h = g - eta ========== */
-/* Same 4D tensor-product machinery as fourd above, but the interpolated
-   field is the metric deviation h_mn = g_mn - eta_mn (eta = diag(-1,1,1,1)):
-   at each interpolation NODE the 4-metric is composed exactly from that
-   node's alpha/beta/gamma (compose_4metric), h is taken, and the 10
-   independent components of h are interpolated with the same 5-node space x
-   3-node time Lagrange weights; eta is added back at the sample point.
-   eta is constant, so dh = dg and the derivative path needs no change.
-   Compared with fourd (interpolate the ADM fields, compose g at the sample
-   point) this keeps the interpolation in the composed-metric frame, which is
-   more consistent; it is slower (one 4-metric composition per node, 125 per
-   time level) and is meant for the strong-curvature robust path where speed
-   does not matter.  Falls back to the plain AEI path on boundary / level
-   failure. */
-
-/* the 10 independent components (mu <= nu) of a symmetric 4-tensor */
-static const int fourdh_mu[10] = {0,0,0,0,1,1,1,2,2,3};
-static const int fourdh_nu[10] = {0,1,2,3,1,2,3,2,3,3};
-
-/* h <-> g conversion in place on a symmetric 4-tensor: h = g - eta,
-   eta = diag(-1,1,1,1) */
-static inline void fourdh_sub_eta(double g[4][4])
-{
-  g[0][0] += 1.0; g[1][1] -= 1.0; g[2][2] -= 1.0; g[3][3] -= 1.0;
-}
-static inline void fourdh_add_eta(double h[4][4])
-{
-  h[0][0] -= 1.0; h[1][1] += 1.0; h[2][2] += 1.0; h[3][3] += 1.0;
-}
-
-/* 5-node order-4 spatial tensor-product interpolation of the nodal 4-metric
-   deviation h = g - eta at level tl.  Same stencil / weight logic as
-   interp_4d_space (log_w5 / log_w5a), but the nodal values are the 10
-   independent components of h_mn with g composed exactly at each node from
-   that node's alpha/beta/gamma.  Fills h (symmetric) and, if dh is non-NULL,
-   the spatial derivatives dh[mu][nu][k] = d_k h_mn in physical units
-   (symmetric in mu,nu).  Returns -1 if the 5-node stencil does not lie
-   inside the safe (non-ghost) region; the caller then falls back to AEI. */
-static int interp_4d_space_h(int tl, double x, double y, double z,
-                             double h[4][4], double dh[4][4][3])
-{
-  const CCTK_REAL *fields[10] = {
-      gview.gxx[tl], gview.gxy[tl], gview.gxz[tl],
-      gview.gyy[tl], gview.gyz[tl], gview.gzz[tl],
-      gview.alp[tl], gview.betax[tl], gview.betay[tl], gview.betaz[tl]
-  };
-  const double o[3] = {gview.origin_space[0], gview.origin_space[1], gview.origin_space[2]};
-  const double dinv[3] = {gview.delta_inv[0], gview.delta_inv[1], gview.delta_inv[2]};
-  const double rlb[3] = {gview.r_lbnd[0], gview.r_lbnd[1], gview.r_lbnd[2]};
-  const double rub[3] = {gview.r_ubnd[0], gview.r_ubnd[1], gview.r_ubnd[2]};
-  const double fp[3] = {(x - o[0]) * dinv[0], (y - o[1]) * dinv[1], (z - o[2]) * dinv[2]};
-  const int c[3] = {(int)lround(fp[0]), (int)lround(fp[1]), (int)lround(fp[2])};
-  const double p[3] = {fp[0] - (double)c[0], fp[1] - (double)c[1], fp[2] - (double)c[2]};
-  /* the 5-node stencil must lie inside the safe (non-ghost) region */
-  for (int ax = 0; ax < 3; ax++) {
-    double sli = (rlb[ax] - o[ax]) * dinv[ax];
-    double sui = (rub[ax] - o[ax]) * dinv[ax];
-    if (c[ax] - 2 < sli || c[ax] + 2 > sui) {
-      return -1;
-    }
-  }
-  double w[3][5], dw[3][5];
-  for (int ax = 0; ax < 3; ax++)
-    for (int a = -2; a <= 2; a++) {
-      w[ax][a + 2] = log_w5(a, p[ax]);
-      dw[ax][a + 2] = log_w5a(a, p[ax]) * dinv[ax];   /* dW/d(coord) */
-    }
-  for (int mu = 0; mu < 4; mu++)
-    for (int nu = 0; nu < 4; nu++) {
-      h[mu][nu] = 0.0;
-      if (dh) { dh[mu][nu][0] = 0.0; dh[mu][nu][1] = 0.0; dh[mu][nu][2] = 0.0; }
-    }
-  for (int ii = 0; ii < 5; ii++)
-    for (int jj = 0; jj < 5; jj++)
-      for (int kk = 0; kk < 5; kk++) {
-        /* nodal 4-metric deviation: compose g exactly at this node, h = g - eta */
-        double g31node[10], gn[4][4];
-        for (int f = 0; f < 10; f++)
-          g31node[f] = fields[f][LD_INDEX(c[0] + ii - 2, c[1] + jj - 2, c[2] + kk - 2)];
-        compose_4metric(g31node, NULL, gn, NULL, NULL);
-        fourdh_sub_eta(gn);
-        const double wv = w[0][ii] * w[1][jj] * w[2][kk];
-        const double d0 = dw[0][ii] * w[1][jj] * w[2][kk];
-        const double d1 = w[0][ii] * dw[1][jj] * w[2][kk];
-        const double d2 = w[0][ii] * w[1][jj] * dw[2][kk];
-        for (int cmp = 0; cmp < 10; cmp++) {
-          const int mu = fourdh_mu[cmp], nu = fourdh_nu[cmp];
-          const double hv = gn[mu][nu];
-          h[mu][nu] += wv * hv;
-          if (dh) {
-            dh[mu][nu][0] += d0 * hv;
-            dh[mu][nu][1] += d1 * hv;
-            dh[mu][nu][2] += d2 * hv;
-          }
-        }
-      }
-  /* symmetric lower triangle */
-  for (int mu = 1; mu < 4; mu++)
-    for (int nu = 0; nu < mu; nu++) {
-      h[mu][nu] = h[nu][mu];
-      if (dh) {
-        dh[mu][nu][0] = dh[nu][mu][0];
-        dh[mu][nu][1] = dh[nu][mu][1];
-        dh[mu][nu][2] = dh[nu][mu][2];
-      }
-    }
-  return 0;
-}
-
-/* fourdh robust-path metric value: per time level the nodal-h spatial
-   interpolation (values only), blended with the 3-node time weights, eta
-   added back at the sample point.  When the past time levels are unusable
-   (metric_static / old_level_bad) only level 0 is read (see
-   fourd_metric_at_point).  Returns 0 on success, -1 on boundary / level
-   failure (caller falls back to AEI). */
-static int fourdh_metric_at_point(int m, const double y[8], double gdn[4][4])
-{
-  const int t1only = (gstate.pgeodesic[m].old_level_bad || gview.metric_static) ? 1 : 0;
-  const double s = t1only ? 1.0 : geodesic_time_theta(m, y[0]);
-  const int nlvl = t1only ? 1 : 3;
-  double h_lvl[3][4][4];
-  for (int lvl = 0; lvl < nlvl; lvl++) {
-    if (interp_4d_space_h(lvl, y[1], y[2], y[3], h_lvl[lvl], NULL) != 0)
-      return -1;
-  }
-  for (int cmp = 0; cmp < 10; cmp++) {
-    const int mu = fourdh_mu[cmp], nu = fourdh_nu[cmp];
-    double V = 0.0;
-    for (int lvl = 0; lvl < nlvl; lvl++) V += fourd_tw(lvl, s) * h_lvl[lvl][mu][nu];
-    gdn[mu][nu] = V;
-  }
-  for (int mu = 1; mu < 4; mu++)
-    for (int nu = 0; nu < mu; nu++)
-      gdn[mu][nu] = gdn[nu][mu];
-  fourdh_add_eta(gdn);
-  return 0;
-}
-
-/* fourdh robust-path Christoffel symbols: per time level the nodal-h
-   interpolation (value + spatial derivatives) gives the per-level 4-metric
-   g_lvl = h_lvl + eta; the metric value and spatial derivatives are blended
-   with the 3-node time weights (eta is constant, so the blend of h equals
-   the blend of g minus eta and dh = dg); the time derivative is the 3-node
-   Lagrange derivative of the per-level metric values.  When the past time
-   levels are unusable (metric_static / old_level_bad) only level 0 is read
-   and d_t g = 0, matching the AEI branch's static handling.  Returns 1 on
-   success, 0 on boundary / level / inversion failure (caller falls back to
-   AEI). */
-static int fourdh_christoffel_at_point(int m, const double y[8], double cf2[4][4][4])
-{
-  double h_lvl[3][4][4], dh_lvl[3][4][4][3];
-  double gdn_lvl[3][4][4];
-  double gdn[4][4], dgd[4][4][4], gup[4][4];
-  double beta_up[3], gamma_dn[3][3], gamma_up[3][3];
-  const double dt = gview.dt;
-  if (dt <= 0.0) return 0;
-  const int t1only = (gstate.pgeodesic[m].old_level_bad || gview.metric_static) ? 1 : 0;
-  const double s = t1only ? 1.0 : geodesic_time_theta(m, y[0]);
-  const int nlvl = t1only ? 1 : 3;
-  for (int lvl = 0; lvl < nlvl; lvl++) {
-    if (interp_4d_space_h(lvl, y[1], y[2], y[3], h_lvl[lvl], dh_lvl[lvl]) != 0)
-      return 0;
-    for (int mu = 0; mu < 4; mu++)
-      for (int nu = 0; nu < 4; nu++)
-        gdn_lvl[lvl][mu][nu] = h_lvl[lvl][mu][nu];
-    fourdh_add_eta(gdn_lvl[lvl]);
-  }
-  for (int cmp = 0; cmp < 10; cmp++) {
-    const int mu = fourdh_mu[cmp], nu = fourdh_nu[cmp];
-    double V = 0.0;
-    for (int lvl = 0; lvl < nlvl; lvl++) V += fourd_tw(lvl, s) * h_lvl[lvl][mu][nu];
-    gdn[mu][nu] = gdn[nu][mu] = V;
-    for (int a = 0; a < 3; a++) {
-      double D = 0.0;
-      for (int lvl = 0; lvl < nlvl; lvl++) D += fourd_tw(lvl, s) * dh_lvl[lvl][mu][nu][a];
-      dgd[a + 1][mu][nu] = dgd[a + 1][nu][mu] = D;
-    }
-  }
-  fourdh_add_eta(gdn);
-  /* time derivative: 3-node Lagrange derivative of the per-level metric
-     values, in physical time units; 0 when the past levels are unusable
-     (dgd[0] symmetric by construction) */
-  if (t1only)
-  {
-    for (int mu = 0; mu < 4; mu++)
-      for (int nu = 0; nu < 4; nu++)
-        dgd[0][mu][nu] = 0.0;
-  }
-  else
-  {
-    for (int mu = 0; mu < 4; mu++)
-      for (int nu = 0; nu < 4; nu++) {
-        double D = 0.0;
-        for (int lvl = 0; lvl < 3; lvl++)
-          D += fourd_tw_a(lvl, s) / dt * gdn_lvl[lvl][mu][nu];
-        dgd[0][mu][nu] = D;
-      }
-  }
-  if (!build_gup_from_gdn(gdn, NULL, beta_up, gamma_dn, gamma_up, gup))
-    return 0;
-  cf2_pointwise(dgd, gup, cf2);
-  return 1;
-}
-
-/* ===================== poly: node-exact 4D tensor product ===================== */
-/* Robust-path 4D tensor-product interpolation.  The spatial part is the AEI
-   5-node order-4 Lagrange molecule (aei_interp_point), exact on each level's
-   5x5x5 = 125 stencil nodes -- a strict superset of the 27-node local27
-   stencil -- so the metric is bit-exact on every stored grid node.  The
-   temporal part is the 3-node order-2 Lagrange (fourd_tw) over the three
-   stored ADMBase levels [t, t-dt, t-2dt]; its weights are Kronecker-delta on
-   the three levels, so the level values are reproduced exactly.  The full
-   125x3 = 375-spacetime-node interpolant therefore has EXACTLY zero metric
-   error on all grid nodes.  Spatial accuracy is O(dx^4) (identical to the
-   plain AEI path), so the path is numerically stable (no renormalization
-   failures) -- unlike the 27-node quadratic fit, which is only O(dx^2) and
-   oscillates off-grid.  The time derivative is the 3-node Lagrange derivative
-   (fourd_tw_a/dt) of the per-level metric values; spatial derivatives come
-   from the aei molecule's analytic derivatives (compose_4metric).  Same
-   fourd_tw/fourd_tw_a time weights as fourd, so the frame agrees with
-   fourd/fourdh/aei at the nodes.  Falls back to the plain AEI path on
-   boundary / level failure (old_level_bad or metric_static pins the blend to
-   the current level only). */
-
-/* poly robust-path metric value: the AEI 5-node spatial molecule for each
-   time level, tensor-product-blended with the 3-node time weights.  Returns
-   0 on success, -1 on boundary / level failure (caller falls back to AEI).
-   gdn is overwritten on success. */
-static int poly_metric_at_point(int m, const double y[8], double gdn[4][4])
-{
-  const int t1only = (gstate.pgeodesic[m].old_level_bad || gview.metric_static) ? 1 : 0;
-  const double s   = t1only ? 1.0 : geodesic_time_theta(m, y[0]);
-  const int nlvl  = t1only ? 1 : 3;
-  for (int mu = 0; mu < 4; mu++)
-    for (int nu = 0; nu < 4; nu++)
-      gdn[mu][nu] = 0.0;
-  for (int lvl = 0; lvl < nlvl; lvl++) {
-    double g31[10];
-    if (aei_interp_point(lvl, y[1], y[2], y[3], g31, NULL) != 0)
-      return -1;
-    double lvl_gdn[4][4];
-    compose_4metric(g31, NULL, lvl_gdn, NULL, NULL);
-    const double tw = fourd_tw(lvl, s);
-    for (int mu = 0; mu < 4; mu++)
-      for (int nu = 0; nu < 4; nu++)
-        gdn[mu][nu] += tw * lvl_gdn[mu][nu];
-  }
-  /* Validate the blended metric before trusting it.  A zero / degenerate
-     blend (e.g. the 3-node window spans an unfilled time level, or the
-     5-node spatial stencil samples zero data in the excised region) would
-     otherwise pass through and poison the ODE (u.u -> 0, particle dropped).
-     Returning -1 here makes robust_metric_at_point fall through to the
-     AEI 2-level extrapolant, which is proven to give a usable metric at
-     these positions (pure-aei runs: 0 drops). */
-  if (!metric_valid(gdn))
-    return -1;
-  return 0;
-}
-
-/* poly robust-path Christoffel symbols: per time level the AEI 5-node spatial
-   molecule supplies the metric value and its 3 spatial derivatives (via
-   compose_4metric); these are tensor-product-blended with the 3-node time
-   weights, and the time derivative is the 3-node Lagrange derivative
-   (fourd_tw_a/dt) of the per-level metric values.  When the past levels are
-   unusable (metric_static / old_level_bad) only level 0 is read and
-   d_t g = 0.  Returns 1 on success, 0 when the spatial-metric inversion
-   fails (caller falls back to AEI). */
-static int poly_christoffel_at_point(int m, const double y[8], double cf2[4][4][4])
-{
-  double gdn[4][4], dgd[4][4][4], gup[4][4];
-  double beta_up[3], gamma_dn[3][3], gamma_up[3][3];
-  const double dt = gview.dt;
-  if (dt <= 0.0)
-    return 0;
-  const int t1only = (gstate.pgeodesic[m].old_level_bad || gview.metric_static) ? 1 : 0;
-  const double s   = t1only ? 1.0 : geodesic_time_theta(m, y[0]);
-  const int nlvl  = t1only ? 1 : 3;
-  for (int mu = 0; mu < 4; mu++)
-    for (int nu = 0; nu < 4; nu++) {
-      gdn[mu][nu] = 0.0;
-      for (int a = 0; a < 4; a++)
-        dgd[a][mu][nu] = 0.0;
-    }
-  for (int lvl = 0; lvl < nlvl; lvl++) {
-    double g31[10], dg31[10][3];
-    if (aei_interp_point(lvl, y[1], y[2], y[3], g31, dg31) != 0)
-      return 0;
-    double lvl_gdn[4][4], lvl_dgd[4][4][4];
-    compose_4metric(g31, dg31, lvl_gdn, lvl_dgd, NULL);
-    const double tw = fourd_tw(lvl, s);
-    for (int mu = 0; mu < 4; mu++)
-      for (int nu = 0; nu < 4; nu++) {
-        gdn[mu][nu]     += tw * lvl_gdn[mu][nu];
-        dgd[1][mu][nu] += tw * lvl_dgd[1][mu][nu];
-        dgd[2][mu][nu] += tw * lvl_dgd[2][mu][nu];
-        dgd[3][mu][nu] += tw * lvl_dgd[3][mu][nu];
-      }
-    if (!t1only)
-      for (int mu = 0; mu < 4; mu++)
-        for (int nu = 0; nu < 4; nu++)
-          dgd[0][mu][nu] += fourd_tw_a(lvl, s) / dt * lvl_gdn[mu][nu];
-  }
-  if (t1only)
-    for (int mu = 0; mu < 4; mu++)
-      for (int nu = 0; nu < 4; nu++)
-        dgd[0][mu][nu] = 0.0;
-  /* time-derivative matrix is symmetric (d_t g_mn = d_t g_nm) */
-  for (int mu = 0; mu < 4; mu++)
-    for (int nu = 0; nu < 4; nu++)
-      dgd[0][nu][mu] = dgd[0][mu][nu];
-  if (!build_gup_from_gdn(gdn, NULL, beta_up, gamma_dn, gamma_up, gup))
-    return 0;
-  cf2_pointwise(dgd, gup, cf2);
-  return 1;
-}
-
-/* Hybrid strong-curvature Christoffel (the user's mixed AEI+l27 scheme):
-   the 4-metric VALUE comes from the AEI order-4 pointwise interpolant --
-   identical to the strong-curvature branch of metric_at_point, so the
-   u.u = -1 renormalization stays in the same frame -- while the
-   derivatives come from the local27 metric fits: the spatial derivatives
-   are the analytic derivatives of the poly27 fits (p27_deriv), blended
-   between the two time levels with theta, and the time derivative is the
-   2-level difference (g0 - g1)/dt of the poly27 evaluations (0 when the
-   old level is unavailable, old_level_bad).  The Christoffel is then
-   recomputed pointwise (build_gup_from_gdn + cf2_pointwise).  Returns 1
-   on success, 0 when the AEI metric interpolation fails (the caller falls
-   back to the pure local27 robust path). */
-static int hybrid_christoffel_at_point(int m, const double y[8], double cf2[4][4][4])
-{
-  double gdn[4][4], dgd[4][4][4], gup[4][4];
-  double beta_up[3], gamma_dn[3][3], gamma_up[3][3];
-  const int oldbad = gstate.pgeodesic[m].old_level_bad;
-  double theta = geodesic_time_theta(m, y[0]);
-  if (oldbad) theta = 1.0;
-
-  /* metric value from the robust interpolant (AEI or log-space, same frame
-     as the metric_at_point strong-curvature branch) */
-  if (robust_metric_at_point(m, y, gdn) != 0)
-    return 0;
-
-  const double tx = (y[1]-gstate.pgeodesic[m].below[1])/gview.delta_space[0];
-  const double ty = (y[2]-gstate.pgeodesic[m].below[2])/gview.delta_space[1];
-  const double tz = (y[3]-gstate.pgeodesic[m].below[3])/gview.delta_space[2];
-  for (int a=0;a<4;a++) for (int b=0;b<4;b++) for (int d=0;d<4;d++) dgd[a][b][d]=0.0;
-  for (int mu=0;mu<4;mu++)
-    for (int nu=mu;nu<4;nu++)
-    {
-      double dcur[3], dold[3];
-      const double g0 = poly27_eval(y,m,gstate.pgeodesic[m].pgd[mu][nu],
-                                    gstate.pgeodesic[m].pgdc[mu][nu]);
-      p27_deriv(tx,ty,tz,gstate.pgeodesic[m].pgd[mu][nu], &dcur[0], &dcur[1], &dcur[2]);
-      if (oldbad)
-      {
-        dgd[0][mu][nu] = 0.0;
-        dold[0]=dcur[0]; dold[1]=dcur[1]; dold[2]=dcur[2];
-      }
-      else
-      {
-        const double g1 = poly27_eval(y,m,gstate.pgeodesic[m].pgd1[mu][nu],
-                                      gstate.pgeodesic[m].pgd1c[mu][nu]);
-        dgd[0][mu][nu] = (g0-g1)/gview.dt;
-        p27_deriv(tx,ty,tz,gstate.pgeodesic[m].pgd1[mu][nu], &dold[0], &dold[1], &dold[2]);
-      }
-      dgd[0][nu][mu] = dgd[0][mu][nu];
-      dgd[1][mu][nu] = (dold[0]+theta*(dcur[0]-dold[0]))/gview.delta_space[0];
-      dgd[1][nu][mu] = dgd[1][mu][nu];
-      dgd[2][mu][nu] = (dold[1]+theta*(dcur[1]-dold[1]))/gview.delta_space[1];
-      dgd[2][nu][mu] = dgd[2][mu][nu];
-      dgd[3][mu][nu] = (dold[2]+theta*(dcur[2]-dold[2]))/gview.delta_space[2];
-      dgd[3][nu][mu] = dgd[3][mu][nu];
-    }
-  if (!build_gup_from_gdn(gdn, NULL, beta_up, gamma_dn, gamma_up, gup))
-    return 0;
-  cf2_pointwise(dgd, gup, cf2);
-  return 1;
-}
 
 /* 4-metric at a particle position (renormalization; void).
    sexact: exact Kerr-Schild.  Grid modes: level selection via
@@ -2822,69 +2072,41 @@ static void metric_at_point(int m, const double y[8], double bg, double gdn[4][4
   if (gstate.pgeodesic[m].outbd) return;
   if (gstate.sinterp_mode == 0)
   {
-    if (gstate.pgeodesic[m].l27_bad)
-    {
-      /* local27 fit at this position was degenerate (all-zero / non-finite
-         4-metric); the official coefficients were not committed.  Fall back
-         to the AEI metric extrapolant instead of using a bad/stale fit. */
-      int aei_ret = aei_metric_at_point(m, y, gdn);
-      if (aei_ret == 0)
-        return;
-      return;   /* AEI also failed: leave gdn zeroed */
-    }
-    /* strong-curvature point: use the AEI order-4 pointwise interpolant
-       (higher order than the local27 order-2 fit) for the metric VALUE when
-       strong_christ_off == 0 ("hybrid").  The same value is used by
-       hybrid_christoffel_at_point (which takes the derivatives from the
-       local27 poly27 fits instead), so the per-step renormalization
-       (u.u = -1) and the geodesic update share one metric frame.  For
-       strong_christ_off == 1 ("l27") we skip this and take the pure-l27
-       blended metric below, so the norm check frame matches the l27
-       robust Christoffel.  On AEI failure we fall through to the l27 path
-       below whose stencil clamp keeps the particle. */
-    if (gstate.pgeodesic[m].use_robust && gstate.strong_christ_off == 0)
-    {
-      if (robust_metric_at_point(m, y, gdn) == 0)
-        return;
-    }
-
-    /* local27 + off + cheap (use_robust not yet set): the historical path
-       uses only the current time level (pgd); no blend, no pgd1 read.  This
-       is exactly what the pre-fix off path returned, kept for the cheap
-       default and for A/B comparison. */
-    if (!gstate.pgeodesic[m].use_robust && !gstate.stime_interp)
-    {
-      for (mu=0;mu<4;mu++) for (nu=mu;nu<4;nu++)
-        gdn[mu][nu] =
-          poly27_eval(y,m,gstate.pgeodesic[m].pgd[mu][nu],
-                      gstate.pgeodesic[m].pgdc[mu][nu]);
-      for (mu=1;mu<4;mu++) for (nu=0;nu<mu;nu++) gdn[mu][nu]=gdn[nu][mu];
-      return;
-    }
-
-    /* the two stored ADMBase time levels span [t-dt, t] with t the level
-       data time; theta is the particle's absolute phase in that window
-       (geodesic_time_theta), clamped to [0,1].  This metric MUST be
-       identical to
-       the one used by christoffel_at_point (robust path) to compute the
-       Christoffel, so that the per-step renormalization (u.u = -1) is done
-       in the same frame as the geodesic update.  The old stime_interp=off
-       special case that used only the current level was consistent with the
-       previous cf2_metric_off Christoffel, but after the off-path switch to
-       christoffel_at_point it became inconsistent and drove the 4-velocity
-       off the u.u=-1 surface, causing the tau-loop cap.  Unifying both
-       stime_interp values to the blended metric restores consistency. */
-    double theta = geodesic_time_theta(m, y[0]);
-    /* old level invalid (all-zero / non-finite) -> blend is undefined;
-       pin to the current level instead.  This is the safe, exact limit
-       for a static metric and the only sensible choice when the past
-       level is not filled at this AMR cell. */
-    if (gstate.pgeodesic[m].old_level_bad) theta=1.0;
+    /* l27: the current-level 27-point metric fit (pgd).  A failed staged
+       fit (l27_bad) leaves gdn zeroed (the norm check below then flags
+       the particle out-of-bounds): there is no fallback interpolant in
+       this mode. */
+    if (gstate.pgeodesic[m].l27_bad) return;
     for (mu=0;mu<4;mu++) for (nu=mu;nu<4;nu++)
+      gdn[mu][nu] =
+        poly27_eval(y,m,gstate.pgeodesic[m].pgd[mu][nu],
+                    gstate.pgeodesic[m].pgdc[mu][nu]);
+    for (mu=1;mu<4;mu++) for (nu=0;nu<mu;nu++) gdn[mu][nu]=gdn[nu][mu];
+    return;
+  }
+  if (gstate.sinterp_mode == 3)
+  {
+    /* local27: nlev-level time blend of the 125-term quartic tensor-product
+       metric fits (committed by cf2_fitting's mode-3 staging).  A failed
+       staged metric (local27_bad) leaves gdn zeroed and the caller drops the
+       particle -- there is no AEI fallback in this mode. */
+    if (gstate.pgeodesic[m].local27_bad) return;
+    const double tx=(y[1]-gstate.pgeodesic[m].below[1])/gview.delta_space[0];
+    const double ty=(y[2]-gstate.pgeodesic[m].below[2])/gview.delta_space[1];
+    const double tz=(y[3]-gstate.pgeodesic[m].below[3])/gview.delta_space[2];
+    double w[3]; int nlev;
+    local27_time_weights(m, y[0], w, &nlev);
+    for (mu=0;mu<4;mu++)
+    for (nu=mu;nu<4;nu++)
     {
-      const double g0=poly27_eval(y,m,gstate.pgeodesic[m].pgd[mu][nu],gstate.pgeodesic[m].pgdc[mu][nu]);
-      const double g1=poly27_eval(y,m,gstate.pgeodesic[m].pgd1[mu][nu],gstate.pgeodesic[m].pgd1c[mu][nu]);
-      gdn[mu][nu]=g1+theta*(g0-g1);
+      double g=0.0;
+      for (int l=0;l<nlev;l++)
+      {
+        double cv;
+        p125_eval_deriv(gstate.pgeodesic[m].pgd125[l][mu][nu],tx,ty,tz,&cv,NULL,NULL,NULL);
+        g+=w[l]*cv;
+      }
+      gdn[mu][nu]=g;
     }
     for (mu=1;mu<4;mu++) for (nu=0;nu<mu;nu++) gdn[mu][nu]=gdn[nu][mu];
     return;
@@ -2895,11 +2117,6 @@ static void metric_at_point(int m, const double y[8], double bg, double gdn[4][4
     {
       int st = aei_interp_point(0,y[1],y[2],y[3],g31,dg31);
       if (st != 0) { gstate.pgeodesic[m].outbd=1; return; }
-    }
-    if (!gstate.stime_interp)
-    {
-      compose_4metric(g31,dg31,gdn,NULL,NULL);
-      return;
     }
     {
       double g31a[10], dg31a[10][3];
@@ -2917,229 +2134,60 @@ static void metric_at_point(int m, const double y[8], double bg, double gdn[4][4
     }
     return;
   }
-  { /* carpet (time_interp = linear is rejected in ParamCheck) */
+  { /* carpet */
     double g31[10], dg31[10][3];
-    if (gstate.stime_interp) { gstate.pgeodesic[m].outbd=1; return; }
     if (aei_interp_point(0,y[1],y[2],y[3],g31,dg31) != 0) { gstate.pgeodesic[m].outbd=1; return; }
     compose_4metric(g31,dg31,gdn,NULL,NULL);
   }
 }
 
-/* Christoffel symbols at a particle position for func_ode (the
-   non local27+off paths).  Returns 1 on success, 0 on failure (the
-   caller flags the particle and aborts the step). */
+/* Christoffel symbols at a particle position for func_ode (modes aei /
+   carpet / local27; the l27 mode evaluates its fitted Christoffel
+   polynomial directly in func_ode).  Returns 1 on success, 0 on failure
+   (the caller flags the particle and aborts the step). */
 static int christoffel_at_point(int m, const double y[8], double bg, double cf2[4][4][4])
 {
   double gdn[4][4], dgd[4][4][4], gup[4][4];
-  double beta_up[3], gamma_dn[3][3], gamma_up[3][3];
   int j1, j2, j3;
-  if (gstate.sinterp_mode == 0)
+  if (gstate.sinterp_mode == 3)
   {
-    if (gstate.pgeodesic[m].l27_bad)
+    /* local27: nlev-level time blend of the 125-term Christoffel fits
+       (fast path: nodal 6th-order-FD Christoffels fit per level, the l27
+       convention).  When the nodal samples are NaN-poisoned
+       (local27_cf2_bad) the Christoffel is assembled analytically from the
+       metric fits instead.  A failed staged metric (local27_bad) fails the
+       call and the ODE drops the particle. */
+    if (gstate.pgeodesic[m].local27_bad) return 0;
+    if (gstate.pgeodesic[m].local27_cf2_bad)
+      return local27_christoffel_analytic(m, y, cf2);
+    const double tx=(y[1]-gstate.pgeodesic[m].below[1])/gview.delta_space[0];
+    const double ty=(y[2]-gstate.pgeodesic[m].below[2])/gview.delta_space[1];
+    const double tz=(y[3]-gstate.pgeodesic[m].below[3])/gview.delta_space[2];
+    double w[3]; int nlev;
+    local27_time_weights(m, y[0], w, &nlev);
+    for (j1=0;j1<4;j1++)
+    for (j2=0;j2<4;j2++)
+    for (j3=j2;j3<4;j3++)
     {
-      /* local27 fit degenerate: use the AEI Christoffel extrapolant (same
-         frame as aei_metric_at_point, so u.u = -1 renorm stays consistent) */
-      return aei_christoffel_at_point(m, y, cf2);
-    }
-    if (gstate.strong_christ_off == 0 && gstate.pgeodesic[m].use_robust)
-    {
-      /* strong-curvature point (the "stable algorithm" for the robust path).
-         With Geodesic::robust_metric_interp = "fourd" use the true 4D
-         tensor-product Christoffel (fourd_christoffel_at_point), whose value
-         and derivatives come from one consistent 4D interpolant and whose metric
-         value agrees with fourd_metric_at_point (the value used by
-         metric_at_point's robust branch, so the u.u = -1 renormalization is in
-         the same frame).  "fourdh" is the same machinery applied to the nodal
-         4-metric deviation h = g - eta (fourdh_christoffel_at_point), matching
-         fourdh_metric_at_point's frame.  Otherwise use the AEI order-4
-         pointwise Christoffel
-         (aei_christoffel_at_point), which interpolates the metric in AEI's
-         5-node order-4 Lagrange stencil in *both* space and time.  The AEI
-         value matches the robust interpolant in metric_at_point (AEI and/or
-         the log-space variant when Geodesic::log_metric_interp is set), so the
-         two share the same frame in the default (fourd off) case.  This path
-         is only invoked in mode 0 when the particle's use_robust flag is set
-         (sadaptive && use_robust, func_ode), so it is exactly the strong-
-         curvature / abnormal-lr region.  On engine failure we fall through to
-         the local27 robust path. */
-      if (gstate.robust_metric_interp == 1) {
-        if (fourd_christoffel_at_point(m, y, cf2))
-        {
-          return 1;
-        }
-      }
-      if (gstate.robust_metric_interp == 2) {
-        if (fourdh_christoffel_at_point(m, y, cf2))
-        {
-          return 1;
-        }
-      }
-      if (gstate.robust_metric_interp == 3) {
-        if (poly_christoffel_at_point(m, y, cf2))
-        {
-          return 1;
-        }
-      }
-      if (aei_christoffel_at_point(m, y, cf2))
+      double c=0.0;
+      for (int l=0;l<nlev;l++)
       {
-        return 1;
+        double cv;
+        p125_eval_deriv(gstate.pgeodesic[m].pcf2_125[l][j1][j2][j3],tx,ty,tz,&cv,NULL,NULL,NULL);
+        c+=w[l]*cv;
       }
+      cf2[j1][j2][j3]=c;
     }
-    else
-    {
-      /* strong_christ_off == 1 ("l27"): skip the AEI-value hybrid path entirely
-         and use the pure-local27 robust (blend-then-inverse) Christoffel below.
-         The metric frame must then come from l27 too -- see metric_at_point. */
-    }
-    /* local27+linear: blend the two ADMBase time levels.
-       Fast/old path: blend the two fitted pointwise-Christoffel
-       polynomials (for a stationary metric the two fits are identical
-       and the blend is exact).
-       Robust/new path: when the metric changes significantly between the
-       two levels (large delta), the Christoffel-blend is inaccurate (the
-       root cause of the superluminal particle drops near AMR level
-       changes / strong curvature); there we recompute the Christoffel from
-       the blended metric (blend metric, then invert), which is more robust. */
-    /* the two stored ADMBase time levels span [t-dt, t] with t the level
-       data time; theta is the particle's absolute phase in that window
-       (geodesic_time_theta), clamped to [0,1] */
-    double theta = geodesic_time_theta(m, y[0]);
-    /* old level invalid -> blend undefined; pin to the current level. */
-    const int oldbad = gstate.pgeodesic[m].old_level_bad;
-    if (oldbad) theta=1.0;
-
-    /* threshold above which the metric changed enough to warrant the
-       robust blend-then-inverse path instead of the Christoffel blend.
-       Estimated from the g_tt component of the two levels. */
-    /* Always prefer the robust blend-then-inverse path when the old level
-       is valid.  It is strictly more accurate than the Christoffel blend
-       (fit the smoother 4-metric, then differentiate, rather than fitting
-       the Christoffel directly) and it is cheaper (10 components x 2 levels
-       vs 40 Christoffel components x 2 levels).  The delta is kept for
-       diagnostics only.  This path is controlled by Geodesic::adaptive_interp
-       (default "on"); "off" falls back to the historical Christoffel blend
-       (the direct-fit behaviour). */
-    int use_new = (gstate.sadaptive && !oldbad) ? 1 : 0;
-    if (!oldbad)
-    {
-      const double g0c = poly27_eval(y,m,gstate.pgeodesic[m].pgd[0][0],gstate.pgeodesic[m].pgdc[0][0]);
-      const double g1c = poly27_eval(y,m,gstate.pgeodesic[m].pgd1[0][0],gstate.pgeodesic[m].pgd1c[0][0]);
-      double delta = 0.0;
-      if (isnormal(g0c) && isnormal(g1c))
-      {
-        double d = fabs(g0c-g1c);
-        double dmax = fabs(g0c);
-        if (dmax<1.0) dmax=1.0;
-        delta = d/dmax;
-      }
-    }
-
-    if (!use_new)
-    {
-      /* old (fast) path: blend the two Christoffel polynomials.
-         With theta=1 (oldbad) this is exactly the current level. */
-      for (j1=0;j1<4;j1++)
-      for (j2=0;j2<4;j2++)
-      for (j3=j2;j3<4;j3++)
-      {
-        CCTK_REAL c0=poly27_eval(y,m,gstate.pgeodesic[m].pcf2[j1][j2][j3],gstate.pgeodesic[m].pcf2c[j1][j2][j3]);
-        CCTK_REAL c1=poly27_eval(y,m,gstate.pgeodesic[m].pcf2_1[j1][j2][j3],gstate.pgeodesic[m].pcf2_1c[j1][j2][j3]);
-        cf2[j1][j2][j3]=c1+theta*(c0-c1);
-      }
-      for (j1=0;j1<4;j1++)
-      for (j2=1;j2<4;j2++)
-      for (j3=0;j3<j2;j3++)
-        cf2[j1][j2][j3]=cf2[j1][j3][j2];
-      return 1;
-    }
-
-    /* ---- robust path: blend the metric, recompute the Christoffel ----
-       gdn = blended 4-metric; dgd[dir][mu][nu] = (d/d x^dir) g_{mu nu},
-       dir=0 is time (forward 2-level difference), dir=1,2,3 spatial. */
-    {
-      const double tx = (y[1]-gstate.pgeodesic[m].below[1])/gview.delta_space[0];
-      const double ty = (y[2]-gstate.pgeodesic[m].below[2])/gview.delta_space[1];
-      const double tz = (y[3]-gstate.pgeodesic[m].below[3])/gview.delta_space[2];
-      const double dxp0 = gview.delta_space[0];
-      const double dxp1 = gview.delta_space[1];
-      const double dxp2 = gview.delta_space[2];
-      const double dt   = gview.dt;
-      for (int a=0;a<4;a++) for (int b=0;b<4;b++) for (int d=0;d<4;d++) dgd[a][b][d]=0.0;
-      for (int a=0;a<4;a++) for (int b=0;b<4;b++) gdn[a][b]=0.0;
-      for (int mu=0;mu<4;mu++)
-      for (int nu=mu;nu<4;nu++)
-      {
-        const double g0 = poly27_eval(y,m,gstate.pgeodesic[m].pgd[mu][nu],gstate.pgeodesic[m].pgdc[mu][nu]);
-        const double g1 = poly27_eval(y,m,gstate.pgeodesic[m].pgd1[mu][nu],gstate.pgeodesic[m].pgd1c[mu][nu]);
-        double gb = g1 + theta*(g0-g1);
-        gdn[mu][nu]=gb; gdn[nu][mu]=gb;
-        double dcur[3], dold[3];
-        p27_deriv(tx,ty,tz,gstate.pgeodesic[m].pgd[mu][nu], &dcur[0], &dcur[1], &dcur[2]);
-        p27_deriv(tx,ty,tz,gstate.pgeodesic[m].pgd1[mu][nu], &dold[0], &dold[1], &dold[2]);
-        /* time derivative: forward difference of the two levels */
-        dgd[0][mu][nu]=(g0-g1)/dt;  dgd[0][nu][mu]=dgd[0][mu][nu];
-        /* spatial derivatives: blended normalized-coord derivatives / dxp */
-        dgd[1][mu][nu]=(dold[0]+theta*(dcur[0]-dold[0]))/dxp0;  dgd[1][nu][mu]=dgd[1][mu][nu];
-        dgd[2][mu][nu]=(dold[1]+theta*(dcur[1]-dold[1]))/dxp1;  dgd[2][nu][mu]=dgd[2][mu][nu];
-        dgd[3][mu][nu]=(dold[2]+theta*(dcur[2]-dold[2]))/dxp2;  dgd[3][nu][mu]=dgd[3][mu][nu];
-      }
-      /* inverted metric g^{mu nu} from the blended Lorentzian 4-metric */
-      if (!build_gup_from_gdn(gdn, NULL, beta_up, gamma_dn, gamma_up, gup))
-      {
-        /* blended metric not a valid Lorentzian metric -> fall back to the
-           current level's Christoffel (theta=1) rather than returning bad
-           data. */
-        for (int a=0;a<4;a++) for (int b=0;b<4;b++) for (int c=0;c<4;c++) cf2[a][b][c]=0.0;
-        for (int a=0;a<4;a++) for (int b=0;b<4;b++) for (int c=b;c<4;c++) {
-          CCTK_REAL cc = poly27_eval(y,m,gstate.pgeodesic[m].pcf2[a][b][c],gstate.pgeodesic[m].pcf2c[a][b][c]);
-          cf2[a][b][c] = cc;
-        }
-        for (int a=0;a<4;a++) for (int b=1;b<4;b++) for (int c=0;c<b;c++)
-          cf2[a][b][c] = cf2[a][c][b];
-        return 1;
-      }
-      cf2_pointwise(dgd, gup, cf2);
-      return 1;
-    }
+    for (j1=0;j1<4;j1++)
+    for (j2=1;j2<4;j2++)
+    for (j3=0;j3<j2;j3++)
+      cf2[j1][j2][j3]=cf2[j1][j3][j2];
+    return 1;
   }
   if (gstate.sinterp_mode == 1)
   {
     double g31[10], dg31[10][3];
     if (aei_interp_point(0,y[1],y[2],y[3],g31,dg31) != 0) return 0;
-    if (!gstate.stime_interp)
-    {
-      compose_4metric(g31,dg31,gdn,dgd,gup);
-      if (gview.metric_static)
-      {
-        for (j1=0;j1<4;j1++) for (j2=0;j2<4;j2++) dgd[0][j1][j2]=0.0;
-      }
-      else
-      {
-        double g31a[10], g31b[10], gdn1[4][4], gdn2[4][4];
-        if (aei_interp_point(1,y[1],y[2],y[3],g31a,NULL) != 0) return 0;
-        if (aei_interp_point(2,y[1],y[2],y[3],g31b,NULL) != 0) return 0;
-        compose_4metric(g31a,NULL,gdn1,NULL,NULL);
-        compose_4metric(g31b,NULL,gdn2,NULL,NULL);
-        for (j1=0;j1<4;j1++) for (j2=0;j2<4;j2++)
-          dgd[0][j1][j2]=(3.0*gdn[j1][j2]-4.0*gdn1[j1][j2]+gdn2[j1][j2])*(0.5/gview.dt);
-      }
-      cf2_pointwise(dgd,gup,cf2);
-      {
-        static int i_cnt = 0;
-        if (getenv("GEODESIC_DBG_CF2_AEI") && m==0 && i_cnt<12) {
-          printf("[AEI] p0 t=%.4f x=%.5f y=%.5f z=%.5f\n", y[0],y[1],y[2],y[3]);
-          printf("[AEI] gdn g00=%.6f g11=%.6f g22=%.6f g01=%.6f g02=%.6f\n",
-                 gdn[0][0],gdn[1][1],gdn[2][2],gdn[0][1],gdn[0][2]);
-          printf("[AEI] dgd[1] 00=%.6f 11=%.6f 22=%.6f 12=%.6f\n",
-                 dgd[1][0][0],dgd[1][1][1],dgd[1][2][2],dgd[1][1][2]);
-          printf("[AEI] cf2[1] 00=%.6f 11=%.6f 22=%.6f 02=%.6f\n",
-                 cf2[1][0][0],cf2[1][1][1],cf2[1][2][2],cf2[1][0][2]);
-          printf("[AEI] gup 00=%.6f 11=%.6f\n", gup[0][0],gup[1][1]);
-          i_cnt++;
-        }
-      }
-      return 1;
-    }
     {
       double g31a[10], dg31a[10][3], gdn0[4][4], gdn1[4][4];
       /* the two stored ADMBase time levels span [t-dt, t] with t the level
@@ -3160,7 +2208,7 @@ static int christoffel_at_point(int m, const double y[8], double bg, double cf2[
       return 1;
     }
   }
-  { /* carpet (time_interp = linear is rejected in ParamCheck).
+  { /* carpet:
      Spatial metric + spatial derivatives at the particle position.
      The spatial sampler is the order-4 Lagrange interpolator (the same
      AEILocalInterp-based routine aei uses) -- the previous hand-written
@@ -3172,7 +2220,6 @@ static int christoffel_at_point(int m, const double y[8], double bg, double cf2[
     double g31[10], dg31[10][3];
     double g31a[10], g31b[10];
     double gnn1[4][4], gnn2[4][4];
-    if (gstate.stime_interp) { gstate.pgeodesic[m].outbd=1; return 0; }
     if (aei_interp_point(0,y[1],y[2],y[3],g31,dg31) != 0) return 0;
     compose_4metric(g31,dg31,gdn,dgd,gup);
     if (gview.metric_static)
@@ -3235,10 +2282,6 @@ static int solve_u0_future_directed(const double gdn[4][4],
   for (int i=0;i<3;i++)
     for (int j=0;j<3;j++)
       rc += gdn[i+1][j+1]*u_spatial[i]*u_spatial[j];
-
-  /* [DBG] GEODESIC_DBG_SOLVE: dump renorm inputs.
-     Static counter so it does not flood on 100 simultaneous failures. */
-
   /* ra degenerates to 0 (virtually impossible for a real metric; kept as
      a numerical guard): fall back to the linear equation */
   if (fabs(ra) < 1.0e-14)
@@ -3272,8 +2315,6 @@ static int solve_u0_future_directed(const double gdn[4][4],
       *u0_out = (fabs(r1-u0_predictor) <= fabs(r2-u0_predictor)) ? r1 : r2;
     return 1;
   }
-
-  /* [DBG] GEODESIC_DBG_SOLVE: neither root future-directed */
   return 0;   /* neither root is future-directed: genuine failure */
 }
 
@@ -3322,7 +2363,6 @@ int func_ode (double t, const double y[], double f[], void *params)
     gstate.pgeodesic[m].outbd = 1;
   }else
   {
-    /* Phase B debug (m=51/52): capture the crossing decision. */
     /* "out of bounds" = outside the SAFE region of the COARSEST level.
        Skipped in multi-process runs (multi_exact / multi_amr): each
        rank's local patch is only a portion of the global grid, so the
@@ -3351,11 +2391,10 @@ int func_ode (double t, const double y[], double f[], void *params)
          and abort this ODE step (GSL_EBADFUNC); the integrator restarts
          from the transformed state.  rc!=1 means no neighbouring block
          owns the point; it may still sit inside the current block's full
-         cell (margin shadow zone), in which case the particle is kept in
-         this block (metric from the relaxed AEI fallback in cf2_fitting)
-         rather than being dropped.  Only a point outside the block's full
-         cell (with ~2-cell tolerance for the AEI extrapolant) is marked
-         out of bounds. */
+         cell (margin shadow zone), in which case cf2_fitting() is re-run
+         for it and the particle is dropped there (no extrapolant fallback
+         in this version).  Only a point outside the block's full cell
+         (with ~2-cell tolerance) is marked out of bounds here. */
       int rc = locate_and_cross(m, (double *)y, odedata->cctkGH);
       if (rc == 1)
       {
@@ -3366,11 +2405,10 @@ int func_ode (double t, const double y[], double f[], void *params)
       }
       /* rc != 1: test whether the particle is still inside the full cell
          of its current block (coarsest level).  If yes it is in the margin
-         shadow zone: keep it here, re-run cf2_fitting() so the relaxed
-         AEI fallback (pick_level_margin margin 2 + boundary extrapolant,
-         l27_bad gate) supplies the metric; the existing outbd flag is
-         cleared.  If it is outside the cell (beyond ~2 cells), it is a
-         genuine out-of-domain event. */
+         shadow zone: the existing outbd flag is cleared and cf2_fitting()
+         is re-run, which drops the particle there (no extrapolant fallback
+         in this version).  If it is outside the cell (beyond ~2 cells), it
+         is a genuine out-of-domain event. */
       {
         const LevelData *Lo = &gstate.LD[pm][0];
         if (!Lo->valid)
@@ -3417,7 +2455,7 @@ int func_ode (double t, const double y[], double f[], void *params)
           for (int d = 0; d < 3; d++)
           {
             /* mid-step reachability: the local27 stencil (3x3x3 + 6th-order
-               FD, clamped to the stencil-safe window [5, lsh-4]) fits
+               FD, clamped to the stencil-safe window [4, lsh-5]) fits
                anywhere inside the full local grid [origin,
                origin+(lsh-1)*dx] -- the clip keeps every grid read within
                [1, lsh].  The old 0.5-cell tolerance around the interior box
@@ -3435,11 +2473,20 @@ int func_ode (double t, const double y[], double f[], void *params)
               gstate.pgeodesic[m].outbd = 1;
           }
         }
+        /* refit window: the two-cell box [below-dx, below+dx] centred on
+           the reference node (below = position of node tpoint = nearest
+           node).  The particle sits at local (y-below)/dx in [-0.5,+0.5),
+           so it stays inside this box until its nearest node changes;
+           refitting exactly at that moment rebuilds the stencil centred on
+           the new node and keeps the Christoffel fit continuous.  The 27-pt
+           stencil {tpoint-1, tpoint, tpoint+1} spans exactly [below-dx,
+           below+dx], so the particle is always inside it -- pure
+           interpolation. */
         if (!gstate.pgeodesic[m].outbd &&
             (lvl != gstate.pgeodesic[m].level ||
-             (y[1] < (gstate.pgeodesic[m].below[1]) || (y[1] > (gstate.pgeodesic[m].below[1] + 2*gstate.pgeodesic[m].dxp[0]))) ||
-             (y[2] < (gstate.pgeodesic[m].below[2]) || (y[2] > (gstate.pgeodesic[m].below[2] + 2*gstate.pgeodesic[m].dxp[1]))) ||
-             (y[3] < (gstate.pgeodesic[m].below[3]) || (y[3] > (gstate.pgeodesic[m].below[3] + 2*gstate.pgeodesic[m].dxp[2])))))
+             (y[1] < (gstate.pgeodesic[m].below[1] - gstate.pgeodesic[m].dxp[0]) || (y[1] > (gstate.pgeodesic[m].below[1] + gstate.pgeodesic[m].dxp[0]))) ||
+             (y[2] < (gstate.pgeodesic[m].below[2] - gstate.pgeodesic[m].dxp[1]) || (y[2] > (gstate.pgeodesic[m].below[2] + gstate.pgeodesic[m].dxp[1]))) ||
+             (y[3] < (gstate.pgeodesic[m].below[3] - gstate.pgeodesic[m].dxp[2]) || (y[3] > (gstate.pgeodesic[m].below[3] + gstate.pgeodesic[m].dxp[2])))))
         {
           cf2_fitting(m, y);
         }
@@ -3449,8 +2496,6 @@ int func_ode (double t, const double y[], double f[], void *params)
 
   if (gstate.pgeodesic[m].outbd)
   {
-    /* temporary debug: report which check flagged the particle (gated by
-       GEODESIC_DEBUG_STEP, particle 0 only) */
     return GSL_EBADFUNC;
   }
 
@@ -3524,54 +2569,19 @@ int func_ode (double t, const double y[], double f[], void *params)
   {
     if (gstate.sinterp_mode == 0)
     {
-      /* local27: the robust (blend-then-inverse) path is taken only when
-         adaptive_interp = on AND the particle's sticky use_robust flag is
-         set (the strong-curvature criterion fired).  Otherwise the cheap
-         path: off -> historical direct-fit Christoffel (cf2_func);
-         linear -> blend of the two time-level Christoffel fits.  This
-         makes the cheap path the default (fast, historical) behaviour and
-         the robust path a per-particle promotion, per Geodesic::strong_curv_crit. */
-      if (gstate.sadaptive && gstate.pgeodesic[m].use_robust)
+      /* l27: the historical 27-point Lagrange polynomial of the
+         current-level fitted Christoffel (cf2_func).  A failed staged fit
+         (l27_bad) has no fallback in this mode: flag the particle
+         out-of-bounds and let the loss policy drop it. */
+      if (gstate.pgeodesic[m].l27_bad)
       {
-        /* robust: blend-then-inverse (fit the metric, blend time levels,
-           invert, differentiate).  For the off path this reads pgd/pgd1,
-           which are now both fitted by cf2_fitting (pgd1 fix).  For the
-           linear path it blends the two level fits to theta. */
-        if (!christoffel_at_point(m, y, odedata->bg, cf2))
-        {
-          gstate.pgeodesic[m].outbd = 1;
-          return GSL_EBADFUNC;
-        }
+        gstate.pgeodesic[m].outbd = 1;
+        return GSL_EBADFUNC;
       }
-      else if (!gstate.stime_interp)
-      {
-        /* off + cheap: historical 27-point Lagrange polynomial of the
-           current-level fitted Christoffel */
-        for (j1=0; j1<4; j1++)
-          for (j2=0; j2<4; j2++)
-            for (j3=j2; j3<4; j3++)
-              cf2[j1][j2][j3] = cf2_func(y, m, j1, j2, j3);
-      }
-      else
-      {
-        /* linear + cheap: blend the two time-level Christoffel fits to the
-           particle's fractional coordinate time.  Matches the "old (fast)
-           path" in christoffel_at_point. */
-        double theta = geodesic_time_theta(m, y[0]);
-        if (gstate.pgeodesic[m].old_level_bad) theta=1.0;
-        for (j1=0;j1<4;j1++)
-          for (j2=0;j2<4;j2++)
-            for (j3=j2;j3<4;j3++)
-            {
-              CCTK_REAL c0=poly27_eval(y,m,gstate.pgeodesic[m].pcf2[j1][j2][j3],gstate.pgeodesic[m].pcf2c[j1][j2][j3]);
-              CCTK_REAL c1=poly27_eval(y,m,gstate.pgeodesic[m].pcf2_1[j1][j2][j3],gstate.pgeodesic[m].pcf2_1c[j1][j2][j3]);
-              cf2[j1][j2][j3]=c1+theta*(c0-c1);
-            }
-        for (j1=0;j1<4;j1++)
-          for (j2=1;j2<4;j2++)
-            for (j3=0;j3<j2;j3++)
-              cf2[j1][j2][j3]=cf2[j1][j3][j2];
-      }
+      for (j1=0; j1<4; j1++)
+        for (j2=0; j2<4; j2++)
+          for (j3=j2; j3<4; j3++)
+            cf2[j1][j2][j3] = cf2_func(y, m, j1, j2, j3);
     }
     else if (!christoffel_at_point(m, y, odedata->bg, cf2))
     {
@@ -3649,10 +2659,9 @@ static void geodesic_mkdir_parents(const char *path)
    MPI_Allgather so every rank ends with the identical state.
    Payload per particle (GEODESIC_MPI_NPAY doubles):
    tt tx ty tz ttv txv tyv tzv ttw dead renorm_warn norm_bad
-   freeze_warn rl_last outbd use_robust.  Full exchange (200 x 16 =
-   23.7 KB/rank) keeps the code simple; every rank holds the complete
-   state.  use_robust is a per-particle sticky flag that must survive
-   ownership transfers between ranks.  The particle arrays are
+   freeze_warn rl_last outbd.  Full exchange (200 x 15 =
+   22.5 KB/rank) keeps the code simple; every rank holds the complete
+   state.  The particle arrays are
    DISTRIB=CONSTANT grid variables, addressed through the patch-local
    pointers that DECLARE_CCTK_ARGUMENTS injects (cctkGH). */
 static void geodesic_mmpi_sync(cGH *cctkGH, const int npr, const int me, const int npar)
@@ -3678,7 +2687,6 @@ static void geodesic_mmpi_sync(cGH *cctkGH, const int npr, const int me, const i
     p[10] = (double)gstate.pgeodesic[mi].renorm_warn; p[11] = (double)gstate.pgeodesic[mi].norm_bad;
     p[12] = (double)gstate.pgeodesic[mi].freeze_warn; p[13] = gstate.pgeodesic[mi].rl_last;
     p[14] = (double)gstate.pgeodesic[mi].outbd;
-    p[15] = (double)gstate.pgeodesic[mi].use_robust;
   }
   MPI_Allgather(s, (int)n, MPI_DOUBLE, full, (int)n, MPI_DOUBLE, MPI_COMM_WORLD);
   /* Write back per-particle, taking each particle's copy from the rank
@@ -3702,7 +2710,6 @@ static void geodesic_mmpi_sync(cGH *cctkGH, const int npr, const int me, const i
     gstate.pgeodesic[mi].freeze_warn = (CCTK_INT)p[12];
     gstate.pgeodesic[mi].rl_last     = p[13];
     gstate.pgeodesic[mi].outbd       = (CCTK_INT)p[14];
-    gstate.pgeodesic[mi].use_robust  = (CCTK_INT)p[15];
   }
 }
 #endif
@@ -3720,7 +2727,7 @@ static void geodesic_mmpi_sync(cGH *cctkGH, const int npr, const int me, const i
    original loop.
 
    t_step0 is the STEP-START coordinate time (the time of the older
-   grid time level): the time_interp = linear blend in func_ode /
+   grid time level): the linear time blend in func_ode /
    christoffel_at_point anchors theta = (y[0] - bg)/sstep at bg, so
    bg must stay at the step start for every chunk of the multi_amr
    chunked integration.  Anchoring it at the particle's chunk-start
@@ -3779,11 +2786,12 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
          valid particle near a patch edge is not wrongly rejected
          (the old 7-cell margin rejected equatorial particles in the
          7-cell shadow zone of an off-centre AMR block).
-         The local27 path (sinterp_mode 0) is skipped here: cf2_fitting does
+         The l27 path (sinterp_mode 0) is skipped here: cf2_fitting does
          the full margin-3 (6th-order-FD) check and, when that safe region
-         rejects the particle, falls back to the AEI interpolant (via l27_bad)
-         instead of dropping.  Skipping the quick check here avoids a
-         premature outbd that cf2_fitting would otherwise be unable to undo. */
+         rejects the particle, sets l27_bad and the particle is dropped by
+         the loss policy (no fallback interpolant in l27).  Skipping the
+         quick check here avoids a premature outbd that cf2_fitting would
+         otherwise be unable to undo. */
       if (gstate.sinterp_mode != 0)
       {
         const LevelData *L0 = &gstate.LD[pm][0];
@@ -3893,103 +2901,39 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
 
 
 
-      /* ---------------- strong-curvature criterion (kimi2.txt) ----------------
-         Decide whether this particle must be promoted to the robust
-         (blend-then-inverse) local27 path.  Only the local27 sampler is
-         affected (sinterp_mode 0) and only when adaptive_interp is on.
-         The flag is STICKY: once set it stays 1 for the particle's life
-         (simpler and safer than hysteresis).  Criteria
-         (par Geodesic::strong_curv_crit):
-           "u_dot_u" (default): trigger when the raw (pre-renorm)
-             u·u exceeds Geodesic::u_dot_u_threshold (default -0.01).
-             u·u should be -1; drift toward 0/positive means the cheap
-             interpolation is degrading the norm -> unreliable here.
-           "alpha": trigger when the lapse alpha = 1/sqrt(-g^00) is below
-             Geodesic::alpha_threshold (default 0.5), i.e. deep in the
-             potential well near a horizon / puncture.
-         (kimi2.txt recommends the lapse as the physically-motivated choice
-         and the u·u residual as a parameter-free fallback; both are
-         available, u·u is the default per the user's request.) */
-      {
-        ParticleGeodesic *pg = &gstate.pgeodesic[mi];
-        if (gstate.sinterp_mode == 0 && gstate.sadaptive && !pg->use_robust)
-        {
-          int flip = 0;
-          if (gstate.strong_mode == 1)  /* alpha mode */
-          {
-            /* lapse = 1/sqrt(-g^{00}) from the inverse metric.
-               If the metric is too degenerate to even build the inverse
-               (build_gup_from_gdn fails, or g^{00} >= 0), the interpolation
-               is already broken here -- that IS the strongest possible
-               "interpolation bad" signal, so promote to the robust path
-               immediately instead of leaving flip = 0 and letting the
-               particle be dropped below (rl >= 0 with a garbage metric). */
-            double gup[4][4], bup[3], g3[3][3], gup3[3][3];
-            if (build_gup_from_gdn(gdn, NULL, bup, g3, gup3, gup)
-                && gup[0][0] < 0.0)
-            {
-              double lapse = 1.0 / sqrt(-gup[0][0]);
-              if (isfinite(lapse) && lapse < gstate.alpha_thr) flip = 1;
-            }
-            else
-              flip = 1;
-          }
-          else  /* "u_dot_u" (default): the user's literal criterion */
-          {
-            if (isfinite(rl) && rl > gstate.u_dot_u_thr) flip = 1;
-          }
-          /* u·u backstop, independent of the criterion mode: a non-finite
-             or superluminal raw norm means the cheap-path metric is unusable
-             here regardless of what the lapse said -- promote to robust.
-             (In alpha mode this is otherwise never evaluated; it is exactly
-             the case that dropped the z=0 ring particles.) */
-          if (!flip && (!isfinite(rl) || rl > gstate.u_dot_u_thr)) flip = 1;
-          /* velocity-component magnitude check (added discriminant): the
-             4-velocity is normalized to u·u = -1, yet a particle near light
-             speed has |u^0|,|u^i| >> 1.  A positive par threshold flags an
-             abnormal (unphysical) component and promotes to the robust path.
-             0 = that component's check disabled (default).  u here is the
-             normalized 4-velocity carried from the previous step's end-of-step
-             renorm. */
-          {
-            if (gstate.u0_thr > 0.0 && fabs(u[0]) > gstate.u0_thr) flip = 1;
-            if (gstate.ui_thr > 0.0 &&
-                (fabs(u[1]) > gstate.ui_thr || fabs(u[2]) > gstate.ui_thr ||
-                 fabs(u[3]) > gstate.ui_thr))
-              flip = 1;
-          }
-          if (flip)
-          {
-            pg->use_robust = 1;
-            /* recompute the metric in the (now-robust) frame so the
-               normalization below happens consistently */
-            for (int mu=0;mu<4;mu++)
-              for (int nu=0;nu<4;nu++)
-                gdn[mu][nu] = 0.0;
-            metric_at_point(mi, ys, ys[0], gdn);
-            /* raw rl in the new frame (full contraction uc_mu u^mu) */
-            double uc[4] = {0,0,0,0};
-            for (int mu=0;mu<4;mu++)
-              for (int nu=0;nu<4;nu++)
-                uc[mu] += gdn[mu][nu]*u[nu];
-            rl = 0.0;
-            for (int mu=0;mu<4;mu++)
-              rl += uc[mu]*u[mu];
-          }
-        }
-      }
-
       if (!isfinite(rl) || rl >= 0.0)
       {
-        /* [DBG] GEODESIC_DBG_DROP: dump the bad particle + its metric */
         gstate.pgeodesic[mi].renorm_warn = 1;   /* aggregated after the loop */
+      }
+      else if (gstate.sinterp_mode == 0)
+      {
+        /* local27: full 4-velocity renormalization: rescale all four
+           components by 1/sqrt(-rl) so that g(u,u) = -1 holds exactly in
+           this metric frame; the ODE-produced direction is kept as-is.
+           (This full rescale fixes the local27 norm drift.) */
+        const double inv_n = 1.0 / sqrt(-rl);
+        u[0] *= inv_n; u[1] *= inv_n; u[2] *= inv_n; u[3] *= inv_n;
+        if (!isfinite(u[0]) || u[0] <= 0.0)
+        {
+          gstate.pgeodesic[mi].norm_bad = 1;   /* aggregated after the loop */
+          gstate.pgeodesic[mi].outbd = 1;   /* let the loss policy below handle this particle */
+        }
+        else
+        {
+          ys[4] = u[0]; ys[5] = u[1]; ys[6] = u[2]; ys[7] = u[3];
+          particle_ttv[mi] = ys[4];
+        }
       }
       else
       {
+        /* aei / carpet: keep the spatial velocity unchanged and re-solve
+           u^0 (legacy behavior).  A full rescale would amplify the spatial
+           velocity when the IC norm deviates from -1 in this metric (the
+           TP-ring IC has u.u well off -1), flinging particles deeper into
+           the strong field than intended. */
         const double u_spatial_init[3] = { ys[5], ys[6], ys[7] };
         const double u0_predictor = ys[4];     /* u^0 already in the particle state: continuity anchor */
         double u0_solved;
-
         if (solve_u0_future_directed(gdn, u_spatial_init, u0_predictor, &u0_solved))
         {
           ys[4] = u0_solved;
@@ -4011,45 +2955,10 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
 
       gstate.pgeodesic[mi].rl_last = rl;   /* reported after the loop */
 
-      /* step-start velocity-component check: the same discriminant as the
-         end-of-step check below, but evaluated on the just-renormalized
-         step-start 4-velocity u[].  The step has not started yet, so the
-         promotion needs no re-do -- the robust frame is simply used from
-         this step on (sticky). */
-      if (gstate.sinterp_mode == 0 && gstate.sadaptive
-          && !gstate.pgeodesic[mi].use_robust)
-      {
-        int vel_abn = 0;
-        if (gstate.u0_thr > 0.0 && fabs(u[0]) > gstate.u0_thr)
-          vel_abn = 1;
-        if (gstate.ui_thr > 0.0 &&
-            (fabs(u[1]) > gstate.ui_thr || fabs(u[2]) > gstate.ui_thr ||
-             fabs(u[3]) > gstate.ui_thr))
-          vel_abn = 1;
-        if (vel_abn)
-        {
-          gstate.pgeodesic[mi].use_robust = 1;
-        }
-      }
     }
 
-    /* start-of-step snapshot (taken after the step-start renorm): if the
-       end-of-step renorm discovers that the cheap Christoffel path broke
-       down inside this Cactus step (raw u.u >= 0 / non-finite), the
-       particle is promoted to the robust path and the step is redone from
-       this snapshot instead of dropping the particle */
-    CCTK_REAL ystart[8];
-    memcpy(ystart, ys, sizeof(ystart));
-    const double ts_start = particle_ttw[mi];
-
     ts = particle_ttw[mi];
-
-    /* temporary debug (gated by GEODESIC_DEBUG_STEP, particle 0 only) */
-
     /* integrate in tau until coordinate time reaches target */
-
-  retry_integration:   /* end-of-step promotion redoes the step from ystart */
-    ;
     const double t_target = t_end;
     CCTK_REAL h = hstart;
     int retc = GSL_SUCCESS, max_iter = 0;
@@ -4128,8 +3037,6 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
         break;
       }
 
-      /* temporary debug (gated by GEODESIC_DEBUG_STEP, particle 0 only) */
-
       const double r2 = ys[1]*ys[1] + ys[2]*ys[2] + ys[3]*ys[3];
       if (r2 < excised_radius * excised_radius)
       {
@@ -4184,54 +3091,46 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
         double rl = 0.0;
         for (int mu=0; mu<4; ++mu)
           rl += u_cov[mu] * u[mu];
-
         if (!isfinite(rl) || rl >= 0.0)
         {
-          /* end-of-step failure on the cheap local27 path: the step-start
-             strong-curvature criterion cannot see a breakdown that develops
-             inside the GSL integration (u.u is renormalized to -1 at every
-             step start, so the step-start raw u.u always looks healthy),
-             hence promote here and redo the step on the robust path; a
-             failure on the robust path falls through to the loss policy */
-          if (gstate.sinterp_mode == 0 && gstate.sadaptive
-              && !gstate.pgeodesic[mi].use_robust)
-          {
-            gstate.pgeodesic[mi].use_robust = 1;
-            memcpy(ys, ystart, sizeof(ys));
-            ts = ts_start;
-            odedata.a = 0.0;
-            gsl_odeiv2_evolve_reset(evolve);
-            gsl_odeiv2_step_reset(gstep);
-            goto retry_integration;
-          }
-          /* [DBG] GEODESIC_DBG_DROP: dump the bad particle + its metric */
           gstate.pgeodesic[mi].outbd = 1;
           gstate.pgeodesic[mi].renorm_warn = 1;   /* aggregated after the loop */
         }
         else
         {
-          /* gradual-drift trigger: the raw end-of-step u.u drifts away
-             from -1 while the cheap path degrades, long before it goes
-             non-negative; promote early (takes effect from the next Cactus
-             step, the current one renormalizes fine) */
-          if (gstate.sinterp_mode == 0 && gstate.sadaptive
-              && !gstate.pgeodesic[mi].use_robust
-              && rl > gstate.u_dot_u_thr)
+          if (gstate.sinterp_mode == 0)
           {
-            gstate.pgeodesic[mi].use_robust = 1;
-          }
-          const double u_spatial_step[3] = { ys[5], ys[6], ys[7] };
-          const double u0_predictor = ys[4];    /* u^0 just produced by the ODE solver, before renormalization: continuity anchor */
-          double u0_solved;
-
-          if (solve_u0_future_directed(gdn, u_spatial_step, u0_predictor, &u0_solved))
-          {
-            ys[4] = u0_solved;
+            /* local27: full 4-velocity renormalization (same as step-start):
+               rescale all four components by 1/sqrt(-rl) so that g(u,u) = -1
+               holds exactly in this metric frame (rl = raw pre-renorm value) */
+            const double inv_n = 1.0 / sqrt(-rl);
+            u[0] *= inv_n; u[1] *= inv_n; u[2] *= inv_n; u[3] *= inv_n;
+            if (!isfinite(u[0]) || u[0] <= 0.0)
+            {
+              gstate.pgeodesic[mi].norm_bad = 1;   /* aggregated after the loop */
+              gstate.pgeodesic[mi].outbd = 1;
+            }
+            else
+            {
+              ys[4] = u[0]; ys[5] = u[1]; ys[6] = u[2]; ys[7] = u[3];
+            }
           }
           else
           {
-            gstate.pgeodesic[mi].norm_bad = 1;   /* aggregated after the loop */
-            gstate.pgeodesic[mi].outbd = 1;
+            /* aei / carpet: u^i unchanged, re-solve u^0 (legacy behavior;
+               see the step-start branch for the rationale) */
+            const double u_spatial_step[3] = { ys[5], ys[6], ys[7] };
+            const double u0_predictor = ys[4];    /* u^0 just produced by the ODE solver, before renormalization: continuity anchor */
+            double u0_solved;
+            if (solve_u0_future_directed(gdn, u_spatial_step, u0_predictor, &u0_solved))
+            {
+              ys[4] = u0_solved;
+            }
+            else
+            {
+              gstate.pgeodesic[mi].norm_bad = 1;   /* aggregated after the loop */
+              gstate.pgeodesic[mi].outbd = 1;
+            }
           }
         }
 
@@ -4248,35 +3147,6 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
           rl += u_cov[mu] * u[mu];
 
         gstate.pgeodesic[mi].rl_last = rl;   /* reported after the loop */
-
-        /* velocity-component magnitude check (added discriminant): even though
-           u·u is renormalized to -1, an abnormal (near-light-speed) velocity
-           component indicates the cheap path is degrading inside the step.  If
-           any enabled component threshold is exceeded, redo this Cactus step
-           from the step-start snapshot on the robust path (same mechanism as
-           the rl>=0 re-do) and stick to the robust path.  The !use_robust
-           guard stops a re-fire loop: after the redo the robust path is active
-           and a repeat fall-through goes to the loss policy. */
-        {
-          int vel_abn = 0;
-          if (gstate.u0_thr > 0.0 && fabs(u[0]) > gstate.u0_thr)
-            vel_abn = 1;
-          if (gstate.ui_thr > 0.0 &&
-              (fabs(u[1]) > gstate.ui_thr || fabs(u[2]) > gstate.ui_thr ||
-               fabs(u[3]) > gstate.ui_thr))
-            vel_abn = 1;
-          if (gstate.sinterp_mode == 0 && gstate.sadaptive
-              && !gstate.pgeodesic[mi].use_robust && vel_abn)
-          {
-            gstate.pgeodesic[mi].use_robust = 1;
-            memcpy(ys, ystart, sizeof(ys));
-            ts = ts_start;
-            odedata.a = 0.0;
-            gsl_odeiv2_evolve_reset(evolve);
-            gsl_odeiv2_step_reset(gstep);
-            goto retry_integration;
-          }
-        }
       }
 
       if (fabs(ys[0] - t_target) < 1e-13 * fmax(1.0, fabs(t_target)))
@@ -4342,8 +3212,6 @@ static void geodesic_recompute_owner_map(cGH *cctkGH, const double *bd, const in
   int mi;
   for (mi = 0; mi < particle_n_total; mi++)
   {
-    const int oldowner = gstate.owner_of[mi];
-    const int oldlvl   = gstate.owner_lvl[mi];
     int owner = -1, olvl = -1, claimable = 0;
     double best_gap = 1e100;
     int best_r = -1, best_l = -1;
@@ -4377,8 +3245,6 @@ static void geodesic_recompute_owner_map(cGH *cctkGH, const double *bd, const in
         if (gap_cells <= env_margin)
         {
           owner = best_r; olvl = best_l; claimable = 1;
-          /* debug: a particle claimed OUTSIDE its box (gap>0) is the
-             margin path in action -- worth logging at a handful. */
         }
       }
     }
@@ -4470,7 +3336,6 @@ void geodesics_integrate (CCTK_ARGUMENTS)
                     ? MultiPatch_GetMap(cctkGH)
                     : 0;
     LevelData *L;
-    /* GEODESIC_DBG_CALL: trace every acquire call (map, level) */
     if (level >= GEODESIC_MAX_LEVELS)
       return;   /* more levels than LD[] holds (GEODESIC_MAX_LEVELS): ignore */
 
@@ -4534,14 +3399,8 @@ void geodesics_integrate (CCTK_ARGUMENTS)
          of whichever patch Carpet hands this rank, whether a full centred
          patch (1p), an off-centre patch, or a per-rank quadrant of a
          multi-process AMR run.  It uses only geometry already in the cGH,
-         so no amr_center/amr_radius or lbnd/ngz reconstruction is needed. */
+         so no patch-geometry reconstruction is needed. */
       L->origin[i] = CCTK_ORIGIN_SPACE(i) + (CCTK_REAL)cctk_lbnd[i] * L->dx[i];
-
-      {
-        /* temporary debug: dump the raw cGH geometry and the derived
-           per-level geometry once per axis (gated by GEODESIC_DEBUG_GEOM) */
-      }
-
       /* Alignment check (single-process fine levels): the local array
          holds the regrid box plus ghost zones on both sides, so the
          interior box spans nint = lsh - 2*ngz cells.  For a patch that
@@ -4625,7 +3484,6 @@ void geodesics_integrate (CCTK_ARGUMENTS)
               else         havepast = 0;
             }
           }
-        L->timelevels_ok = havepast;
         if (!have0)
           CCTK_ERROR("Geodesic (Exact=no): ADMBase metric/lapse/shift not stored; check the run configuration.");
         if (!havepast)
@@ -4662,12 +3520,8 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     }
     else
     {
-      L->timelevels_ok = 0;
       L->metric_static = 1;
     }
-
-    /* temporary debug: time-level sanity (gated by GEODESIC_DEBUG_FIT) */
-
     /* minimal ghost cGH exposing THIS level's geometry.  Only the fields
        set here are valid (everything else is zero); this lets legacy
        code such as g4dn() in derivative.h keep using
@@ -4686,7 +3540,6 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     L->gh.cctk_time         = cctk_time;
     L->gh.cctk_iteration    = cctk_iteration;
 
-    L->stamp = cctk_iteration;
     L->valid = 1;
     gstate.ld_generation++;
 
@@ -4905,37 +3758,26 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   else
     loss_policy = 2;
 
-  /* metric_interp / time_interp (grid mode only; the Exact = yes branch
-     ignores both).  The remaining linear constraints (Exact = no, not
-     carpet, ADMBase metric_timelevels >= 2) are checked in ParamCheck. */
+  /* metric_interp (grid mode only; the Exact = yes branch ignores it).
+     The remaining linear constraints (Exact = no, not carpet,
+     ADMBase metric_timelevels >= 2) are checked in ParamCheck. */
   if (strcmp(metric_interp, "aei") == 0)
     gstate.sinterp_mode = 1;
   else if (strcmp(metric_interp, "carpet") == 0)
     gstate.sinterp_mode = 2;
+  else if (strcmp(metric_interp, "local27") == 0)
+    gstate.sinterp_mode = 3;
   else
-    { gstate.sinterp_mode = 0; }
-  gstate.stime_interp = (strcmp(time_interp, "linear") == 0) ? 1 : 0;
-  gstate.sadaptive = (strcmp(adaptive_interp, "off") == 0) ? 0 : 1;
-  /* strong-curvature criterion for the robust local27 path (0 = u_dot_u,
-     default; 1 = alpha) */
-  gstate.strong_mode = (strcmp(strong_curv_crit, "alpha") == 0) ? 1 : 0;
-  gstate.u_dot_u_thr = u_dot_u_threshold;
-  gstate.alpha_thr   = alpha_threshold;
-  gstate.u0_thr      = u0_threshold;
-  gstate.ui_thr      = ui_threshold;
-  gstate.strong_christ_off = (strcmp(strong_christoffel, "l27") == 0) ? 1 : 0;
-  gstate.log_metric_interp = (strcmp(log_metric_interp, "yes") == 0) ? 1 : 0;
-  gstate.robust_metric_interp = (strcmp(robust_metric_interp, "fourd") == 0) ? 1
-                              : (strcmp(robust_metric_interp, "fourdh") == 0) ? 2
-                              : (strcmp(robust_metric_interp, "poly") == 0) ? 3 : 0;
+    gstate.sinterp_mode = 0;   /* "l27" */
   gstate.cur_gh = cctkGH;
 
-  /* Resolve the AEI interpolator handle for any non-exact grid run: the
-     dedicated aei/carpet samplers (sinterp_mode 1/2) need it, and the
-     local27 strong-curvature adaptive path (sinterp_mode 0, use_robust)
-     also calls the same pointwise AEI order-4 interpolant.  The
-     interpolators are registered at STARTUP, after PARAMCHECK. */
-  if (!gstate.sexact && gstate.aei_handle < 0)
+  /* Resolve the AEI interpolator handle for the aei / carpet grid runs:
+     modes 0 (l27) and 3 (local27) are fully self-contained and must
+     run WITHOUT the AEI thorns; modes 1 (aei) and 2 (carpet) call the
+     pointwise AEI order-4 interpolant.  The interpolators are registered
+     at STARTUP, after PARAMCHECK. */
+  if (!gstate.sexact && (gstate.sinterp_mode == 1 || gstate.sinterp_mode == 2)
+      && gstate.aei_handle < 0)
   {
     gstate.aei_handle   = CCTK_InterpHandle("Lagrange polynomial interpolation");
     gstate.aei_coordsys = CCTK_CoordSystemHandle("cart3d");
@@ -5110,8 +3952,8 @@ void geodesics_integrate (CCTK_ARGUMENTS)
          land on the new level.  Passing ys[0] as bg would give theta = 0
          and evaluate the time-dependent metric at t - dt, one grid step
          too early (a one-off ~O(dt) u^t error at init for the
-         time_interp = linear paths; the time_interp = off path ignores
-         bg and is unaffected). */
+         time-blend paths; the l27 level-0 path ignores bg and is
+         unaffected). */
       double gdn_i[4][4];
       for (int mu = 0; mu < 4; mu++)
         for (int nu = 0; nu < 4; nu++)
@@ -5143,10 +3985,35 @@ void geodesics_integrate (CCTK_ARGUMENTS)
                    "at(%.4g,%.4g,%.4g)",
                    mi, u[0], u[1], u[2], u[3], norm, ys[1], ys[2], ys[3]);
       }
+      else if (gstate.sinterp_mode == 0)
+      {
+        /* local27: full 4-velocity renormalization -- rescale all four
+           components by 1/sqrt(-norm) so that g(u,u) = -1 holds exactly
+           (the parfile direction is kept; u^t must stay future-directed). */
+        if (isfinite(norm) && norm < 0.0 && u[0] > 0.0)
+        {
+          const double inv_n = 1.0 / sqrt(-norm);
+          CCTK_VInfo(CCTK_THORNSTRING,
+                     "Particle %d init: u^mu rescaled by %.15g "
+                     "(u^t %.15g -> %.15g; norm before correction = %.9g) "
+                     "at(%.4g,%.4g,%.4g)",
+                     mi, inv_n, u[0], u[0]*inv_n, norm, ys[1], ys[2], ys[3]);
+          for (int a = 0; a < 4; a++) u[a] *= inv_n;
+          ys[4] = u[0]; ys[5] = u[1]; ys[6] = u[2]; ys[7] = u[3];
+          particle_ttv[mi] = u[0];
+        }
+        else
+        {
+          CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+                     "Particle %d: 4-velocity not normalizable at init "
+                     "(norm=%.4g, u^mu=[%g,%g,%g,%g]); keeping parfile values",
+                     mi, norm, u[0], u[1], u[2], u[3]);
+        }
+      }
       else
       {
-        /* Not (within tolerance) normalized: re-solve u^0 with u^i
-           fixed (future-directed branch) and log the correction. */
+        /* aei / carpet: re-solve u^0 with u^i fixed (legacy behavior; see
+           the step-start branch for the rationale). */
         double u_spatial[3] = { u[1], u[2], u[3] };
         double u0_solved;
         if (solve_u0_future_directed(gdn_i, u_spatial, u[0], &u0_solved))
@@ -5419,10 +4286,10 @@ void geodesics_integrate (CCTK_ARGUMENTS)
         }
 
         /* ---- integrate the chunk (each rank: its owned particles) ----
-           carpet is thread-safe here: the pointwise interpolation reads
-           only the thread-local gview copy (carpet_interp_point), and the
-           implicit OpenMP barrier below keeps every owned particle done
-           before the chunk-boundary collective sync */
+           aei/carpet is thread-safe here: the pointwise AEI interpolation
+           uses only per-call local buffers, and the implicit OpenMP
+           barrier below keeps every owned particle done before the
+           chunk-boundary collective sync */
 #ifndef CCTK_DEBUG
 #pragma omp parallel for schedule(dynamic,1) shared(gstate)
 #endif
@@ -5450,9 +4317,9 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   else
   {
     /* single pass: each particle integrated once to the step end
-       (carpet included: carpet_interp_point reads only the thread-local
-       gview copy, so it is thread-safe; the implicit OpenMP barrier
-       precedes the post-loop S2 sync) */
+       (aei/carpet included: the pointwise AEI interpolation is
+       thread-safe; the implicit OpenMP barrier precedes the post-loop
+       S2 sync) */
 #ifndef CCTK_DEBUG
 #pragma omp parallel for schedule(dynamic,1) shared(gstate)
 #endif
@@ -5483,7 +4350,6 @@ void geodesics_integrate (CCTK_ARGUMENTS)
      integration that is a multiple of particle_dump_every.  After the S2
      sync all ranks see the identical final state, so the rank-0-only dump
      writes the coherent post-integration block. */
-  /* temporary debug: dump gate visibility (GEODESIC_DBG_DUMP) */
   if (lvl == gstate.nlev_seen - 1 &&
       gstate.last_integ_iter == cctk_iteration &&
       particle_dump_every > 0 &&

@@ -28,15 +28,15 @@ schedule Geodesics_init at CCTK_INITIAL
 # is one call and one integration per iteration -- the same behavior as the
 # old unigrid mode.
 #
-# Multi-process: only rank 0 integrates and writes the dump (the particle
-# arrays are per-rank global storage; rank 0 holds the tracked state).
-# With Exact=yes the analytic Kerr-Schild metric is valid everywhere, so
-# the safe-region checks are skipped and a particle is never dropped for
-# leaving a local grid; with Exact=no a particle that leaves rank 0's
-# local level-0 grid is dropped by the loss policy.
-#
-# One centered patch per level is assumed (single process); a finer level
-# with several patches would overwrite LD[level] per component.
+# Multi-process (owner-computes): with Exact=no (multi_amr mode) the
+# domain is partitioned among the ranks and each rank integrates the
+# particles owned by its local patch; the step is integrated in
+# coordinate-time chunks with a state exchange and an ownership recompute
+# at each chunk boundary, and an MPI_Allgather keeps the replicated
+# particle arrays bit-identical on all ranks (at most 4 ranks, a 2x2
+# (y,z) decomposition with one patch per rank per level).  With Exact=yes
+# (multi_exact mode) the analytic metric is valid everywhere, so rank 0
+# integrates all particles and writes the dump.
 #
 # READS: the metric fields are fetched from the per-level grid in Exact=no
 # mode; the dependencies are declared so that the schedule, PreSync and the

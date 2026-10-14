@@ -92,6 +92,21 @@ static const CCTK_REAL MtxA[27][27] = {{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
                          {1.0/8.0, -1.0/4.0, 1.0/8.0, -1.0/4.0, 1.0/2.0, -1.0/4.0, 1.0/8.0, -1.0/4.0, 1.0/8.0, -1.0/4.0, 1.0/2.0, -1.0/4.0, 1.0/2.0, -1.0,
                          1.0/2.0, -1.0/4.0, 1.0/2.0, -1.0/4.0, 1.0/8.0, -1.0/4.0, 1.0/8.0, -1.0/4.0, 1.0/2.0, -1.0/4.0, 1.0/8.0, -1.0/4.0, 1.0/8.0}};
 
+/* V5INV: 5x5 inverse of the 1D Vandermonde matrix V[a][p] = n^p with node
+   set {-2,-1,0,1,2} (a = node + 2, p = 0..4).  Given the 5 nodal values
+   y[a], the monomial coefficients c = V5INV @ y of the unique quartic
+   interpolant satisfy sum_k c[k] p^k = the 5-point Lagrange value at p
+   (the log_w5 molecule).  Used by the local27 (sinterp_mode 3) 125-node fit
+   as three separable 5x5 transforms per component -- the Kronecker form
+   of the 125x125 inverse Vandermonde (MtxA125 = V5INV ^| V5INV ^| V5INV). */
+static const CCTK_REAL V5INV[5][5] = {
+  { 0.0,       0.0,      1.0,     0.0,     0.0      },
+  { 1.0/12.0, -2.0/3.0,  0.0,     2.0/3.0, -1.0/12.0},
+  {-1.0/24.0,  2.0/3.0, -5.0/4.0, 2.0/3.0, -1.0/24.0},
+  {-1.0/12.0,  1.0/6.0,  0.0,    -1.0/6.0,  1.0/12.0},
+  { 1.0/24.0, -1.0/6.0,  1.0/4.0, -1.0/6.0,  1.0/24.0}
+};
+
 static CCTK_REAL gdn_derivatives(CCTK_INT d, CCTK_REAL x, CCTK_REAL y, CCTK_REAL z, CCTK_INT j1, CCTK_INT j2)
 {
   CCTK_REAL ret, a;

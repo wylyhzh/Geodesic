@@ -19,7 +19,6 @@ Time::timestep           =  0.1
 #------------------------------------------------------------------------------
 
 ActiveThorns = "Boundary CartGrid3D CoordBase Fortran InitBase LocalReduce SymBase Time"
-ActiveThorns = "AEILocalInterp LocalInterp"
 ActiveThorns = "MoL Periodic Slab SpaceMask"
 ActiveThorns = "Carpet CarpetInterp CarpetIOASCII CarpetIOHDF5 CarpetIOScalar CarpetLib CarpetIOBasic CarpetReduce CarpetSlab LoopControl"
 ActiveThorns = "IOUtil Formaline"

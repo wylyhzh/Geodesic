@@ -1,10 +1,10 @@
 # Geodesic thorn testsuite configuration.
 #
-# Seven tests.  The first four integrate one particle on a prograde
+# Eighteen tests.  The first four integrate one particle on a prograde
 # equatorial circular orbit (r = 11.989, M = 2, a = 0.5, 32 Cactus
 # steps of 100 coordinate-time units; Exact = yes except
-# circ_orbit_grid); the next two are a 100-particle pair on a ring of
-# the same circular orbits (particle i at angle 2*pi*i/100),
+# circ_orbit_grid); the next two are 100-particle rings on the same
+# circular orbits (particle i at angle 2*pi*i/100),
 # Exact = no, with and without AMR; the last is a 200-particle bound
 # equatorial elliptic orbit under 3-level AMR:
 #
@@ -75,8 +75,9 @@
 #                        refinement factor 2), so the particles occupy
 #                        all four levels at t = 0 and cross level
 #                        boundaries in both directions as the orbit
-#                        runs through ~2.42 radial periods
-#                        (t to 3300).  Exact =
+#                        runs through ~19 radial periods
+#                        (t to 25600; 256 Cactus steps, dt = 0.1, no
+#                        subcycling).  Exact =
 #                        yes is deliberate: the 2nd-order grid metric
 #                        (Exact = no) corrupts the constants of motion
 #                        of this strongly eccentric orbit (init u^t
@@ -86,19 +87,75 @@
 #                        metric E and L_z are conserved to integrator
 #                        precision and all 200 particles survive.
 #                        Validates the per-level AMR pipeline
-#                        (acquire, pick_level, 4:1 subcycling on three
-#                        layers) and the particle integrator on an
-#                        eccentric orbit; the grid-metric path itself
-#                        is covered by circ_orbit_grid / circ_orbit_amr.
+#                        (acquire, pick_level) and the particle
+#                        integrator on an eccentric orbit; the
+#                        grid-metric path itself is covered by
+#                        circ_orbit_grid / circ_orbit_amr.
+#
+# The remaining eleven tests cover the grid-sampling back-ends
+# (metric_interp = l27 / local27 / aei / carpet) and the
+# two-puncture binary black hole background (TwoPunctures initial
+# data with GW150914 parameters, solved once at t = 0):
+#
+#   conv100              P0 circular orbit (r = 10, M = 2, a = 0.5),
+#                        Exact = no on a 100^3 grid (dx = 0.5), the
+#                        full paper run: 1500 steps (t = 150.1, ~1
+#                        orbital period).  4 MPI ranks.
+#
+#   conv100_l27 / conv100_local27 / conv100_aei /
+#   conv100_carpet       the same orbit shortened to 200 steps
+#                        (t = 20.0), one per metric-sampling back-end:
+#                        l27 (27-point Lagrange stencil), local27
+#                        (local 27-point stencil), aei (via
+#                        AEILocalInterp) and carpet (via LocalInterp).
+#                        Regression check that all four back-ends stay
+#                        reproducible.  conv100_l27 runs single process:
+#                        in multi-process runs the default 2x2 (y,z)
+#                        decomposition puts the equatorial ring on rank
+#                        faces, where the l27 stencil is clipped out of
+#                        the particle and the particle is dropped at the
+#                        first step (see README, Limitations).
+#
+#   tp_local27_025 / tp_aei_025 / tp_carpet_025
+#                        NEAR-field probe on the TwoPunctures GW150914
+#                        merger background (144^3, dx = 0.25, no AMR,
+#                        excised_radius = 2): 100-particle ring at
+#                        r = 8 with strong inward velocity, 20 steps.
+#                        The strong-field plunge drives deterministic
+#                        NaN drops (loss_policy = drop); the NaN-aware
+#                        comparator requires exactly the same particles
+#                        to drop at the same steps.
+#
+#   tp_far_local27_025_t80 / tp_far_aei_025_t80 /
+#   tp_far_carpet_025_t80
+#                        FAR-field probe on the same background:
+#                        100-particle ring at r = 10 with modest
+#                        inward velocity, 80 steps (t = 80).  All 100
+#                        particles survive with zero NaN: a
+#                        well-posedness check on a strongly curved
+#                        two-puncture background with an excised
+#                        region (the time-dependent-metric code path
+#                        itself is exercised by the AMR tests).
 #
 # The reference files (test/circ_orbit/geodesic_particles.txt,
 # test/circ_orbit_conserved/geodesic_particles.txt,
 # test/circ_orbit_mpi/geodesic_particles.txt,
 # test/circ_orbit_grid/geodesic_particles.txt,
 # test/circ_orbit_amr/geodesic_particles.txt,
-# test/circ_orbit_100/geodesic_particles.txt and
-# test/ellipse_orbit_amr/geodesic_particles.txt) are the raw dumps of
-# verified runs.
+# test/circ_orbit_100/geodesic_particles.txt,
+# test/ellipse_orbit_amr/geodesic_particles.txt,
+# test/conv100/geodesic_particles.txt,
+# test/conv100_l27/geodesic_particles.txt,
+# test/conv100_local27/geodesic_particles.txt,
+# test/conv100_aei/geodesic_particles.txt,
+# test/conv100_carpet/geodesic_particles.txt,
+# test/tp_local27_025/geodesic_particles.txt,
+# test/tp_aei_025/geodesic_particles.txt,
+# test/tp_carpet_025/geodesic_particles.txt,
+# test/tp_far_local27_025_t80/geodesic_particles.txt,
+# test/tp_far_aei_025_t80/geodesic_particles.txt and
+# test/tp_far_carpet_025_t80/geodesic_particles.txt) are the raw dumps
+# of verified runs.
 
 EXTENSIONS txt
 
@@ -143,4 +200,70 @@ TEST ellipse_orbit_amr
 {
   RELTOL 1e-12
   NPROCS 1
+}
+
+TEST conv100
+{
+  RELTOL 1e-12
+  NPROCS 4
+}
+
+TEST conv100_l27
+{
+  RELTOL 1e-12
+  NPROCS 1
+}
+
+TEST conv100_local27
+{
+  RELTOL 1e-12
+  NPROCS 4
+}
+
+TEST conv100_aei
+{
+  RELTOL 1e-12
+  NPROCS 4
+}
+
+TEST conv100_carpet
+{
+  RELTOL 1e-12
+  NPROCS 4
+}
+
+TEST tp_local27_025
+{
+  RELTOL 1e-12
+  NPROCS 4
+}
+
+TEST tp_aei_025
+{
+  RELTOL 1e-12
+  NPROCS 4
+}
+
+TEST tp_carpet_025
+{
+  RELTOL 1e-12
+  NPROCS 4
+}
+
+TEST tp_far_local27_025_t80
+{
+  RELTOL 1e-12
+  NPROCS 4
+}
+
+TEST tp_far_aei_025_t80
+{
+  RELTOL 1e-12
+  NPROCS 4
+}
+
+TEST tp_far_carpet_025_t80
+{
+  RELTOL 1e-12
+  NPROCS 4
 }

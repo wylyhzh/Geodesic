@@ -12,6 +12,13 @@ build/
 *.out
 *.err
 
+# python cache
+__pycache__/
+*.pyc
+
+# Cactus runtime signal file
+test/TERMINATE
+
 # testsuite helper binary (auto-built by the util/check_conserved wrapper)
 util/check_conserved.bin
 

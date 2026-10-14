@@ -82,6 +82,11 @@
 #define POLY27 27
 #endif
 
+/* local27 (sinterp_mode 3): 125-node 5x5x5 quartic tensor-product polynomial */
+#ifndef POLY125
+#define POLY125 125
+#endif
+
 /* -------------------- AMR: maximum number of refinement levels --------------------
    Match Carpet::max_refinement_levels so particles can be integrated on the
    finest AMR level of the simulation.  Default 16 covers typical runs. */
@@ -99,7 +104,7 @@
    rl_last outbd. outbd (particle crossed a local box edge this step) is
    needed by the chunked integrator on every rank to pick a common chunk
    boundary. */
-#define GEODESIC_MPI_NPAY 16
+#define GEODESIC_MPI_NPAY 15
 
 /* -------------------- Base data containers at grid points -------------------- */
 typedef struct CF2_DATA {
@@ -132,34 +137,46 @@ typedef struct PARTICLEGEODESIC
   CCTK_REAL pgd[4][4][POLY27]; /* 4-metric polynomial interpolation coeffs */
   CCTK_INT  pgdc[4][4]; /* 4-metric is constant? */
 
-  /* time_interp = linear (local27 only): the metric polynomial fitted on
-     the OLDER time level (t - dt), used together with pgd (t) to blend
-     the metric to the particle's fractional coordinate time and to form
-     the 1st-order time derivative (g0 - g1)/dt.  Unused unless
-     time_interp = linear and metric_interp = local27. */
-  CCTK_REAL pgd1[4][4][POLY27];
-  CCTK_INT  pgd1c[4][4];
-
-
-  /* time_interp = linear: 1 if the OLDER time level's stencil samples
-     are invalid (all-zero or non-finite) so the current level must be
-     used for the metric/Christoffel blend (theta pinned to 1).  This
-     handles the first-integration moment where the particle's coordinate
-     time lags the grid and the past time level is not yet filled at the
-     particle's AMR cell. */
+  /* 1 if the OLDER time level's stencil samples are invalid (all-zero or
+     non-finite): the past time level is not yet filled at the particle's
+     AMR cell (typical at the very first integration).  The local27 time
+     blend then pins to the current level only (local27_time_weights). */
   CCTK_INT  old_level_bad;
 
-  /* time_interp = linear (local27 only): the Christoffel polynomial
-     fitted on the OLDER time level (t - dt), 27-term fits of the
-     pointwise Christoffel symbols computed on the stencil at that
-     level (6th-order FD spatial derivatives, time derivative
-     (g0 - g1)/dt).  Blended with pcf2 (t) in christoffel_at_point to
-     the particle's fractional coordinate time; for a static metric
-     the two fits are bit-identical and the blend is a no-op, so the
-     path reduces exactly to time_interp = off.  Unused unless
-     time_interp = linear and metric_interp = local27. */
-  CCTK_REAL pcf2_1[4][4][4][POLY27];
-  CCTK_INT  pcf2_1c[4][4][4];
+  /* ---- local27 (sinterp_mode 3): 125-node 5x5x5
+     quartic tensor-product fits (node-exact on the 5x5x5 stencil around
+     the particle's nearest node).  Three stored time levels: [0] = t,
+     [1] = t - dt, [2] = t - 2dt.  pcf2_125[lvl] fits the NODAL Christoffel
+     symbols at time level lvl (6th-order FD metric derivative + nodal
+     inverse, as in the local27 path); the particle Christoffel is the
+     time-Lagrange blend of the level fits (fast path).  pgd125[lvl] fits
+     the 4-metric at time level lvl; used for the metric value (time
+     blend) and, when local27_cf2_bad, for the analytic Christoffel assembly
+     (metric derivatives + inverse).  Unused unless metric_interp = local27. */
+  CCTK_REAL pcf2_125[3][4][4][4][POLY125];
+  CCTK_INT  pcf2_125c[3][4][4][4];
+  CCTK_REAL pgd125[3][4][4][POLY125];
+  CCTK_INT  pgd125c[3][4][4];
+
+  /* local27 (sinterp_mode 3): 1 = the nodal Christoffel samples at the
+     current refit were non-finite (6th-order FD window poison: the
+     +/-3 window of some stencil node hits the central singularity /
+     excised region), so the pcf2_125 fits are unusable and
+     christoffel_at_point assembles the Christoffel analytically from
+     the pgd125 metric fits instead.  Recomputed at every refit
+     (non-sticky). */
+  CCTK_INT  local27_cf2_bad;
+
+  /* local27 (sinterp_mode 3): 1 = the level-2 (t - 2dt) metric samples are
+     invalid (all-zero or non-finite), so the time blend uses the two
+     levels [t, t-dt] only.  Recomputed at every refit (non-sticky). */
+  CCTK_INT  local27_lvl2_bad;
+
+  /* local27 (sinterp_mode 3): 1 = the staged (blended) metric at the particle
+     position was invalid (degenerate all-zero / non-finite), so the pgd125
+     fits were not committed and the particle is dropped (this mode has no
+     AEI fallback by design).  Recomputed at every refit (non-sticky). */
+  CCTK_INT  local27_bad;
 
   /* ---- per-step diagnostics: written inside the OpenMP particle loop
      (each particle by exactly one thread), aggregated single-threaded
@@ -173,23 +190,16 @@ typedef struct PARTICLEGEODESIC
      a dead particle is skipped by the integration loop forever */
   CCTK_INT  dead;
 
-  /* sticky robust-path flag: 0 = cheap (historical) path, 1 = robust
-     (blend-then-inverse) path.  Only meaningful for metric_interp =
-     local27 (sinterp_mode 0) with adaptive_interp = on.  Set by the
-     strong-curvature criterion (Geodesic::strong_curv_crit, see
-     geodesic_integrate_particle) and never returned to 0 (sticky).
-     Carried in the MPI payload so that ownership transfers across
-     ranks in multi-process AMR inherit the correct path. */
-  CCTK_INT  use_robust;
-
-  /* per-particle, set by cf2_fitting: 1 = the local27 (27-point) fit at
-     the current position was degenerate / invalid (all-zero or non-finite
-     4-metric), so the official pgd/pgd1/pcf2 coefficients were NOT
-     committed (the last good fit is kept).  While set, metric_at_point and
-     christoffel_at_point fall back to the AEI extrapolant for this
-     particle (metric AND Christoffel together, same frame).  Reset to 0
-     when a valid fit is committed.  Derived state: recomputed whenever the
-     AMR level / stencil changes, so it is NOT carried in the MPI payload. */
+  /* per-particle, set by cf2_fitting: 1 = the l27 (27-point) fit at the
+     current position was degenerate / invalid (all-zero or non-finite
+     4-metric, or NaN-poisoned Christoffel stencil samples), so the
+     official pgd/pcf2 coefficients were NOT committed (the last good fit
+     is kept).  While set, the particle has no usable metric/Christoffel
+     in the l27 mode (no fallback interpolant): metric_at_point leaves gdn
+     zeroed and the norm check / loss policy drop the particle.  Reset to
+     0 when a valid fit is committed.  Derived state: recomputed whenever
+     the AMR level / stencil changes, so it is NOT carried in the MPI
+     payload. */
   CCTK_INT  l27_bad;
 
   /* current owning map (block).  0 = center Cartesian block for all
@@ -222,9 +232,8 @@ typedef struct PARTICLEGEODESIC
  * the current time, [1] is t - dt, [2] is t - 2dt (driver
  * convention).  Past levels are readable only when ADMBase keeps
  * them (timelevels >= 3) and Carpet fills them
- * (Carpet::init_fill_timelevels = "yes"); the acquire phase
- * tracks this in timelevels_ok, and metric_static records whether
- * levels 0 and 2 agree (a stationary metric, so d_t g = 0).
+ * (Carpet::init_fill_timelevels = "yes"); metric_static records
+ * whether levels 0 and 2 agree (a stationary metric, so d_t g = 0).
  *
  * Validity: filled during the per-level POSTSTEP call; read-only
  * afterwards during the same traversal (integration happens in the
@@ -233,8 +242,6 @@ typedef struct PARTICLEGEODESIC
  * ============================================================ */
 typedef struct {
   CCTK_INT  valid;                 /* data acquired                         */
-  CCTK_INT  stamp;                 /* cctk_iteration of last acquisition    */
-  CCTK_INT  timelevels_ok;         /* past time levels (1,2) were readable  */
   CCTK_INT  metric_static;         /* levels 0 and 2 agree within 1e-12     */
 
   /* grid geometry of this level (copied scalars, always valid) */
@@ -281,10 +288,7 @@ typedef struct {
 typedef struct {
   CCTK_REAL ksm, ksa, sinitial_radius;
   CCTK_REAL xmin_safe, xmax_safe, ymin_safe, ymax_safe, zmin_safe, zmax_safe;
-  CCTK_REAL amr_center[3];  /* AMR region centre (physical), par amr_center_* */
-  CCTK_REAL amr_radius[3];  /* AMR region half-extent (physical), par amr_radius_* */
   unsigned int seed;      /* rand_r seed (unsigned by API requirement) */
-  CCTK_INT dispno;
   bool sexact;            /* Exact=yes: built-in analytic Kerr-Schild metric */
   bool multi_exact;       /* multi-process + Exact=yes: grid safe-region
                              checks are skipped (each rank owns only a
@@ -297,91 +301,10 @@ typedef struct {
   bool srverbose;
   bool check_velocity;    /* particle velocity check */
   /* spatial metric sampler (par Geodesic::metric_interp):
-     0 = local27 (default), 1 = aei (AEILocalInterp), 2 = carpet
-     (CarpetInterp).  Grid mode only (Exact = no). */
+     0 = l27 (simplest 27-point fit), 1 = aei (AEILocalInterp),
+     2 = carpet, 3 = local27 (the self-contained 125-node fit).
+     Grid mode only (Exact = no); the default is local27. */
   CCTK_INT sinterp_mode;
-  /* time interpolation of the grid metric (par Geodesic::time_interp):
-     0 = off (default), 1 = linear blend of the two stored time levels. */
-  CCTK_INT stime_interp;
-  /* adaptive_interp (par Geodesic::adaptive_interp): for the local27 sampler,
-     1 = compute Christoffel by fitting the METRIC (blend-then-inverse: fit
-     4-metric from the 27-cell stencil, invert, differentiate) -- robust in
-     strong fields; 0 = historical behaviour (fit/blend the Christoffel
-     directly).  Only affects sinterp_mode == 0 (local27); aei/carpet are
-     unaffected.  Default 1 (on). */
-  CCTK_INT sadaptive;
-  /* strong-curvature criterion (par Geodesic::strong_curv_crit): which
-     indicator promotes a local27 particle to the robust (blend-then-inverse)
-     path.  0 = "u_dot_u" (trigger when raw u·u > u_dot_u_thr, default);
-     1 = "alpha" (trigger when lapse < alpha_thr).  Sticky: once set,
-     use_robust stays 1 for the particle's life.  Only affects
-     metric_interp = local27 (sinterp_mode 0). */
-  CCTK_INT  strong_mode;
-  CCTK_REAL u_dot_u_thr;   /* par Geodesic::u_dot_u_threshold, default -0.01 */
-  CCTK_REAL alpha_thr;     /* par Geodesic::alpha_threshold, default 0.5     */
-  /* velocity-component magnitude checks (added discriminant on top of the
-     u·u / lapse strong-curvature trigger).  The 4-velocity is normalized to
-     u·u = -1, yet a particle near light speed has |u^0|,|u^i| >> 1 while
-     u·u stays -1.  A positive threshold enables the corresponding check
-     (flag when the magnitude exceeds it); 0 = disabled (default, so the
-     existing behaviour is unchanged until the user tunes it).  Only used
-     with metric_interp = local27 (sinterp_mode 0). */
-  CCTK_REAL u0_thr;        /* par Geodesic::u0_threshold, default 0 (off)   */
-  CCTK_REAL ui_thr;        /* par Geodesic::ui_threshold, default 0 (off)   */
-  /* strong-region Christoffel source (par Geodesic::strong_christoffel): for
-     the local27 robust (use_robust) path.  0 = "hybrid" (default): metric
-     VALUE from AEI order-4, Christoffel derivatives from l27 poly27;
-     1 = "l27": metric value AND derivatives both from l27 (blend-then-
-     inverse).  Only affects metric_interp = local27 (sinterp_mode 0). */
-  CCTK_INT  strong_christ_off;
-  /* log-space metric interpolation (par Geodesic::log_metric_interp):
-     for the local27 robust (use_robust) path, interpolate the metric VALUE
-     in log|.| space for the positive ADM fields (gxx/gyy/gzz/lapse) to
-     suppress strong-curvature oscillation of the 4th-order (Lagrange) fit;
-     the six sign-changing fields (off-diagonal metric + shift) stay in
-     regular space.  Same 5-node order-4 tensor-product molecule as AEI a4.
-     0 = plain AEI values (default, unchanged behaviour);
-     1 = log-space for those fields (qwen1.txt).  Only affects
-     metric_interp = local27 (sinterp_mode 0), use_robust. */
-  CCTK_INT  log_metric_interp;
-  /* robust-path interpolation engine (par Geodesic::robust_metric_interp):
-     for the local27 robust (use_robust) path with strong_christ_off = 0
-     ("hybrid", the AEI-based strong-region path).
-     0 = "aei"  : AEI order-4 pointwise (5-node space x 2/3-node time
-                  blend; the current default, unchanged behaviour, optionally
-                  in log-space when log_metric_interp is on).
-     1 = "fourd": true 4D tensor product -- 5-node order-4 space x 3-node
-                  order-2 time Lagrange over the three stored ADMBase levels,
-                  giving both the value and all four derivatives from one
-                  consistent interpolant.
-     2 = "fourdh": same 4D tensor product applied to the nodal 4-metric
-                  deviation h = g - eta (g composed exactly at each node
-                  from that node's alpha/beta/gamma; eta = diag(-1,1,1,1)
-                  added back at the sample point).  Slower (one 4-metric
-                  composition per node), meant for the strong-curvature
-                  robust path.
-     3 = "poly" : node-exact 4D tensor product -- the AEI 5-node order-4
-                  spatial Lagrange molecule (exact on each level's 5x5x5 =
-                  125 stencil nodes, a strict superset of the 27-node local27
-                  stencil) times a 3-node order-2 time Lagrange over the three
-                  stored ADMBase levels [t, t-dt, t-2dt].  The full 125x3 =
-                  375-spacetime-node interpolant is bit-exact on every stored
-                  grid node (the 5-node molecule reproduces each level value on
-                  its 5 nodes per axis, and the time weights are
-                  Kronecker-delta on the 3 levels), so metric error on grid
-                  points is exactly zero.  Spatial accuracy/order (O(dx^4)) is
-                  identical to the plain AEI path, so it is numerically stable
-                  (no renormalization failures); the 3-node time Lagrange is a
-                  strict improvement over AEI's 2-level linear blend.  Same
-                  fourd_tw/fourd_tw_a time weights as fourd, so the frame
-                  agrees with fourd/fourdh/aei at the nodes.  Falls back to
-                  the plain AEI path on boundary / level failure (old_level_bad
-                  or metric_static pins the blend to the current level only).
-     aei/fourd/fourdh/poly fall back to the plain AEI path on boundary / level
-     failure.
-     Only affects metric_interp = local27 (sinterp_mode 0), use_robust,
-                  strong_christ_off = 0. */
-  CCTK_INT  robust_metric_interp;
   /* aei: interpolation + coordinate-system handles (resolved lazily on
      the first grid-mode integration; -1 until then) */
   int aei_handle;

@@ -26,30 +26,29 @@ Two metric sources are supported:
 
 - `Exact = no` (default): the metric and Christoffel symbols are
   sampled from the ADMBase grid (`gxx..gzz`, `alp`, `betax..betaz`).
-  Three spatial samplers are available
-  (`Geodesic::metric_interp`): `local27` (default) fits a 27-term
-  (3x3x3) Lagrange polynomial of the metric and of the Christoffel
-  symbols around the particle; `aei` evaluates a fourth-order pointwise
-  Lagrange interpolant (the `AEILocalInterp` thorn) of the ten 3+1
-  fields and their first spatial derivatives at the particle position,
-  and `carpet` (named after the original `CarpetInterp`-based
-  implementation) evaluates a self-contained quadratic pointwise
-  Lagrange interpolant on a 3x3x3 stencil around the particle; both
-  build the Christoffel symbols pointwise from the sampled fields and
-  derivatives.  No analytic form of the metric is assumed.  The connection includes the `dt(g)` terms of
-  `Gamma^mu_{00}` and `Gamma^mu_{0 nu}`.  With the default
-  `Geodesic::time_interp = off` the metric value is taken from time
-  level 0 and the time derivative is the 2nd-order backward
-  difference `(3 L0 - 4 L1 + L2) / (2 dt)` over the three most recent
-  ADMBase time levels; `time_interp = linear` instead linearly
-  blends the two stored levels with the particle's fractional
-  coordinate time and uses the 1st-order difference `(g0 - g1) / dt`
-  (not supported for `metric_interp = carpet`: rejected at startup).  Either way the mode works
-  for time-dependent metrics, not only stationary ones.  A
-  stationary metric is detected automatically (the oldest two levels
-  agree to relative 1e-12 on a subsample), in which case `dt(g) = 0`
-  exactly and the time difference is skipped.  Time-dependent runs
-  need the ADMBase metric fields at `timelevels >= 3` (with
+  Four samplers are available (`Geodesic::metric_interp`): `l27` fits
+  the simplest 27-point (3x3x3) Lagrange polynomial of the metric and
+  of the nodal Christoffel symbols from the **current time level
+  only**; `local27` (default) fits a self-contained 125-node (5x5x5)
+  quartic tensor-product polynomial of the metric and of the nodal
+  Christoffel symbols and blends the three stored time levels with a
+  3-node Lagrange in the particle's coordinate time; `aei` evaluates
+  the order-4 pointwise Lagrange interpolant of the `AEILocalInterp`
+  thorn on the ten 3+1 fields and their first spatial derivatives at
+  the particle position (the two stored time levels are linearly
+  blended); `carpet` uses the same AEI order-4 spatial molecule as
+  `aei` and takes the carpet-style 2nd-order 3-point time difference
+  of the full 4-metric.  `l27` and `local27`
+  are fully self-contained (no interpolator from another thorn);
+  `aei` and `carpet` need the `AEILocalInterp` thorn, whose
+  interpolator is resolved at startup.  No analytic form of the
+  metric is assumed.  The connection includes the `dt(g)` terms of
+  `Gamma^mu_{00}` and `Gamma^mu_{0 nu}`.  Every sampler works for
+  time-dependent metrics, not only stationary ones.  A stationary
+  metric is detected automatically (the oldest two levels agree to
+  relative 1e-12 on a subsample), in which case `dt(g) = 0` exactly
+  and the time difference is skipped.  Time-dependent runs need the
+  ADMBase metric fields at `timelevels >= 3` (with
   `Carpet::init_fill_timelevels = "yes"`), and the particle step is
   then capped at the grid time step (the connection is frozen at the
   grid's current time within one particle step).
@@ -70,60 +69,50 @@ two settings of one interpolator.
 - Metric and Christoffel symbols are the exact analytic Kerr--Schild
   solution of a **single** black hole (mass `M`, spin `a`; formulas built
   into the thorn).  No grid is sampled.
-- `metric_interp`, `time_interp`, `robust_metric_interp`,
-  `adaptive_interp`, and all AMR/stencil machinery are **ignored**.  Only
+- `metric_interp` and all AMR/stencil machinery are **ignored**.  Only
   `Exact`, `M`, `a` matter for the metric.
 - Time is handled by feeding the particle's coordinate time straight into the
   analytic formulas: there are no stored time levels, no blend, and no
   "missing past level" case.
 - The metric is exact, so the only error is the **ODE integrator** itself.
-  Grid-convergence questions (dx, `time_interp`, order) do not apply.
+  Grid-convergence questions (dx, order) do not apply.
 - This is a single Kerr hole in Kerr--Schild coordinates -- not a numeric
   evolution and not a binary.  It is the reference/verification mode used by
   `circ_orbit` and `ellipse_orbit_amr`.
 
-### `Exact = "no"` (default) -- grid: five valid combinations
+### `Exact = "no"` (default) -- grid: four samplers
 
-Metric and Christoffels are sampled from the ADMBase grid.  Two parameters
-combine:
+Metric and Christoffels are sampled from the ADMBase grid by one of four
+samplers (`Geodesic::metric_interp`):
 
-- `metric_interp` (spatial sampler): `local27` (default) / `aei` / `carpet`
-- `time_interp` (time handling): `off` (default) / `linear`
-
-That is 3 x 2 = 6 pairs, but **`carpet` is `off`-only** (`linear` is
-rejected at startup and marks every particle `outbd`), so **five combinations
-are valid**:
-
-| # | `metric_interp` | `time_interp` | what it does |
-|---|-----------------|---------------|--------------|
-| 1 | local27 | off | 27-point fit on the **current** level; 2nd-order backward time derivative.  The old level is sampled only to feed the robust path's `(g0-g1)/dt`. |
-| 2 | local27 | linear | 27-point fit on **both** levels; metric value = 2-level linear blend; 1st-order `(g0-g1)/dt`. |
-| 3 | aei | off | AEI 5-node order-4 pointwise, current level, plus its own time derivative. |
-| 4 | aei | linear | AEI pointwise as above, plus a 2-level linear blend of the metric. |
-| 5 | carpet | off | Carpet pointwise, current level, plus carpet's 2nd-order 3-point time difference. |
-| -- | carpet | linear | **unsupported** (startup abort + `outbd`). |
+| # | `metric_interp` | what it does |
+|---|-----------------|--------------|
+| 1 | l27 | The simplest sampler: 27-point (3x3x3) Lagrange fit of the metric and of the nodal 6th-order-FD Christoffel symbols, **current level only**.  Node-exact on the 27 stencil nodes.  A degenerate / non-finite staged fit drops the particle via the loss policy (no fallback interpolant). |
+| 2 | local27 (default) | Self-contained 125-node (5x5x5) quartic tensor-product fit of the metric and of the nodal 6th-order-FD Christoffel symbols (precomputed separable inverse Vandermonde, the 125x125 `MtxA` analogue); the three stored time levels are blended with a 3-node Lagrange in the particle's coordinate time.  Node-exact on all 125 grid nodes.  Uses **no** interpolator from another thorn. |
+| 3 | aei | Pointwise order-4 Lagrange interpolation via `AEILocalInterp` (10 ADMBase fields + first spatial derivatives at the particle position); the 4-metric and Christoffels are composed from the sampled fields.  The two stored time levels are linearly blended in the particle's coordinate time. |
+| 4 | carpet | Pointwise sampler with the same `AEILocalInterp` order-4 spatial molecule as `aei`; the time derivative is the carpet-style 2nd-order 3-point difference `(3 L0 - 4 L1 + L2) / (2 dt)` of the full 4-metric. |
 
 **Semantics to keep straight**
 
-- **`off` is not "no time".**  It means "no 2-level *blend*."  Every sampler
-  still computes a time derivative in its own way.  `linear` only adds a 2-level
-  linear *blend* of the metric value and switches the time derivative to
-  1st-order -- it is **not** a new sampler.
-- **`linear` applies to `local27` and `aei` only**, never `carpet`.
-- **"Stabilization" is a separate layer, not `time_interp`.**  The
-  strong-curvature robust path (`robust_metric_interp` = `aei`/`fourd`/
-  `fourdh`/`poly` with `adaptive_interp = on`) is what prevents NaN /
-  superluminal drops.  It is independent of `time_interp` but **needs the old
-  time level** for its `(g0-g1)/dt` -- which is why `local27` samples the old
-  level even in `off` mode (historically, not sampling it caused the `l27`
-  particle-drop bug).
-- **AMR is level/stencil handling, not a separate "no-time" algorithm.**  A
-  particle's stencil is drawn from the finest level that contains it in its
-  safety region.  When the *past* level is not yet filled at an AMR cell
-  (first integration, or a freshly-grown refinement region), the code flags it
-  and falls back to the current level only.  That fallback is the closest
-  thing to "no time interpolation" -- but it is a fallback *inside* the same
-  samplers, driven by AMR cell state, not by a separate parameter.
+- **`l27` and `local27` are fully self-contained**: they need no
+  interpolator from another thorn.  `aei` and `carpet` resolve the
+  AEI interpolator handle at startup and abort if it is missing.
+- **Time handling is fixed per sampler, not a user parameter.**  `l27`
+  uses the current level only; `local27` blends the three stored levels
+  (3-node Lagrange); `aei` blends the two stored levels (linear);
+  `carpet` keeps the current-level metric and takes a 2nd-order 3-point
+  time difference.
+- **There is no robust / adaptive stabilization layer.**  A failed or
+  degenerate fit (`l27`, `local27`) drops the particle via the loss
+  policy; an out-of-domain point in `aei` / `carpet` fails the
+  interpolant and is dropped the same way.
+- **AMR is level/stencil handling, not a separate "no-time" algorithm.**
+  A particle's stencil is drawn from the finest level that contains it
+  in its safety region.  When the *past* level is not yet filled at an
+  AMR cell (first integration, or a freshly-grown refinement region),
+  the `local27` blend pins to the available levels (2-node blend of
+  [t, t-dt], or level 0 only).  That fallback is driven by AMR cell
+  state, not by a separate parameter.
 
 ## Features
 
@@ -131,7 +120,7 @@ are valid**:
   The per-particle computations are fully independent, so the thorn
   scales to `particle_n_total` = 10^4 particles (validated on a
   44-core node; see the paper).
-- AMR support (up to four Carpet refinement levels, parameter
+- AMR support (up to 16 Carpet refinement levels, parameter
   `geodesic_amr_levels`, default 3): each particle's 27-point stencil
   is drawn from the finest level that contains the particle in its
   safety region, so particles inside a refined region are
@@ -163,31 +152,36 @@ Kerr--Schild formulas used by `Exact = yes` are built in.  Activate
 
 ## Limitations
 
-- AMR runs assume one centered patch per refinement level and a
-  single process; multi-patch refined regions and multi-process AMR
-  runs are not supported.
+- AMR runs normally use one (centred) patch per refinement level.
+  Off-centre patches (e.g. the GW150914 double-centre TwoPunctures
+  layout) are handled by the patch-origin reconstruction and the
+  alignment diagnostics (`amr_align_warn`); multi-rank AMR is handled
+  by the per-rank ownership logic (the `multi_amr` mode below).
 - The particle arrays are replicated on every MPI rank
-  (`DISTRIB=CONSTANT`) and the integration runs on a single rank, so
-  multi-process runs do not distribute the particles across ranks.
-  Multi-process AMR (`multi_amr` mode: rank 0 integrates, the other
-  ranks sync the particle state) is implemented, but the multi-rank
-  path has not been run yet; the testsuite contains a 2-rank test
-  (`test/circ_orbit_mpi`) for it that is not part of the currently
-  executed test set.
-- Concretely: a multi-process grid run (`Exact = no`) silently
-  produces wrong trajectories.  The integration runs on rank 0, but a
-  particle whose position falls inside another rank's grid patch gets
-  no valid field samples there: in a 4-process Kerr test the particle
-  barely moved (t = 100: x ~= 11.89, tau ~= 1.46 instead of the
-  single-process values) and was dropped shortly after.  Grid-mode
-  convergence/production runs must therefore be single process
-  (OpenMP threads are fine and scale; MPI ranks are not).
+  (`DISTRIB=CONSTANT`).  In multi-process grid runs (`multi_amr` /
+  `multi_exact` mode) the domain is partitioned among the ranks and
+  each rank integrates the particles it owns; the per-particle state
+  is exchanged between the ranks once per Cactus step, so multi-rank
+  runs are bit-for-bit reproducible (verified against single-rank
+  baselines in the conv test series).  The testsuite's 2-rank test
+  (`test/circ_orbit_mpi`) and the 4-rank `conv100` / TwoPunctures
+  tests are part of the default test set (see Tests below).
 - The `Exact = no` mode reads the metric and its time derivative from
   the ADMBase grid: time-varying metrics need the ADMBase
   metric/lapse/shift fields at `timelevels >= 3`, and within one
   particle step the connection is frozen at the grid's current time,
   so the particle step is capped at the grid time step (see the
   `Exact = no` entry above).
+- The `l27` back-end (legacy 27-point stencil, `metric_interp = l27`)
+  does not support multi-process runs in which particles sit on or
+  within a few cells of a rank face: the stencil centre is clipped
+  away from the particle, the resulting extrapolated 27-point metric
+  fit fails the validity check and the particle is dropped at the
+  first step (the other back-ends are unaffected).  With the default
+  2x2 (y,z) decomposition of a 4-rank unigrid run this affects every
+  equatorial (z = 0) particle, which is why the testsuite's
+  `conv100_l27` test runs single process.  Use `local27` (default),
+  `aei` or `carpet` for multi-process `Exact = no` runs.
 
 ## Building
 
@@ -219,8 +213,7 @@ included, so all reported results can be reproduced directly:
 | [par/conserv.par](par/conserv.par) | conservation of E, Lz and the norm (Sec. 5.2) |
 | [par/conv50.par](par/conv50.par), [par/conv100.par](par/conv100.par), [par/conv200.par](par/conv200.par), [par/convexact.par](par/convexact.par) | grid-convergence study (Sec. 5.3) |
 | [par/scale.par](par/scale.par) | strong scaling with 10^4 particles (Sec. 6) |
-| [par/interp_amr_carpet.par](par/interp_amr_carpet.par), [par/interp_amr_aei.par](par/interp_amr_aei.par), [par/interp_amr_l27.par](par/interp_amr_l27.par) | the same orbit as [par/conv100.par](par/conv100.par) under 3-level AMR, with the three `metric_interp` samplers, for a line-by-line comparison against the unigrid conv100 dump |
-| [par/aei_2048.par](par/aei_2048.par) | GW150914 non-stationary robustness run (Sec. 5.6): TwoPunctures BBH, moving-box AMR, 2048 Cactus steps, 100 particles |
+| [par/interp_amr_carpet.par](par/interp_amr_carpet.par), [par/interp_amr_aei.par](par/interp_amr_aei.par), [par/interp_amr_local27.par](par/interp_amr_local27.par) | the same orbit as [par/conv100.par](par/conv100.par) under 3-level AMR, with the three `metric_interp` samplers, for a line-by-line comparison against the unigrid conv100 dump |
 
 The Geodesic-specific part of the example file is:
 
@@ -254,10 +247,8 @@ that provides the ADMBase grid fields.
 | `step` | coordinate-time advance per Cactus iteration; 0 uses `cctk_delta_time` |
 | `max_iter_cap` | max ODE tau-steps per particle per Cactus iteration (default 2000) |
 | `Exact` | metric source: `no` = grid, `yes` = analytic Kerr--Schild |
-| `metric_interp` | grid-mode sampler: `local27` (default, 27-point Lagrange fit), `aei` (fourth-order pointwise, AEILocalInterp), `carpet` (quadratic pointwise, self-contained) |
-| `time_interp` | grid-mode time handling: `off` (default, level-0 value + 2nd-order dt(g)) or `linear` (blend of the two stored levels + 1st-order dt(g)) |
-| `robust_metric_interp` | robust-path (local27, `adaptive_interp = on`) interpolation engine: `aei` (default, AEI order-4 pointwise), `fourd` (4D tensor product of the ADM fields: 5-node order-4 space x 3-node time), `fourdh` (same applied to the nodal 4-metric deviation h = g - eta, g composed exactly at each node; slower, strong-curvature path only), `poly` (node-exact 4D tensor product: local27 27-point quadratic space fit x 3-node order-2 time Lagrange over levels [t, t-dt, t-2dt]; metric value is exactly zero-error on all 81 spacetime grid nodes, fixing the spatial node-drift of fourd/fourdh) |
-| `geodesic_amr_levels` | number of Carpet refinement levels used for the stencil (1-4, default 3); must equal `Carpet::refinement_levels` for an AMR run |
+| `metric_interp` | grid-mode sampler: `l27` (simplest 27-point Lagrange fit, current level only, particle dropped on fit failure), `local27` (default; 125-node 5x5x5 quartic tensor-product fit, self-contained, no AEI), `aei` (AEILocalInterp pointwise order-4, 2-level linear time blend), `carpet` (AEI order-4 spatial molecule + carpet-style time difference) |
+| `geodesic_amr_levels` | number of Carpet refinement levels used for the stencil (1-16, default 3); must equal `Carpet::refinement_levels` for an AMR run |
 | `M` / `a` | Kerr mass and spin used by `Exact = yes` (built-in analytic formulas) |
 | `initial_radius` / `excised_radius` | safe shell for the `respawn` policy: outside `initial_radius`, inside `excised_radius` is rejected |
 | `particle_loss_policy` | what to do with lost particles: `drop` (default), `flag`, `respawn` |
@@ -280,10 +271,34 @@ then one block of rows every k iterations.
 
 ## Tests
 
-The thorn ships a Cactus testsuite in `test/` (run with
-`gmake sim-testsuite` from the Cactus root, or
-`CCTK_TESTSUITE_RUN_TESTS="Geodesic/circ_orbit Geodesic/circ_orbit_conserved Geodesic/circ_orbit_mpi Geodesic/circ_orbit_grid Geodesic/circ_orbit_amr Geodesic/circ_orbit_100 Geodesic/ellipse_orbit_amr"
-gmake sim-testsuite` to run only these seven tests):
+The thorn ships a Cactus testsuite in `test/` with 18 tests, driven by
+the official `RunTest.pl` infrastructure.  The convenient launcher is
+`test/run_tests.sh`:
+
+- `./run_tests.sh` (no argument) runs the 8-test default set, which
+  covers all four metric-sampling back-ends and both metric families
+  (stationary Kerr grid and the two-puncture merger background):
+  `conv100`, `conv100_l27`, `conv100_local27`, `conv100_aei`,
+  `conv100_carpet`, `circ_orbit`, `tp_local27_025`,
+  `tp_far_local27_025_t80`.
+- `./run_tests.sh -all` runs all 18 tests in `test/test.ccl`.
+
+Following the Einstein Toolkit convention that the user declares the
+local machine, `run_tests.sh` auto-detects the core count (`nproc`)
+and launches each test instance one at a time as 4 ranks with
+~91% of the per-rank core share as OpenMP threads (e.g. 4p×20t on an
+88-core node, ~9% headroom).  It pins `OMP_NUM_THREADS` to the value
+the reference data were generated with (20 on this node): leaving it
+unset lets OpenMP take all cores per rank, a 4x oversubscription that
+slows the TwoPunctures t = 0 puncture solve by an order of magnitude.
+Override with `NPROC_TOTAL`, `NPROCS_PER_TEST`, `TEST_THREADS`.
+
+Equivalently, from the Cactus root:
+`PROMPT=no CCTK_TESTSUITE_RUN_TESTS="Geodesic/..." gmake sim-testsuite`
+(an empty `CCTK_TESTSUITE_RUN_TESTS` runs everything).  Reference data
+for every test live in `test/<testname>/geodesic_particles.txt`, the
+only file compared; run directories of instrumented builds may also
+contain `formaline-*` / timer artifacts, which the comparator ignores.
 
 - `circ_orbit` integrates a prograde equatorial circular orbit
   (r = 11.989, M = 2, a = 0.5, `Exact = yes`) and compares the full
@@ -295,9 +310,10 @@ gmake sim-testsuite` to run only these seven tests):
   whole orbit; a broken integrator shows up as a drift of E / L_z.
 - `circ_orbit_mpi` is the `circ_orbit` run with 2 MPI ranks (requires
   `mpirun`); the integration runs on a single rank, so the dump must be
-  bit-identical to the single-rank reference.  (This test is defined
-  but has not been executed yet; it is the validation target for the
-  multi-rank path, see Limitations.)
+  bit-identical to the single-rank reference.  The default set also
+  includes 4-rank runs (`conv100`, `conv100_local27`, `conv100_aei`,
+  `conv100_carpet`, `tp_local27_025`, `tp_far_local27_025_t80`),
+  which exercise the same owner-computes multi-rank path.
 - `circ_orbit_grid` is the same orbit through the `Exact = no`
   interpolation path: the metric is the Kerr--Schild initial data
   stored on the ADMBase grid, the past time levels are filled with the
@@ -316,9 +332,7 @@ gmake sim-testsuite` to run only these seven tests):
   contains it.  This validates the per-level metric acquisition, the
   stationary-metric detection on refined levels, and the level
   selection; the dump is compared against reference data row by
-  row.  Runs single process, because the refinement boxes must stay
-  centred on the origin and only one rank integrates (see
-  Limitations).
+  row.  The test's par file is configured for a single process.
 - `circ_orbit_100` is the control for `circ_orbit_amr`: the same
   100 particles on the same 50^3 grid with no refinement, so the
   stencil is always sampled on the base grid.  The E / L_z scatter
@@ -334,20 +348,68 @@ gmake sim-testsuite` to run only these seven tests):
   144^3 base grid (domain +-72, dx = 1) with three static spherical
   Carpet refinement boxes (half-widths 36/18/9, factor 2), so the
   particles occupy all four levels at t = 0 and cross level
-  boundaries in both directions as the orbit completes ~2.42 radial
-  periods (t to 3300).  It uses `Exact = yes` deliberately: on the
-  2nd-order grid metric (`Exact = no`) the init-time u^t re-solve
-  plus coherent integration error push the near-pericentre
-  particles across the plunging boundary into the excised sphere,
-  where they are dropped; with the built-in analytic metric the
-  constants of motion stay within ~2e-6 relative over the whole run
-  and no particle is dropped.  The dump is compared against
-  reference data row by row.
+  boundaries in both directions.  With `Geodesic::step = 100` and
+  256 Cactus steps (no subcycling) the particle coordinate time
+  advances to 25600, about 19 radial periods.  It uses
+  `Exact = yes` deliberately: on the 2nd-order grid metric
+  (`Exact = no`) the init-time u^t re-solve plus coherent
+  integration error push the near-pericentre particles across the
+  plunging boundary into the excised sphere, where they are
+  dropped; with the built-in analytic metric no particle is dropped
+  and `util/check_conserved` gives max drifts of 2.4e-6 (E) and
+  7.1e-5 (L_z) relative to the initial values over the whole run.
+  The dump is compared against reference data row by row.
+- `conv100` is the paper's full grid-convergence run: the P0 circular
+  orbit (r = 10, M = 2, a = 0.5) on a 100^3 grid (dx = 0.5),
+  `Exact = no`, 1500 steps (t = 150.1, ~1 orbital period), 4 MPI
+  ranks.  The single-particle dump is compared against reference data
+  row by row.
+- `conv100_l27`, `conv100_local27`, `conv100_aei`, `conv100_carpet`
+  are the same orbit shortened to 200 steps (t = 20.0), one per
+  metric-sampling back-end (`metric_interp = l27` / `local27` / `aei`
+  / `carpet`; `aei` and `carpet` sample through the
+  `AEILocalInterp` / `LocalInterp` interpolation interface).  Each
+  dump must reproduce its reference to RELTOL 1e-12.
+  `conv100_l27` runs single process: the equatorial ring sits on rank
+  faces in the default 2x2 (y,z) multi-rank decomposition, where the
+  `l27` stencil is clipped out of the particle (see Limitations).
+- `tp_local27_025`, `tp_aei_025`, `tp_carpet_025` are NEAR-field
+  probes on the two-puncture `GW150914` background (TwoPunctures
+  initial data, 144^3 grid, dx = 0.25, no AMR, excised radius 2):
+  a 100-particle ring at r = 8 with strong inward velocity, 20 steps.
+  The strong-field plunge produces deterministic NaN drops
+  (`loss_policy = drop`); the NaN-aware comparator skips rows that are
+  NaN in both files but fails if the drop pattern (which particles,
+  at which steps) changes.
+- `tp_far_local27_025_t80`, `tp_far_aei_025_t80`,
+  `tp_far_carpet_025_t80` are FAR-field probes on the same background:
+  a 100-particle ring at r = 10 with modest inward velocity, 80
+  steps.  All 100 particles survive with zero NaN on all three
+  back-ends; these are well-posedness regression tests on a strongly
+  curved two-puncture background.
 
 `util/check_conserved` is a small wrapper script: on first use it
 compiles `util/check_conserved.c` (plain C, libc + libm) into
 `util/check_conserved.bin` and reuses the binary afterwards, so no
 precompiled binary is stored in the repository.
+
+## Plotting
+
+`util/plot_geodesic.py` plots particle trajectories from a plain-text
+dump (`geodesic_particles.txt`).  It needs only numpy and matplotlib.
+The number of particles per dump block is inferred from the data
+(override with `--npar`); the block time is the per-block median of the
+`t` column, which stays correct in the presence of frozen or dropped
+particles (their rows carry an earlier drop time).
+
+    python3 util/plot_geodesic.py geodesic_particles.txt fig_orbits --2d
+    python3 util/plot_geodesic.py mydump.txt figs/foo --both --plane xz --pdf
+
+Options: `--2d` / `--3d` / `--both` (default `--2d`), `--plane xy|xz|yz`
+(default `xy`), `--npar N`, `--dpi N` (default 150), `--pdf` (also write a
+PDF of each figure), `--no-arrows`.  Dropped particles are marked with an
+X at their last alive position.  If no `DATAFILE` is given, the first
+`geodesic_particles*.txt` in the current directory is used.
 
 ## Notes
 

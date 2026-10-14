@@ -21,8 +21,9 @@ public:
 #
 # DISTRIB=CONSTANT: the complete arrays are replicated on every MPI
 # rank.  The C code addresses particle 0 .. particle_n_total-1 locally
-# on each process (the thorn is a unigrid tool; see the README
-# "Limitations" section).
+# on each process; multi-process runs distribute the particles over the
+# ranks with the owner-computes scheme (see the README "Limitations"
+# section).
 #
 # The arrays are checkpointable (no checkpoint="no" tag) so that the
 # particle state survives a restart.
