@@ -234,10 +234,24 @@ CCTK_INT geodesic_amr_levels "Number of Carpet refinement levels (max = GEODESIC
 #              4-metric.  Like aei, it is thread-safe and runs under
 #              the owner-computes multi-process mode.
 # Ignored when Exact = yes (the analytic Kerr-Schild metric is used).
+#
+# Memory: the stencil caches are per-particle and are allocated only for
+# the selected sampler -- l27 35 kB/particle, local27 241 kB/particle,
+# aei / carpet 0 (pointwise, no stencil cache).  At the
+# particle_n_total limit of 10000 that is 0.35 GB / 2.4 GB / ~0 GB.
+# Choosing: a stationary (or effectively stationary) background --
+# Exact = yes, KerrSchild, or ID data that has settled -- is well served
+# by l27, which is the cheapest and the simplest to read; for a
+# dynamical spacetime (binary-black-hole merger, GW150914-like) use
+# local27, the default, when memory allows, and aei / carpet when it
+# does not.  aei / carpet need the AEILocalInterp thorn active (they
+# resolve the interpolator registered as "Lagrange polynomial
+# interpolation" and abort if it is missing); l27 and local27 are
+# self-contained.
 KEYWORD metric_interp "Spatial metric/Christoffel sampler: l27, local27, aei, or carpet"
 {
-  "l27"      :: "simplest 27-point Lagrange fit (level 0 only; particle dropped on fit failure)"
-  "local27"  :: "125-node 5x5x5 quartic tensor-product fit (default; self-contained, no AEI)"
-  "aei"      :: "AEILocalInterp point-wise Lagrange (order 4)"
-  "carpet"   :: "AEI order-4 spatial molecule + carpet-style time derivative"
+  "l27"      :: "simplest 27-point Lagrange fit (current time level only; particle dropped on fit failure; 35 kB/particle cache; best for stationary metrics)"
+  "local27"  :: "125-node 5x5x5 quartic tensor-product fit, 3 time levels (default; self-contained, no AEI; 241 kB/particle cache)"
+  "aei"      :: "AEILocalInterp point-wise Lagrange (order 4; no per-particle cache; needs the AEILocalInterp thorn)"
+  "carpet"   :: "AEI order-4 spatial molecule + carpet-style time derivative (no per-particle cache; needs AEILocalInterp)"
 } "local27"

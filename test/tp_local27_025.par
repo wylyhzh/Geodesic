@@ -1,9 +1,9 @@
 # =============================================================================
 # TwoPunctures geodesic probe, NEAR variant: tp_local27_025 (metric_interp=local27, no AEI thorns)
 # TwoPunctures params = GW150914 (M+ =0.553846, M- =0.446153, b=5.0,
-#   center_offset[0]=-0.53846, spins & momenta as in GW150914_l27lin.par).
+#   center_offset[0]=-0.53846, spins & momenta as set in this file).
 # Cartesian 144^3, dx=0.25. No AMR (only diff vs GW150914 test).
-# IC: 20x-inward ring r=8 (kerr_p_aei_ring_dx20_05.par).  Run 4p*20t.
+# IC: ring r=8 with strong inward radial velocity (particle_* lines below).  Run 4p*20t.
 # Purpose: near-field probe for the paper Sec. 5.6 rewrite — particles spiral
 #   into the two punctures; the strong-field region yields NaN drops (a known
 #   limitation of geodesic tracking this deep, not a code failure) and the

@@ -47,6 +47,14 @@ void Geodesic_ParamCheck(CCTK_ARGUMENTS)
   DECLARE_CCTK_ARGUMENTS
   DECLARE_CCTK_PARAMETERS
 
+  /* Earliest point at which the thorn runs: logged even when a later
+     parameter error aborts the run. */
+  {
+    char rev[128];
+    snprintf(rev, sizeof(rev), "Geodesic revision %s", GEODESIC_REVISION);
+    CCTK_INFO(rev);
+  }
+
   /* NOTE: Exact = yes uses the built-in analytic Kerr-Schild metric
      (parameters M and a of this thorn), so there is no dependency on
      the ADMBase::initial_data parameter here. */

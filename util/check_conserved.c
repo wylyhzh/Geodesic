@@ -31,6 +31,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
 
 #define M_KS 2.0
@@ -72,6 +73,23 @@ int main(int argc, char **argv)
       return 1;
     }
 
+    /* Dropped particles (Geodesic_loss_policy = drop) are dumped with the
+       state columns set to nan while their t and tau columns stay intact,
+       so that readers can still locate the block.  Emit one "nan nan" row
+       for them instead of evaluating the metric there: the Kerr--Schild
+       formulas would turn nan into inf and the row-by-row comparison
+       against the reference data would lose its alignment.  The strstr
+       test catches the literal "nan" the dumper writes even on libc
+       implementations whose scanf does not; the isfinite test catches
+       inf from an overflowed state. */
+    if (strstr(line, "nan") || strstr(line, "NaN") || strstr(line, "NAN") ||
+        !(isfinite(x) && isfinite(y) && isfinite(z) &&
+          isfinite(ut) && isfinite(ux) && isfinite(uy) && isfinite(uz)))
+    {
+      printf("nan nan\n");
+      continue;
+    }
+
     /* Kerr--Schild radius: r^2 is the positive root of
        r^4 - (x^2+y^2+z^2 - a^2) r^2 - a^2 z^2 = 0 */
     a2 = a * a;
@@ -83,6 +101,15 @@ int main(int argc, char **argv)
     r4   = r * r * r * r;
     a2r2 = a2 + r * r;
     den  = a2z2 + r4;
+
+    /* The ring singularity of the Kerr--Schild chart sits at r = 0, z = 0,
+       where den vanishes and every metric component below would blow up.
+       Report the row as unusable rather than dividing by zero. */
+    if (!(den > 1.0e-300) || !isfinite(r))
+    {
+      printf("nan nan\n");
+      continue;
+    }
 
     gtt = 2.0 * Mk * r * r * r / den - 1.0;
     gtx = 2.0 * Mk * r * r * r * (a * y + r * x) / (a2r2 * den);

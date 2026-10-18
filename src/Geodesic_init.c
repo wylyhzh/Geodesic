@@ -74,6 +74,21 @@ void Geodesics_init(CCTK_ARGUMENTS)
      On a plain unigrid run levfac[0]==1 so the level guard is a no-op. */
   if ((int)lrint(log2((double)cctk_levfac[0])) != 0) return;
 
+  /* Echo the settings that actually took effect so a particle dump can always
+     be traced back to the parameter file that produced it. */
+  {
+    char cfg[512];
+    snprintf(cfg, sizeof(cfg),
+             "revision %s: effective config: excised_radius=%g initial_radius=%g"
+             " Exact=%s metric_interp=%s particle_loss_policy=%s"
+             " particle_n_total=%d particle_dump_file=%s",
+             GEODESIC_REVISION,
+             (double)excised_radius, (double)initial_radius,
+             Exact ? "yes" : "no", metric_interp, particle_loss_policy,
+             (int)particle_n_total, particle_dump_file);
+    CCTK_INFO(cfg);
+  }
+
   if (particle_n > particle_n_total)
     CCTK_WARN(CCTK_WARN_ABORT, "Error: particle_n > particle_n_total.");
   if (particle_rand_seed)

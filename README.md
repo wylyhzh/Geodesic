@@ -97,6 +97,20 @@ samplers (`Geodesic::metric_interp`):
 - **`l27` and `local27` are fully self-contained**: they need no
   interpolator from another thorn.  `aei` and `carpet` resolve the
   AEI interpolator handle at startup and abort if it is missing.
+- **The stencil cache is allocated only for the sampler in use.**  Each
+  grid-mode particle carries a per-particle cache whose size depends on
+  `metric_interp`: `l27` allocates the 27-node cache only (~35 kB per
+  particle), `local27` allocates the 125-node cache only (~241 kB per
+  particle), and `aei` / `carpet` allocate no node cache at all (they
+  interpolate pointwise).  For 10000 particles that is ~0.35 GB
+  (`l27`), ~2.4 GB (`local27`) or ~0 GB (`aei` / `carpet`).
+- **Choosing a sampler.**  For a stationary (or slowly evolving) metric
+  `l27` is the cheapest option.  For a dynamical metric — a binary
+  merger such as GW150914 — use `local27` (the default, self-contained)
+  or `aei` / `carpet`; `l27` reads the current time level only, so its
+  connection is frozen during a particle step.  If memory is the
+  binding constraint, switch to `aei` or `carpet` (which require the
+  `AEILocalInterp` thorn).
 - **Time handling is fixed per sampler, not a user parameter.**  `l27`
   uses the current level only; `local27` blends the three stored levels
   (3-node Lagrange); `aei` blends the two stored levels (linear);
@@ -240,10 +254,10 @@ that provides the ADMBase grid fields.
 
 | Parameter | Meaning |
 |---|---|
-| `particle_n` | number of fixed particles (initial data from the parfile); 0 disables |
+| `particle_n` | number of fixed particles (initial data from the parfile, max 1000); 0 disables |
 | `particle_n_total` | total number of particles (max 10000); the remainder beyond `particle_n` are randomly placed with zero velocity |
-| `particle_x/y/z[0..99]` | initial positions of the first `particle_n` particles |
-| `particle_tv/xv/yv/zv[0..99]` | initial 4-velocity `u^mu` (see above) |
+| `particle_x/y/z[0..999]` | initial positions of the first `particle_n` particles |
+| `particle_tv/xv/yv/zv[0..999]` | initial 4-velocity `u^mu` (see above) |
 | `step` | coordinate-time advance per Cactus iteration; 0 uses `cctk_delta_time` |
 | `max_iter_cap` | max ODE tau-steps per particle per Cactus iteration (default 2000) |
 | `Exact` | metric source: `no` = grid, `yes` = analytic Kerr--Schild |
@@ -268,6 +282,16 @@ tau` per particle) to the file given by `particle_dump_file` (default
 `geodesic_particles.txt`, relative to the working directory; parent
 directories are created as needed), starting with the initial state and
 then one block of rows every k iterations.
+
+### Revision stamp
+
+The thorn carries its own version in `GEODESIC_REVISION` (`Geodesic.h`,
+format `YYYY.MM.DD-<counter>`); bump it whenever behaviour changes, since
+the Cactus build id does not say which Geodesic sources produced a run.
+It is reported by `Geodesic_ParamCheck` and by `Geodesics_init` (together
+with the parameter values that actually took effect) and is written as a
+`#` comment at the top of every particle dump, so a dump file can always
+be traced back to the code and parameter set that produced it.
 
 ## Tests
 

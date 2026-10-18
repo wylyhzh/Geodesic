@@ -1,7 +1,8 @@
 #------------------------------------------------------------------------------
 # Geodesic regression test: conv100_local27
 #   P0 circular orbit (r=10), Exact=no (dx = 0.5), 200 steps (t=20.0),
-#   metric sampled with the local 27-point stencil (metric_interp = local27).
+#   metric sampled with the self-contained 125-node (5x5x5) quartic fit
+#   (metric_interp = local27).
 #   Part of the automatic validation suite (test/test.ccl, default set).
 #   Data: particle_dump_every=20 -> conv100_local27/geodesic_particles.txt.
 #------------------------------------------------------------------------------
@@ -23,7 +24,7 @@ ActiveThorns = "MoL Periodic Slab SpaceMask"
 ActiveThorns = "Carpet CarpetInterp CarpetIOASCII CarpetIOHDF5 CarpetIOScalar CarpetLib CarpetIOBasic CarpetReduce CarpetSlab LoopControl"
 ActiveThorns = "IOUtil Formaline"
 ActiveThorns = "NaNChecker TerminationTrigger"
-ActiveThorns = "ADMbase ADMcoupling ADMmacros CoordGauge StaticConformal"
+ActiveThorns = "ADMBase ADMcoupling ADMmacros CoordGauge StaticConformal"
 ActiveThorns = "Constants TmunuBase HydroBase KerrSchild SPHERICALSURFACE Minkowski"
 ActiveThorns = "EOS_Omni"
 ActiveThorns = "HDF5"

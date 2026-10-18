@@ -1375,10 +1375,14 @@ static CCTK_REAL g4dn(CCTK_INT tl, CCTK_INT j1, CCTK_INT j2, CCTK_INT ix, CCTK_I
   if (ix < 1 || iy < 1 || iz < 1 ||
     ix > gview.lsh[0] || iy > gview.lsh[1] || iz > gview.lsh[2])
   {
-    CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
-      "g4dn: index out of bounds ix=%d iy=%d iz=%d lsh=(%d,%d,%d)",
-      ix, iy, iz, gview.lsh[0], gview.lsh[1], gview.lsh[2]);
-    return 0.0;
+    /* Outside the patch (the 6th-order FD window reaches 3 cells out, past
+       the patch edge).  Return NaN, not a finite filler: every caller
+       (ndg4dn_tl via cf2_grid, and pointwise_cf2_tl) feeds a Christoffel
+       stencil that is immediately scanned with isfinite(), which then
+       discards the fit for this particle.  A silent 0.0 would pass that
+       scan and corrupt the interpolant instead.  No warning here: this is
+       hit from OpenMP loops, once per stencil node. */
+    return NAN;
   }
 
   index = CCTK_GFINDEX3D(gview.GH, ix-1, iy-1, iz-1);

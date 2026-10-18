@@ -162,20 +162,42 @@ them a valid $u^0$.
 
 Because both metric evaluations are local to each particle, the
 particle loop is parallelized with OpenMP
-(\texttt{\#pragma omp parallel for}) over the particle index.  The
-particle arrays are stored with \texttt{DISTRIB=CONSTANT}
-(replicated on every MPI rank); the integration runs on a single rank
-(the other ranks idle during the particle step, and multi-process
-runs are verified bit-identical against the single-rank result).
-Multi-level (AMR) runs are supported for up to three Carpet
-refinement levels (\texttt{geodesic\_amr\_levels}, default 3; unused
-levels are skipped): on every refinement-level call the thorn
-acquires that level's grid geometry and metric fields, and each
-particle's 27-point stencil is drawn from the finest level whose grid
-contains the particle in its safety region, so particles inside a
-refined region are automatically sampled at the finer grid spacing.
-Refined regions are assumed to consist of one centered patch, and
-the run must be single-process.
+(\texttt{\#pragma omp parallel for}) over the particle index.
+
+The particle arrays are stored with \texttt{DISTRIB=CONSTANT}, i.e.\
+replicated on every MPI rank.  In multi-process runs the particles are
+distributed over the ranks by an owner-computes scheme: each rank
+integrates the particles owned by its local patch (interior-box
+ownership, recomputed at every step), the Cactus step is integrated in
+coordinate-time chunks whose boundaries keep every live particle
+strictly inside its owner's interior box, and an
+\texttt{MPI\_Allgather} of the per-particle state at each chunk
+boundary keeps the replicated arrays bit-identical on every rank.
+This mode supports at most four ranks (a $2 \times 2$ decomposition in
+$y$ and $z$, one patch per rank per level); more ranks abort with an
+explicit error.  Note that a bit-identical replicated state is not the
+same statement as an identical trajectory: see the \texttt{l27}
+restriction below and the note on multi-rank accuracy in the
+\texttt{README}.  In \texttt{Exact = yes} runs the analytic metric is
+valid everywhere, so rank~0 integrates all particles and writes the
+dump.
+
+AMR is supported for up to 16 Carpet refinement levels
+(\texttt{geodesic\_amr\_levels}, default 3).
+\texttt{geodesics\_integrate} is scheduled at \texttt{CCTK\_POSTSTEP}
+and, under Carpet's level mode, is called once per refinement level per
+substep; each call acquires that level's geometry and metric fields
+(all three stored time levels), and the particles are integrated
+exactly once per call batch, on the finest-level call, each particle on
+the finest level whose safe region contains it.  This works unchanged
+under Carpet's 4:1 time subcycling.  Time-dependent metrics need the
+\texttt{ADMBase} fields at three time levels (\texttt{timelevels >= 3}
+together with \texttt{Carpet::init\_fill\_timelevels = "yes"}).  The
+\texttt{l27} sampler does not support multi-process runs in which
+particles sit on or within a few cells of a rank face (its one-sided
+stencil is clipped away from the particle there), so it must be run
+single-process; \texttt{local27} (the default), \texttt{aei} and
+\texttt{carpet} have no such restriction.
 
 The evolved state is kept in the \texttt{particle\_arrays} group
 ($\tau$, $t$, $x, y, z$, $u^t, u^x, u^y, u^z$), which is a regular
@@ -229,39 +251,59 @@ values if they are normalized.
 
 \subsection{Tests}
 
-The thorn ships a testsuite in \texttt{test/} with three tests, all
-integrating the same prograde equatorial circular orbit
-($r = 11.989$, $M = 2$, $a = 0.5$, \texttt{Exact = yes}, 32
-iterations of 100 coordinate-time units):
+The thorn ships a Cactus testsuite in \texttt{test/} with 18 tests,
+declared in \texttt{test/test.ccl}.  Every test compares the plain-text
+particle dump (\texttt{test/<name>/geodesic\_particles.txt}) against
+reference data; \texttt{circ\_orbit\_conserved} additionally compares
+the Kerr constants of motion $E$ and $L_z$ produced by the
+postprocessor \texttt{util/check\_conserved}.  The convenient launcher
+is \texttt{test/run\_tests.sh}: with no argument it runs the 8-test
+default set, with \texttt{-all} all 18.  The tests fall into four
+groups:
 
 \begin{itemize}
-\item \texttt{circ\_orbit} compares the full particle state dump
-  against reference data row by row; any change of the trajectory
-  fails the test.
-\item \texttt{circ\_orbit\_conserved} runs the dump through the
-  postprocessor \texttt{util/check\_conserved}, which prints the two
-  Kerr constants of motion $E$ and $L_z$ for every row, and compares
-  them against the reference; a broken integrator shows up as a drift
-  of $E$ / $L_z$.  On a correct run both are constant to about nine
-  digits over the whole orbit.
-\item \texttt{circ\_orbit\_mpi} is the \texttt{circ\_orbit} run with
-  2 MPI ranks (requires \texttt{mpirun}); the integration runs on a
-  single rank, so the dump must be bit-identical to the single-rank
-  reference.
+\item \texttt{circ\_orbit}, \texttt{circ\_orbit\_conserved},
+  \texttt{circ\_orbit\_mpi}: the prograde equatorial circular orbit
+  ($r = 11.989$, $M = 2$, $a = 0.5$, \texttt{Exact = yes});
+  \texttt{circ\_orbit\_mpi} runs on 2 MPI ranks (requires
+  \texttt{mpirun}).  \texttt{circ\_orbit\_conserved} is the physics
+  test: a broken integrator shows up as a drift of $E$ / $L_z$, which
+  are constant to about nine digits on a correct run.
+\item \texttt{circ\_orbit\_grid}, \texttt{circ\_orbit\_100},
+  \texttt{circ\_orbit\_amr}, \texttt{ellipse\_orbit\_amr}: the same
+  family through \texttt{Exact = no}, a 100-particle ring, and Carpet
+  refinement boxes (per-level metric acquisition, level selection, and
+  the stationary-metric detection on refined levels).
+\item \texttt{conv100}, \texttt{conv100\_l27},
+  \texttt{conv100\_local27}, \texttt{conv100\_aei},
+  \texttt{conv100\_carpet}: the grid-convergence orbit ($r = 10$,
+  $\Delta x = 0.5$), one per metric sampler.  \texttt{conv100\_l27}
+  runs single process because of the \texttt{l27} rank-face restriction
+  above.
+\item \texttt{tp\_local27\_025}, \texttt{tp\_aei\_025},
+  \texttt{tp\_carpet\_025} and the three \texttt{tp\_far\_*\_t80}
+  variants: 100-particle rings on the two-puncture \texttt{GW150914}
+  background (\texttt{TwoPunctures} initial data, $144^3$,
+  $\Delta x = 0.25$).  The near-field runs produce deterministic NaN
+  drops; the NaN-aware Cactus comparator skips rows that are NaN in
+  both files but fails if the drop pattern changes, which turns the
+  pattern itself into a regression test.
 \end{itemize}
 
 Run the testsuite with
 \begin{verbatim}
 cd <cactus>
-CCTK_TESTSUITE_RUN_TESTS="Geodesic/circ_orbit Geodesic/circ_orbit_conserved \
-Geodesic/circ_orbit_mpi" gmake sim-testsuite
+PROMPT=no CCTK_TESTSUITE_RUN_TESTS="Geodesic/circ_orbit \
+Geodesic/circ_orbit_conserved Geodesic/circ_orbit_mpi" gmake sim-testsuite
 \end{verbatim}
+or, from the thorn directory, \texttt{./test/run\_tests.sh} (default
+set) / \texttt{./test/run\_tests.sh -all}.
 
 \subsection{Interaction With Other Thorns}
 
-\texttt{Geodesic} requires \texttt{Carpet} (the only thorn in this
-build providing Cactus group storage, which is needed by the
-\texttt{particle\_arrays} variable) and auto-activates \texttt{GSL}.
+\texttt{Geodesic} requires \texttt{Carpet} (it provides the Cactus
+group storage used by the \texttt{particle\_arrays} variables) and
+auto-activates \texttt{GSL}.
 In \texttt{Exact = no} mode the metric is read from the
 \texttt{ADMBase} grid (the \texttt{schedule.ccl} declares the
 corresponding \texttt{READS} dependencies), so any thorn that
@@ -269,6 +311,49 @@ provides the \texttt{ADMBase} variables can be used as the metric
 source, with \texttt{KerrSchild} the standard choice.  No
 hydrodynamics or other evolution thorn is needed; in
 \texttt{Exact = yes} mode the grid content is not used at all.
+
+\subsection{Limitations}
+
+\begin{itemize}
+\item \textbf{Timelike geodesics only.}  The four-velocity is kept
+  normalized to $g_{\mu\nu}u^\mu u^\nu = -1$, so null geodesics
+  (photons) cannot be integrated, and no non-gravitational force
+  (electromagnetic, self-force) is supported.
+\item \textbf{\texttt{Exact = yes} is a single Kerr black hole} in
+  Kerr--Schild coordinates (mass \texttt{M}, spin \texttt{a}); it is a
+  reference mode, not an evolved or binary spacetime.
+\item \textbf{Multi-process support is limited to four MPI ranks} (a
+  $2 \times 2$ decomposition in $y$ and $z$, one patch per rank per
+  level); more ranks abort with an explicit error.
+\item \textbf{The \texttt{l27} sampler must be run single-process}
+  whenever particles sit on or within a few cells of a rank face.
+\item \textbf{Memory per particle depends on the sampler.}  The
+  stencil cache is allocated only for the sampler actually selected:
+  \texttt{l27} keeps the 27-node cache ($\approx 35$\,kB per particle),
+  \texttt{local27} keeps the 125-node cache ($\approx 241$\,kB per
+  particle) and \texttt{aei} / \texttt{carpet} keep no node cache at
+  all, since they interpolate pointwise.  At 10000 particles this is
+  about $0.35$\,GB, $2.4$\,GB and $\approx 0$\,GB respectively.  Use
+  \texttt{l27} for a stationary metric, the default \texttt{local27}
+  (or \texttt{aei} / \texttt{carpet}) for a dynamical metric such as a
+  binary merger, and \texttt{aei} / \texttt{carpet} when memory is the
+  binding constraint; the latter two require the \texttt{AEILocalInterp}
+  thorn.
+\item \textbf{Time-dependent metrics need three \texttt{ADMBase} time
+  levels} (\texttt{timelevels >= 3} with
+  \texttt{Carpet::init\_fill\_timelevels = "yes"}).  Within one particle
+  step the connection is frozen at the grid's current time, so the
+  particle step is capped at the grid time step.
+\item \textbf{Particles are removed, not continued.}  A particle that
+  leaves the safe region, enters the excision sphere, or for which no
+  future-directed $u^t$ exists is handled by the loss policy
+  (\texttt{drop} by default); there is no continuation through a
+  horizon or a singularity.
+\item \textbf{Deep AMR is implemented but not covered by the
+  testsuite.}  \texttt{geodesic\_amr\_levels} accepts up to 16 levels
+  and production runs with seven levels have been reported, but the
+  automatic tests exercise at most three.
+\end{itemize}
 
 % Do not delete next line
 % END CACTUS THORNGUIDE

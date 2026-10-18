@@ -27,8 +27,10 @@
     - geodesic motion (via Christoffel symbols)
     - 4-velocity normalization (u_mu u^mu = -1)
 
-  Grid model (single process, multi-thread, <= GEODESIC_MAX_LEVELS
-  Carpet refinement levels; a single-level run is the default case):
+  Grid model (OpenMP multi-thread, <= GEODESIC_MAX_LEVELS Carpet
+  refinement levels; multi-process runs use the owner-computes scheme
+  described at the end of this comment, at most 4 ranks; a single-level
+  run is the default case):
 
     * CCTK_POSTSTEP is traversed by Carpet in level mode, i.e. the
       scheduled routine is called once per refinement level (per
@@ -45,7 +47,9 @@
       in this iteration + the current call is on the finest level + not
       yet integrated in this iteration) the particles are integrated
       exactly once, each particle on the finest level whose SAFE region
-      (7-cell margin) contains it.  Without AMR (one level) this is
+      (the safe region r_lbnd/r_ubnd, inset by 7 cells; the sampler-specific
+      stencil margins are given by safe_margin_cells()) contains it.
+      Without AMR (one level) this is
       exactly the plain unigrid behavior: one call, one integration.
 
     * Inside the integration (OpenMP), every thread keeps a
@@ -72,6 +76,16 @@
 #include "cctk.h"
 #include <stdbool.h>
 #include <stdio.h>
+
+/* -------------------- Internal revision stamp --------------------
+   Geodesic changes quickly during development and the Cactus build id does
+   not say which Geodesic sources produced a run, so the thorn carries its
+   own stamp.  It is logged once by Geodesic_ParamCheck and Geodesics_init
+   and written into the header of every particle dump; bump it whenever
+   behaviour changes.  Format: YYYY.MM.DD-<counter>. */
+#ifndef GEODESIC_REVISION
+#define GEODESIC_REVISION "2026.10.18-1"
+#endif
 
 /* -------------------- Polynomial interpolation order (fixed) -------------------- */
 #ifndef LAGRANGE_POINTS_3
@@ -115,7 +129,36 @@ typedef struct GD_DATA {
   CCTK_REAL gd[4][4];
 } gd_data;
 
-/* -------------------- Per-particle cached interpolation data -------------------- */
+/* -------------------- Per-sampler cache pools --------------------
+   The stencil arrays below are used by exactly one sampler each: the
+   27-node group only by metric_interp = l27 (sinterp_mode 0), the
+   125-node group only by metric_interp = local27 (sinterp_mode 3);
+   aei / carpet (pointwise) and Exact = yes (analytic) use neither.
+   They are therefore NOT inlined in ParticleGeodesic: the pools are
+   allocated once, only for the sampler actually selected, and each
+   particle points into its own pool slot.  A particle of a mode that
+   has no pool keeps NULL pointers (a wrong-mode access faults instead
+   of reading stale data). */
+typedef struct CACHE27 {
+  cf2_data  cf2g[3][3][3];
+  gd_data   gd[3][3][3];
+  CCTK_REAL pcf2[4][4][4][POLY27];
+  CCTK_INT  pcf2c[4][4][4];
+  CCTK_REAL pgd[4][4][POLY27];
+  CCTK_INT  pgdc[4][4];
+} cache27;
+
+typedef struct CACHE125 {
+  CCTK_REAL pcf2_125[3][4][4][4][POLY125];
+  CCTK_INT  pcf2_125c[3][4][4][4];
+  CCTK_REAL pgd125[3][4][4][POLY125];
+  CCTK_INT  pgd125c[3][4][4];
+} cache125;
+
+/* -------------------- Per-particle cached interpolation data --------------------
+   The array members are pointers into the per-sampler pools above; the
+   subscripting at the use sites is unchanged (pool[i].pcf2_125 decays to
+   a pointer of exactly this member's type). */
 typedef struct PARTICLEGEODESIC
 {
   CCTK_INT  flag; /* cached data valid */
@@ -126,16 +169,16 @@ typedef struct PARTICLEGEODESIC
   CCTK_REAL below[4]; /* polynomial interpolation base point (physical coords) */
   CCTK_REAL dxp[3]; /* AMR: grid spacing of the particle's current level */
 
-  /* ---- values on 3x3x3 stencil (grid-aligned) ---- */
-  cf2_data    cf2g[3][3][3]; /* Christoffel symbols (2nd kind) at grid points */
-  gd_data     gd[3][3][3]; /* 4-metric g_{mu nu} at grid points */
+  /* ---- values on 3x3x3 stencil (grid-aligned): pool27, l27 only ---- */
+  cf2_data   (*cf2g)[3][3]; /* Christoffel symbols (2nd kind) at grid points */
+  gd_data    (*gd)[3][3];   /* 4-metric g_{mu nu} at grid points */
 
   /* ---- polynomial coefficients (27-term) for fast evaluation in func_ode ---- */
-  CCTK_REAL pcf2[4][4][4][POLY27]; /* Christoffel polynomial interpolation coeffs */
-  CCTK_INT  pcf2c[4][4][4]; /* Christoffel is constant? */
+  CCTK_REAL (*pcf2)[4][4][POLY27]; /* Christoffel polynomial interpolation coeffs */
+  CCTK_INT  (*pcf2c)[4][4];        /* Christoffel is constant? */
 
-  CCTK_REAL pgd[4][4][POLY27]; /* 4-metric polynomial interpolation coeffs */
-  CCTK_INT  pgdc[4][4]; /* 4-metric is constant? */
+  CCTK_REAL (*pgd)[4][POLY27];     /* 4-metric polynomial interpolation coeffs */
+  CCTK_INT  (*pgdc)[4];            /* 4-metric is constant? */
 
   /* 1 if the OLDER time level's stencil samples are invalid (all-zero or
      non-finite): the past time level is not yet filled at the particle's
@@ -152,19 +195,31 @@ typedef struct PARTICLEGEODESIC
      time-Lagrange blend of the level fits (fast path).  pgd125[lvl] fits
      the 4-metric at time level lvl; used for the metric value (time
      blend) and, when local27_cf2_bad, for the analytic Christoffel assembly
-     (metric derivatives + inverse).  Unused unless metric_interp = local27. */
-  CCTK_REAL pcf2_125[3][4][4][4][POLY125];
-  CCTK_INT  pcf2_125c[3][4][4][4];
-  CCTK_REAL pgd125[3][4][4][POLY125];
-  CCTK_INT  pgd125c[3][4][4];
+     (metric derivatives + inverse).  Pool: pool125, allocated only when
+     metric_interp = local27. */
+  CCTK_REAL (*pcf2_125)[4][4][4][POLY125];
+  CCTK_INT  (*pcf2_125c)[4][4][4];
+  CCTK_REAL (*pgd125)[4][4][POLY125];
+  CCTK_INT  (*pgd125c)[4][4];
 
-  /* local27 (sinterp_mode 3): 1 = the nodal Christoffel samples at the
-     current refit were non-finite (6th-order FD window poison: the
-     +/-3 window of some stencil node hits the central singularity /
-     excised region), so the pcf2_125 fits are unusable and
+  /* local27 (sinterp_mode 3): 1 = the nodal Christoffel samples were
+     non-finite at some refit, so the pcf2_125 fits are unusable and
      christoffel_at_point assembles the Christoffel analytically from
-     the pgd125 metric fits instead.  Recomputed at every refit
-     (non-sticky). */
+     the pgd125 metric fits instead.
+
+     Sticky: once set for a particle it is not cleared again, so that
+     particle keeps the analytic assembly for the rest of the run.  Two
+     conditions can set it: the 6th-order FD window of a stencil node
+     reaching the central singularity / excised region, and (by far the
+     commonest) a stored past time level not yet filled at the
+     particle's cell, which happens at the first refit of a run that
+     starts from un-filled time levels.  The stickiness is deliberate:
+     switching between the two assemblies mid-integration would switch
+     the effective discretisation under a running trajectory.  It costs
+     nothing -- on tp_far_local27_025_t80 the analytic assembly is
+     slightly cheaper than the nodal blend (forcing the nodal fast path
+     makes the run 11% slower), and the two agree with each other and
+     with the aei sampler to ~1e-3 in position over t = 80. */
   CCTK_INT  local27_cf2_bad;
 
   /* local27 (sinterp_mode 3): 1 = the level-2 (t - 2dt) metric samples are
@@ -332,6 +387,12 @@ typedef struct {
   LevelData LD[GEODESIC_MAX_MAPS][GEODESIC_MAX_LEVELS];
   ParticleGeodesic *pgeodesic;
   CCTK_INT pgeodesic_capacity;
+  /* Per-sampler stencil pools, same capacity as pgeodesic: pool27 is
+     allocated only for metric_interp = l27, pool125 only for
+     metric_interp = local27; both stay NULL for aei / carpet and for
+     Exact = yes.  Each particle's array members point at its own slot. */
+  cache27  *pool27;
+  cache125 *pool125;
   int *owner_of;          /* multi_amr: owning rank of each particle (NULL otherwise) */
   int *owner_lvl;         /* multi_amr: owning level of each particle (-1 = unowned) */
   CCTK_INT owner_cap;
