@@ -248,10 +248,11 @@ CCTK_INT geodesic_amr_levels "Number of Carpet refinement levels (max = GEODESIC
 # resolve the interpolator registered as "Lagrange polynomial
 # interpolation" and abort if it is missing); l27 and local27 are
 # self-contained.
-KEYWORD metric_interp "Spatial metric/Christoffel sampler: l27, local27, aei, or carpet"
+KEYWORD metric_interp "Spatial metric/Christoffel sampler: l27, local27, aei, carpet, or carpetx"
 {
   "l27"      :: "simplest 27-point Lagrange fit (current time level only; particle dropped on fit failure; 35 kB/particle cache; best for stationary metrics)"
   "local27"  :: "125-node 5x5x5 quartic tensor-product fit, 3 time levels (default; self-contained, no AEI; 241 kB/particle cache)"
   "aei"      :: "AEILocalInterp point-wise Lagrange (order 4; no per-particle cache; needs the AEILocalInterp thorn)"
   "carpet"   :: "AEI order-4 spatial molecule + carpet-style time derivative (no per-particle cache; needs AEILocalInterp)"
+  "carpetx"  :: "CarpetX point-wise interpolation of ADMBaseX (order = CarpetX::interpolation_order; no per-particle cache; static metric; needs the CarpetX thorn)"
 } "local27"

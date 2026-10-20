@@ -38,14 +38,45 @@ schedule Geodesics_init at CCTK_INITIAL
 # (multi_exact mode) the analytic metric is valid everywhere, so rank 0
 # integrates all particles and writes the dump.
 #
-# READS: the metric fields are fetched from the per-level grid in Exact=no
-# mode; the dependencies are declared so that the schedule, PreSync and the
-# mixed-error control know about them.
+# No READS clause here on purpose.  The metric fields are fetched by name
+# at run time (CCTK_VarIndex + CCTK_VarDataPtrI), and the stencil samplers
+# do their own multi-rank halo exchange, so the schedule does not need the
+# dependency declaration: with the default Cactus::presync_mode = "off" a
+# READS clause has no run-time effect at all.  Declaring it would also make
+# ADMBase a hard configuration-time requirement (the CST resolves every
+# READS name against the thornlist), and ADMBase cannot be combined with
+# CarpetX -- whose SetupGlobals() asserts that every non-grid-function
+# group is REAL and CONSTANT, while ADMBase declares INT SCALAR groups such
+# as shift_state.  If you run with presync_mode != "off", add the ADMBase
+# READS back for the grid samplers (l27, local27, aei, carpet).
 schedule geodesics_integrate at CCTK_POSTSTEP
 {
   LANG: C
-  READS: ADMBase::gxx ADMBase::gxy ADMBase::gxz ADMBase::gyy ADMBase::gyz ADMBase::gzz ADMBase::alp ADMBase::betax ADMBase::betay ADMBase::betaz
 } "Integrate particle geodesic motion (u^mu renormalization, loss policy)"
+
+# CarpetX-only GLOBAL-mode entry points.
+#
+# CarpetX::decode_mode() defaults to *local* mode when a schedule entry has no
+# mode keyword, and CarpetX::CallFunction then loops over the active levels'
+# tiles, calling the routine once per tile with a tile-level cGH.  The
+# interpolation entry point CarpetX_Interpolate asserts in_global_mode(cctkGH),
+# so those tile-level cGHs are rejected.  GLOBAL mode instead calls the routine
+# exactly once with the driver's global-mode cGH (CarpetX::CallFunction:
+# CCTK_CallFunction(function, attribute, cctkGH)).  Carpet's CallFunction.cc
+# defaults to local (once per component per level), which is what the Carpet
+# results in the paper rely on, so the two entries above are left untouched and
+# these two are no-ops under Carpet (they return immediately).
+schedule Geodesics_init_carpetx at CCTK_INITIAL
+{
+  LANG: C
+  OPTIONS: GLOBAL
+} "Initialize particle tracker (CarpetX global-mode entry)"
+
+schedule geodesics_integrate_carpetx at CCTK_POSTSTEP
+{
+  LANG: C
+  OPTIONS: GLOBAL
+} "Integrate particle geodesic motion (CarpetX global-mode entry)"
 
 # Storage follows the total particle count: the arrays are sized by
 # particle_n_total, so random-only runs (particle_n = 0) need storage too.

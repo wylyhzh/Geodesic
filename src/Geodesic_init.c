@@ -57,10 +57,20 @@ double urand_range(unsigned int *seed, double a, double b)
   return a + (b - a) * urand01(seed);
 }
 
+/* Set by Geodesics_init_carpetx while it forwards the call, so the guard in
+   Geodesics_init knows the call already comes from the GLOBAL-mode entry. */
+static int cx_init_global_call = 0;
+
 void Geodesics_init(CCTK_ARGUMENTS)
 {
   DECLARE_CCTK_ARGUMENTS
   DECLARE_CCTK_PARAMETERS
+
+  /* Without a mode keyword the driver uses its default scheduling: Carpet
+     calls once per grid component per level, CarpetX once per tile per
+     level.  Under CarpetX the seeding is done by Geodesics_init_carpetx
+     (GLOBAL mode, exactly one call per run) instead, so bail out here. */
+  if (CCTK_IsThornActive("CarpetX") && !cx_init_global_call) return;
 
   int i;
 
@@ -71,8 +81,12 @@ void Geodesics_init(CCTK_ARGUMENTS)
      (not just map 0) or the non-master ranks are left with uninitialised
      (garbage) arrays that the mmpi sync then propagates as NaN/dead
      particles.  The old "map 0 only" MultiPatch guard was therefore wrong.
-     On a plain unigrid run levfac[0]==1 so the level guard is a no-op. */
-  if ((int)lrint(log2((double)cctk_levfac[0])) != 0) return;
+     On a plain unigrid run levfac[0]==1 so the level guard is a no-op.
+     cctk_levfac is a level-mode-only variable: the CarpetX global-mode cGH
+     never sets it, and under CarpetX there is only one synthetic level, so
+     the guard is skipped there. */
+  if (!CCTK_IsThornActive ("CarpetX") &&
+      (int)lrint(log2((double)cctk_levfac[0])) != 0) return;
 
   /* Echo the settings that actually took effect so a particle dump can always
      be traced back to the parameter file that produced it. */
@@ -103,18 +117,50 @@ void Geodesics_init(CCTK_ARGUMENTS)
   {
     const double margin = 7.0;
 
-    gstate.xmin_safe = cctk_origin_space[0] + margin * cctk_delta_space[0];
-    gstate.xmax_safe = cctk_origin_space[0] + (cctk_ubnd[0] - cctk_lbnd[0] - margin) * cctk_delta_space[0];
+    /* CarpetX never calls Geodesic in level mode, so the cGH geometry is
+       unset here (cctk_origin_space is NaN, cctk_lbnd/ubnd undefined); take
+       the domain from the CarpetX parameters instead.  Vertex-centred:
+       ncells+1 points, so the last index is ncells. */
+    double org[3], dsp[3];
+    int npt[3];
+    if (CCTK_IsThornActive("CarpetX"))
+    {
+      double lo[3], hi[3];
+      int nc[3], ngz, d;
+      if (geodesic_carpetx_domain(lo, hi, nc, &ngz) != 0)
+        CCTK_WARN(CCTK_WARN_ABORT,
+                  "Geodesic (metric_interp = carpetx): invalid CarpetX domain "
+                  "(ncells_* must be >= 2 and xmax > xmin and so on).");
+      for (d=0; d<3; d++)
+      {
+        org[d] = lo[d];
+        dsp[d] = (hi[d] - lo[d]) / (double)nc[d];
+        npt[d] = nc[d];
+      }
+    }
+    else
+    {
+      int d;
+      for (d=0; d<3; d++)
+      {
+        org[d] = cctk_origin_space[d];
+        dsp[d] = cctk_delta_space[d];
+        npt[d] = (int)(cctk_ubnd[d] - cctk_lbnd[d]);
+      }
+    }
+
+    gstate.xmin_safe = org[0] + margin * dsp[0];
+    gstate.xmax_safe = org[0] + (npt[0] - margin) * dsp[0];
     if (gstate.xmin_safe < particle_rand_xmin && particle_rand_xmin < gstate.xmax_safe && particle_rand_xmin <= particle_rand_xmax) gstate.xmin_safe = particle_rand_xmin;
     if (gstate.xmax_safe > particle_rand_xmax && particle_rand_xmax > gstate.xmin_safe && particle_rand_xmin <= particle_rand_xmax) gstate.xmax_safe = particle_rand_xmax;
 
-    gstate.ymin_safe = cctk_origin_space[1] + margin * cctk_delta_space[1];
-    gstate.ymax_safe = cctk_origin_space[1] + (cctk_ubnd[1] - cctk_lbnd[1] - margin) * cctk_delta_space[1];
+    gstate.ymin_safe = org[1] + margin * dsp[1];
+    gstate.ymax_safe = org[1] + (npt[1] - margin) * dsp[1];
     if (gstate.ymin_safe < particle_rand_ymin && particle_rand_ymin < gstate.ymax_safe && particle_rand_ymin <= particle_rand_ymax) gstate.ymin_safe = particle_rand_ymin;
     if (gstate.ymax_safe > particle_rand_ymax && particle_rand_ymax > gstate.ymin_safe && particle_rand_ymin <= particle_rand_ymax) gstate.ymax_safe = particle_rand_ymax;
 
-    gstate.zmin_safe = cctk_origin_space[2] + margin * cctk_delta_space[2];
-    gstate.zmax_safe = cctk_origin_space[2] + (cctk_ubnd[2] - cctk_lbnd[2] - margin) * cctk_delta_space[2];
+    gstate.zmin_safe = org[2] + margin * dsp[2];
+    gstate.zmax_safe = org[2] + (npt[2] - margin) * dsp[2];
     if (gstate.zmin_safe < particle_rand_zmin && particle_rand_zmin < gstate.zmax_safe && particle_rand_zmin <= particle_rand_zmax) gstate.zmin_safe = particle_rand_zmin;
     if (gstate.zmax_safe > particle_rand_zmax && particle_rand_zmax > gstate.zmin_safe && particle_rand_zmin <= particle_rand_zmax) gstate.zmax_safe = particle_rand_zmax;
 
@@ -181,4 +227,16 @@ void Geodesics_init(CCTK_ARGUMENTS)
 
     }
   }
+}
+
+/* GLOBAL-mode entry point for CarpetX (see schedule.ccl): exactly one call
+   per run, with the driver's global-mode cGH.  No-op under Carpet, where the
+   per-level Geodesics_init above does the work. */
+void Geodesics_init_carpetx (CCTK_ARGUMENTS)
+{
+  if (!CCTK_IsThornActive ("CarpetX")) return;
+
+  cx_init_global_call = 1;
+  Geodesics_init (cctkGH);
+  cx_init_global_call = 0;
 }

@@ -1,0 +1,133 @@
+#------------------------------------------------------------------------------
+# Geodesic + CarpetX: Minkowski straight-line test (stage 1, single rank).
+#
+#   Grid mode with metric_interp = "carpetx": the metric is read from the
+#   ADMBaseX grid through CarpetX's pointwise InterpGridArrays interface.
+#   The initial data is exact Minkowski, so the geodesic through
+#   (x,y,z) = (2,0,0) with coordinate velocity (0,0.5,0) is known
+#   analytically:
+#       x(t) = 2,   y(t) = 0.5 t,   z(t) = 0,
+#       u^t = 1/sqrt(1-0.5^2) = 1.1547005383792515,  u^x = 0,
+#       u^y = 0.5 u^t,  u^z = 0.
+#   Any deviation is pure interpolation + integration error.
+#------------------------------------------------------------------------------
+Cactus::cctk_run_title = "Geodesic/CarpetX: Minkowski straight line"
+
+# CartGrid3D/CoordBase are kept only for the grid description; the metric
+# interpolated in carpetx mode comes from ADMBaseX.  ADMBase is NOT in this
+# run: it cannot be combined with CarpetX (CarpetX::SetupGlobals asserts
+# that every non-grid-function group is REAL and CONSTANT, while ADMBase
+# declares INT SCALAR groups such as shift_state).
+# ODESolvers is required: ADMBaseX schedules its initial-data group inside
+# ODESolvers_Initial only when ODESolvers is active (ADMBaseX/schedule.ccl),
+# so without it the metric/lapse/shift stay at the CarpetX sNaN fill value.
+# Nothing registers an RHS here, so the Minkowski data is simply left alone.
+ActiveThorns = "CarpetX ADMBaseX ODESolvers CartGrid3D CoordBase Geodesic IOUtil Formaline TimerReport"
+
+# Geodesic declares no READS (it fetches fields by name at run time), so
+# there is nothing for the driver to pre-synchronise.
+# CarpetX insists on one of these two modes (CarpetX/schedule.cxx).  "mixed-error"
+# is the weaker one: READS/WRITES clauses are honoured only as extra SYNCs, and
+# pointer access is not gated (that gating happens only for "presync-only" in a
+# debug build).  Geodesic declares no READS, so nothing is pre-synchronised for it.
+Cactus::presync_mode = "mixed-error"
+Cactus::cctk_show_schedule = no
+
+Cactus::terminate      = "time"
+Cactus::cctk_final_time = 1.0
+
+#------------------------------------------------------------------------------
+# CarpetX grid: [10,10]^3, 128 cells per dimension -> dx = 0.15625
+#------------------------------------------------------------------------------
+
+CarpetX::verbose = no
+CarpetX::poison_undefined_values = yes
+
+CarpetX::xmin = -10.0
+CarpetX::ymin = -10.0
+CarpetX::zmin = -10.0
+CarpetX::xmax = +10.0
+CarpetX::ymax = +10.0
+CarpetX::zmax = +10.0
+
+CarpetX::ncells_x = 128
+CarpetX::ncells_y = 128
+CarpetX::ncells_z = 128
+
+CarpetX::max_num_levels  = 1
+CarpetX::regrid_every    = 0
+CarpetX::ghost_size      = 3
+
+CarpetX::prolongation_type  = "ddf"
+CarpetX::prolongation_order = 5
+CarpetX::interpolation_order = 3
+
+# dt = dtfac * min(dx) = 0.25 * 0.15625 = 0.0390625 -> 512 steps to t = 20
+CarpetX::dtfac = 0.25
+
+Driver::periodic_x = no
+Driver::periodic_y = no
+Driver::periodic_z = no
+
+#------------------------------------------------------------------------------
+# Initial data: flat metric, unit lapse, zero shift
+#------------------------------------------------------------------------------
+
+ADMBaseX::initial_data  = "Cartesian Minkowski"
+ADMBaseX::initial_lapse = "one"
+ADMBaseX::initial_shift = "zero"
+
+#------------------------------------------------------------------------------
+# Geodesic: one particle, grid mode via the CarpetX sampler
+#------------------------------------------------------------------------------
+
+Geodesic::Exact          = "no"
+Geodesic::metric_interp  = "carpetx"
+Geodesic::geodesic_amr_levels = 1
+Geodesic::rverbose       = "no"
+
+Geodesic::M = 1.0
+Geodesic::a = 0.0
+
+# no excision / respawn in this test: the particle stays at r ~ 2
+Geodesic::excised_radius = 0.0
+Geodesic::particle_loss_policy = "flag"
+
+Geodesic::initial_radius   = 2.0
+Geodesic::particle_rand_xmin = -2.0
+Geodesic::particle_rand_xmax = +2.0
+Geodesic::particle_rand_ymin = -2.0
+Geodesic::particle_rand_ymax = +2.0
+Geodesic::particle_rand_zmin = -2.0
+Geodesic::particle_rand_zmax = +2.0
+Geodesic::particle_middle_sp = 0.0
+
+Geodesic::step              = 0.0
+Geodesic::particle_n        = 1
+Geodesic::particle_n_total  = 1
+Geodesic::particle_dump_every = 16
+Geodesic::particle_dump_file  = "cx_dbg/geodesic_particles.txt"
+
+Geodesic::particle_x[0] = 2.0
+Geodesic::particle_y[0] = 0.0
+Geodesic::particle_z[0] = 0.0
+# u^mu convention (NOT a 3-velocity): for coordinate velocity (0,0.5,0)
+# u^t = 1/sqrt(1-v^2) = 1.1547005383792515, u^y = 0.5 u^t
+Geodesic::particle_tv[0] = 1.1547005383792515
+Geodesic::particle_xv[0] = 0.0
+Geodesic::particle_yv[0] = 0.5773502691896258
+Geodesic::particle_zv[0] = 0.0
+
+#------------------------------------------------------------------------------
+# Output
+#------------------------------------------------------------------------------
+
+IO::out_dir      = "cx_dbg"
+IO::out_every    = 0
+IO::parfile_write = "no"
+
+CarpetX::out_metadata = no
+CarpetX::out_tsv      = no
+
+TimerReport::out_every    = 0
+TimerReport::out_filename = "TimerReport"

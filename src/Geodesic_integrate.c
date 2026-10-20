@@ -119,7 +119,7 @@ GeodesicState gstate = { .seed = 123456789u,
                          .last_integ_time = 0.0,
                          .batch_iter = -1, .batch_maxlvl = -1,
                          .samr_levels = 1, .nlev_seen = 1,
-                         .aei_handle = -1, .aei_coordsys = -1 };
+                         .aei_handle = -1, .aei_coordsys = -1, .cx_handle = -1 };
 
 /* ============================ AMR support (max GEODESIC_MAX_LEVELS levels) ====
 
@@ -2354,6 +2354,198 @@ static int aei_interp_point(int tl, double x, double y, double z,
   return 0;
 }
 
+/* CarpetX pointwise interpolation (metric_interp = carpetx):
+   one point, the 10 ADMBaseX metric fields x operations
+   {value, d_x, d_y, d_z} = 40 outputs in outbuf[4*f+op].
+
+   CarpetX registers its interpolator with
+   CCTK_OverloadInterpGridArrays (CarpetX/src/driver.cxx), so
+   CCTK_InterpGridArrays resolves to CarpetX_InterpGridArrays at run
+   time; Geodesic deliberately does not declare InterpGridArrays in
+   interface.ccl (CarpetX does not export it either), and calls the
+   generic entry point directly.  The driver checks that the table's
+   "order" equals CarpetX::interpolation_order and that the local
+   interpolation handle is the one registered as "CarpetX", so both are
+   taken from CarpetX itself.  Coordinates are located with CarpetX's own
+   AMReX geometry (ProbLo/CellSize), not with the origin/dx passed here,
+   and the ADMBaseX group is vertex-centred.  Returns 0 on success. */
+/* CarpetX keeps its grid geometry in the Cactus parameter table and offers no
+   accessor of its own, so read it through the generic parameter interface.
+   CCTK_ParameterGet returns NULL when the parameter does not exist, and
+   reports the type with the PARAMETER_* codes of cctk_Parameter.h (701..706),
+   not with the CCTK_VARIABLE_* group-variable codes. */
+static int carpetx_param_int(const char *name, int *val)
+{
+  int type = -1;
+  const void *p = CCTK_ParameterGet(name, "CarpetX", &type);
+  if (!p || type != PARAMETER_INT) return -1;
+  *val = *(const CCTK_INT *)p;
+  return 0;
+}
+
+static int carpetx_param_real(const char *name, double *val)
+{
+  int type = -1;
+  const void *p = CCTK_ParameterGet(name, "CarpetX", &type);
+  if (!p || type != PARAMETER_REAL) return -1;
+  *val = *(const CCTK_REAL *)p;
+  return 0;
+}
+
+static int carpetx_interp_point(double x, double y, double z,
+                                double g31[10], double dg31[10][3])
+{
+  static GEODESIC_TLS int cx_tab = -1;
+  /* see the comment in aei_interp_point: the Util table API needs a lock
+     so that concurrent threads cannot be handed the same table handle */
+  static pthread_mutex_t cx_tab_lock = PTHREAD_MUTEX_INITIALIZER;
+  static CCTK_INT cx_varidx[10];
+  static int cx_varidx_ok = 0;
+  double outbuf[40];
+  void *out[40];
+  const void *coords[3] = { &x, &y, &z };
+  CCTK_INT types[40];
+  int f, k, status;
+
+  if (cx_tab < 0)
+  {
+    pthread_mutex_lock(&cx_tab_lock);
+    if (cx_tab < 0)
+    {
+      int order = -1;
+      if (carpetx_param_int("interpolation_order", &order) != 0)
+        order = 3;                       /* the CarpetX default */
+      if (order < 1) order = 1;
+      {
+        CCTK_INT opcodes[40], opidx[40];
+        for (f=0;f<10;f++) for (k=0;k<4;k++) { opcodes[4*f+k]=k; opidx[4*f+k]=f; }
+        cx_tab = Util_TableCreate(UTIL_TABLE_FLAGS_DEFAULT);
+        if (cx_tab >= 0)
+        {
+          Util_TableSetInt(cx_tab, order, "order");
+          Util_TableSetIntArray(cx_tab, 40, opcodes, "operation_codes");
+          Util_TableSetIntArray(cx_tab, 40, opidx, "operand_indices");
+        }
+      }
+    }
+    pthread_mutex_unlock(&cx_tab_lock);
+  }
+  if (cx_tab < 0) return -1;
+
+  if (!cx_varidx_ok)
+  {
+    static const char *cx_field[10] = { "ADMBaseX::gxx", "ADMBaseX::gxy", "ADMBaseX::gxz",
+                                        "ADMBaseX::gyy", "ADMBaseX::gyz", "ADMBaseX::gzz",
+                                        "ADMBaseX::alp", "ADMBaseX::betax", "ADMBaseX::betay",
+                                        "ADMBaseX::betaz" };
+    for (f=0; f<10; f++)
+    {
+      cx_varidx[f] = CCTK_VarIndex(cx_field[f]);
+      if (cx_varidx[f] < 0)
+        CCTK_WARN(CCTK_WARN_ABORT,
+          "Geodesic (metric_interp = carpetx): cannot resolve one of the "
+          "ADMBaseX metric variables (gxx..gzz, lapse, shift).");
+    }
+    cx_varidx_ok = 1;
+  }
+
+  if (gstate.cx_handle < 0) return -1;
+  for (f=0; f<40; f++) { types[f]=CCTK_VARIABLE_REAL; out[f]=&outbuf[f]; }
+  status = CCTK_InterpGridArrays(gstate.cur_gh, 3, gstate.cx_handle, cx_tab,
+                                 0, 1, CCTK_VARIABLE_REAL, coords,
+                                 10, cx_varidx, 40, types, out);
+  if (status != 0) return status;
+  for (f=0; f<10; f++)
+  {
+    g31[f]=outbuf[4*f];
+    if (dg31)
+    {
+      dg31[f][0]=outbuf[4*f+1];
+      dg31[f][1]=outbuf[4*f+2];
+      dg31[f][2]=outbuf[4*f+3];
+    }
+  }
+  return 0;
+}
+
+/* CarpetX does not traverse CCTK_POSTSTEP in level mode and leaves
+   cctk_origin_space/cctk_delta_space/cctk_lsh unset on the global-mode
+   cGH, so the level-0 LevelData is synthesised from the CarpetX grid
+   parameters instead.  ADMBaseX lives on the AMReX cell-centred grid but
+   is interpolated as a vertex-centred group (CarpetX/src/interpolate.cxx),
+   so the point count is ncells+1 and index 0 sits at xmin. */
+/* Read the CarpetX domain: vertex-centred, ncells_* cells and ncells_*+1
+   points, dx = (hi-lo)/ncells.  Shared by the level view below and by the
+   random-range setup in Geodesic_init.c. */
+int geodesic_carpetx_domain (double lo[3], double hi[3], int nc[3], int *ngz)
+{
+  static const char *const lo_name[3] = { "xmin", "ymin", "zmin" };
+  static const char *const hi_name[3] = { "xmax", "ymax", "zmax" };
+  static const char *const nc_name[3] = { "ncells_x", "ncells_y", "ncells_z" };
+  int d;
+
+  for (d=0; d<3; d++)
+  {
+    lo[d] = -1.0; hi[d] = 1.0; nc[d] = 128;
+    carpetx_param_real(lo_name[d], &lo[d]);
+    carpetx_param_real(hi_name[d], &hi[d]);
+    carpetx_param_int (nc_name[d],  &nc[d]);
+  }
+  *ngz = 3;
+  if (carpetx_param_int("ghost_size", ngz) != 0 || *ngz < 0)
+  {
+    /* ghost_size = -1 means "use the per-axis ghost_size_[xyz]" */
+    int g[3] = { 3, 3, 3 };
+    carpetx_param_int("ghost_size_x", &g[0]);
+    carpetx_param_int("ghost_size_y", &g[1]);
+    carpetx_param_int("ghost_size_z", &g[2]);
+    *ngz = g[0] > g[1] ? g[0] : g[1];
+    if (g[2] > *ngz) *ngz = g[2];
+  }
+
+  for (d=0; d<3; d++)
+    if (nc[d] < 2 || hi[d] <= lo[d])
+      return -1;
+  return 0;
+}
+
+static void carpetx_fill_geometry(LevelData *L, double dt, double time)
+{
+  double lo[3], hi[3];
+  int nc[3], ngz;
+  int d;
+
+  if (geodesic_carpetx_domain(lo, hi, nc, &ngz) != 0)
+    CCTK_WARN(CCTK_WARN_ABORT,
+              "Geodesic (metric_interp = carpetx): invalid CarpetX domain "
+              "(ncells_* must be >= 2 and xmax > xmin and so on).");
+
+  for (d=0; d<3; d++)
+  {
+    L->lsh[d]         = nc[d] + 1;
+    L->lbnd[d]        = 0;
+    L->ubnd[d]        = L->lsh[d] - 1;
+    L->nghostzones[d] = ngz;
+    L->levfac[d]      = 1;
+    L->dx[d]          = (hi[d] - lo[d]) / (double)nc[d];
+    L->inv_dx[d]      = 1.0 / L->dx[d];
+    L->origin[d]      = lo[d];
+    /* same 7-cell safe margin convention as the Carpet path (the
+       pointwise samplers only need safe_margin_cells() = 2, so this is
+       conservative) */
+    L->r_lbnd[d]      = lo[d] + 7*L->dx[d];
+    L->r_ubnd[d]      = lo[d] + (L->lsh[d]-8)*L->dx[d];
+    L->i_lbnd[d]      = lo[d];
+    L->i_ubnd[d]      = lo[d] + (L->lsh[d]-1)*L->dx[d];
+  }
+  L->dt   = dt;
+  L->time = time;
+  /* CarpetX keeps a single time level of ADMBaseX data visible here; the
+     carpetx sampler is documented as static-metric (d_t g = 0). */
+  L->metric_static = 1;
+  L->valid = 1;
+}
+
 /* theta of the particle's coordinate time y[0] within the level's two
    stored time levels.  L = the particle's level; its levels span
    [L->time - L->dt, L->time].  Absolute mapping (independent of sstep
@@ -2516,7 +2708,18 @@ static void metric_at_point(int m, const double y[8], double bg, double gdn[4][4
     for (mu=1;mu<4;mu++) for (nu=0;nu<mu;nu++) gdn[mu][nu]=gdn[nu][mu];
     return;
   }
-  cf2_fitting(m, y);
+  if (gstate.carpetx_mode)
+  {
+    /* carpetx: pointwise sampling, no per-particle stencil fit.  The
+       level is only range-checked (cf2_fitting would fit a polynomial
+       nobody reads, and its stencil reads the NULL ADMBase pointers that
+       the carpetx path never fills). */
+    const int pm = gstate.pgeodesic[m].cur_map;
+    const int lvl = pick_level(y, pm);
+    if (lvl < 0) { gstate.pgeodesic[m].outbd = 1; return; }
+    switch_to_level(pm, lvl);
+  }
+  else cf2_fitting(m, y);
   if (gstate.pgeodesic[m].outbd) return;
   if (gstate.sinterp_mode == 0)
   {
@@ -2580,6 +2783,13 @@ static void metric_at_point(int m, const double y[8], double bg, double gdn[4][4
       }
       compose_4metric(g31,dg31,gdn,NULL,NULL);
     }
+    return;
+  }
+  if (gstate.sinterp_mode == 4)
+  { /* carpetx: the CarpetX interpolator on the ADMBaseX grid (static metric) */
+    double g31[10], dg31[10][3];
+    if (carpetx_interp_point(y[1],y[2],y[3],g31,dg31) != 0) { gstate.pgeodesic[m].outbd=1; return; }
+    compose_4metric(g31,dg31,gdn,NULL,NULL);
     return;
   }
   { /* carpet */
@@ -2655,6 +2865,18 @@ static int christoffel_at_point(int m, const double y[8], double bg, double cf2[
       cf2_pointwise(dgd,gup,cf2);
       return 1;
     }
+  }
+  if (gstate.sinterp_mode == 4)
+  { /* carpetx: pointwise metric and spatial derivatives from the CarpetX
+       interpolator.  The ADMBaseX data visible here is a single time level
+       and the sampler is documented as static-metric, so d_t g = 0 (the
+       same fast path the carpet mode takes when metric_static is set). */
+    double g31[10], dg31[10][3];
+    if (carpetx_interp_point(y[1],y[2],y[3],g31,dg31) != 0) return 0;
+    compose_4metric(g31,dg31,gdn,dgd,gup);
+    for (j1=0;j1<4;j1++) for (j2=0;j2<4;j2++) dgd[0][j1][j2]=0.0;
+    cf2_pointwise(dgd,gup,cf2);
+    return 1;
   }
   { /* carpet:
      Spatial metric + spatial derivatives at the particle position.
@@ -2929,7 +3151,7 @@ int func_ode (double t, const double y[], double f[], void *params)
            stencil {tpoint-1, tpoint, tpoint+1} spans exactly [below-dx,
            below+dx], so the particle is always inside it -- pure
            interpolation. */
-        if (!gstate.pgeodesic[m].outbd &&
+        if (!gstate.pgeodesic[m].outbd && !gstate.carpetx_mode &&
             (lvl != gstate.pgeodesic[m].level ||
              (y[1] < (gstate.pgeodesic[m].below[1] - gstate.pgeodesic[m].dxp[0]) || (y[1] > (gstate.pgeodesic[m].below[1] + gstate.pgeodesic[m].dxp[0]))) ||
              (y[2] < (gstate.pgeodesic[m].below[2] - gstate.pgeodesic[m].dxp[1]) || (y[2] > (gstate.pgeodesic[m].below[2] + gstate.pgeodesic[m].dxp[1]))) ||
@@ -3747,14 +3969,34 @@ static void geodesic_recompute_owner_map(cGH *cctkGH, const double *bd, const in
      particles.
 ------------------------------------------------------------------------------------------------- */
 
+/* Set by geodesics_integrate_carpetx while it forwards the call, so the guard
+   in geodesics_integrate knows the call already comes from the GLOBAL-mode
+   entry (see schedule.ccl). */
+static int cx_global_call = 0;
+
 void geodesics_integrate (CCTK_ARGUMENTS)
 {
   DECLARE_CCTK_ARGUMENTS
   DECLARE_CCTK_PARAMETERS
 
+  /* Without a mode keyword the driver uses its default scheduling: Carpet
+     calls once per grid component per level, CarpetX once per tile per level
+     (CarpetX::CallFunction -> active_levels->loop_parallel).  The tile-level
+     cGH handed to those calls is not in global mode, which CarpetX_Interpolate
+     requires (its assert(in_global_mode(cctkGH)) fires), so under CarpetX the
+     work is done by geodesics_integrate_carpetx (GLOBAL mode, one call per
+     step) instead.  Bail out here. */
+  if (CCTK_IsThornActive ("CarpetX") && !cx_global_call) return;
+
   int i, mi, loss_policy;
   double *bd = NULL;   /* multi_amr: gathered interior boxes (Phase 1); kept until the chunk loop frees it */
-  const int lvl = (int)lrint(log2((double)cctk_levfac[0]));
+
+  /* CarpetX never calls Geodesic in level mode: there is no per-level cGH,
+     so cctk_levfac is meaningless here (level-mode-only variable).  Under
+     CarpetX there is exactly one synthetic "level 0" describing the whole
+     uniform grid. */
+  gstate.carpetx_mode = CCTK_IsThornActive("CarpetX");
+  const int lvl = gstate.carpetx_mode ? 0 : (int)lrint(log2((double)cctk_levfac[0]));
 
   /* The particle-state diagnostic dump -- exactly one block per
      cctk_iteration, in time order, particles in index order (so a plotting
@@ -3794,6 +4036,8 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   gstate.multi_amr = (CCTK_nProcs(cctkGH) > 1) && !Exact;
   if (gstate.multi_amr && CCTK_nProcs(cctkGH) > 4)
     CCTK_ERROR("Geodesic (multi-process AMR): at most 4 MPI ranks are supported.");
+  if (gstate.carpetx_mode && !Exact && CCTK_nProcs(cctkGH) > 1)
+    CCTK_ERROR("Geodesic (metric_interp = carpetx): single-rank runs only (stage 1).");
 
   /* parse metric_interp before the acquire block: the halo update below
      must know whether the sampler is a stencil (l27/local27) or pointwise.
@@ -3807,6 +4051,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
       if      (strcmp(metric_interp, "aei")     == 0) sinterp_mode_cached = 1;
       else if (strcmp(metric_interp, "carpet")  == 0) sinterp_mode_cached = 2;
       else if (strcmp(metric_interp, "local27") == 0) sinterp_mode_cached = 3;
+      else if (strcmp(metric_interp, "carpetx") == 0) sinterp_mode_cached = 4;
       else                                            sinterp_mode_cached = 0;
     }
     gstate.sinterp_mode = sinterp_mode_cached;
@@ -3824,7 +4069,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
      one call per iteration and integrates immediately.
      ================================================================================ */
   {
-    const int level = (int)lrint(log2((double)cctk_levfac[0]));
+    const int level = gstate.carpetx_mode ? 0 : (int)lrint(log2((double)cctk_levfac[0]));
     /* Guard: in a single-patch (unigrid/AMR) run the MultiPatch thorn is not
        active, so MultiPatch_GetMap's alias is unregistered; treat map as 0.
        In a genuine multipatch run it returns the current map index. */
@@ -3848,6 +4093,13 @@ void geodesics_integrate (CCTK_ARGUMENTS)
        only at the moment all levels hold data at the same time. */
 
     L = &gstate.LD[map][level];
+
+    /* CarpetX never calls Geodesic in level mode, so cctk_lsh,
+       cctk_origin_space and cctk_delta_space are unset there; the single
+       synthetic level is described by the CarpetX grid parameters instead. */
+    if (gstate.carpetx_mode)
+      carpetx_fill_geometry(L, cctk_delta_time, cctk_time);
+    else
     for (i=0; i<3; i++)
     {
       L->lsh[i]         = cctk_lsh[i];
@@ -3948,12 +4200,13 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     L->time = cctk_time;
 
     /* ---------------- pointers to ADMBase (this level) ----------------
-       Fetched only for the interpolated branch (Exact = no): the exact
-       branch uses the built-in analytic Kerr-Schild metric and never
-       reads the grid metric.  The variables are still declared as
-       READS in schedule.ccl, so ADMBase must be present in the run
-       either way (see README, "Required thorns"). */
-    if (!gstate.sexact)
+       Fetched only for the interpolated branch with a grid metric that
+       lives in ADMBase (Exact = no and metric_interp != carpetx): the
+       exact branch uses the built-in analytic Kerr-Schild metric and the
+       carpetx sampler reads ADMBaseX through CCTK_InterpGridArrays, so
+       neither needs (nor has) ADMBase.  schedule.ccl declares no READS so
+       that neither ADMBase nor a specific driver is required. */
+    if (!gstate.sexact && !gstate.carpetx_mode)
     {
       if (cctk_nghostzones[0] < 4 || cctk_nghostzones[1] < 4 || cctk_nghostzones[2] < 4)
         CCTK_ERROR("The ghost_size less 4 (need at least 4 for 6th-order FD).");
@@ -4024,7 +4277,8 @@ void geodesics_integrate (CCTK_ARGUMENTS)
        Exact=yes, and the pointwise samplers).  Runs on every rank for
        every level, in the same order everywhere, so its collectives
        match; must run before the integration trigger below. */
-    geodesic_halo_update(cctkGH, map, level);
+    if (!gstate.carpetx_mode)
+      geodesic_halo_update(cctkGH, map, level);
 
     /* minimal ghost cGH exposing THIS level's geometry.  Only the fields
        set here are valid (everything else is zero); this lets legacy
@@ -4137,15 +4391,17 @@ void geodesics_integrate (CCTK_ARGUMENTS)
 
   /* metric_interp (grid mode only; the Exact = yes branch ignores it).
      Parsed here, before the cache is allocated, because the sampler
-     selects the cache pools.  The remaining linear constraints
-     (Exact = no, not carpet, ADMBase metric_timelevels >= 2) are
-     checked in ParamCheck. */
+     selects the cache pools.  The remaining linear constraints (Exact =
+     no, not carpet, ADMBase metric_timelevels >= 2) are not checked
+     anywhere: the sampler only warns or errors once it runs. */
   if (strcmp(metric_interp, "aei") == 0)
     gstate.sinterp_mode = 1;
   else if (strcmp(metric_interp, "carpet") == 0)
     gstate.sinterp_mode = 2;
   else if (strcmp(metric_interp, "local27") == 0)
     gstate.sinterp_mode = 3;
+  else if (strcmp(metric_interp, "carpetx") == 0)
+    gstate.sinterp_mode = 4;
   else
     gstate.sinterp_mode = 0;   /* "l27" */
 
@@ -4376,6 +4632,17 @@ void geodesics_integrate (CCTK_ARGUMENTS)
      run WITHOUT the AEI thorns; modes 1 (aei) and 2 (carpet) call the
      pointwise AEI order-4 interpolant.  The interpolators are registered
      at STARTUP, after PARAMCHECK. */
+  /* Resolve the CarpetX interpolator handle (metric_interp = carpetx).
+     CarpetX registers it at STARTUP, after PARAMCHECK. */
+  if (!gstate.sexact && gstate.sinterp_mode == 4 && gstate.cx_handle < 0)
+  {
+    gstate.cx_handle = CCTK_InterpHandle("CarpetX");
+    if (gstate.cx_handle < 0)
+      CCTK_WARN(CCTK_WARN_ABORT,
+        "Geodesic (metric_interp = carpetx): cannot resolve the "
+        "interpolator registered by CarpetX.");
+  }
+
   if (!gstate.sexact && (gstate.sinterp_mode == 1 || gstate.sinterp_mode == 2)
       && gstate.aei_handle < 0)
   {
@@ -4538,7 +4805,11 @@ void geodesics_integrate (CCTK_ARGUMENTS)
 
       /* make sure the interpolation coefficients are computed */
       gstate.pgeodesic[mi].flag = 0;
-      cf2_fitting(mi, ys);
+      /* carpetx: pointwise sampling only -- cf2_fitting would fit a
+         polynomial nobody reads and its stencil reads the level-data
+         pointers that the carpetx path never fills. */
+      if (!gstate.carpetx_mode)
+        cf2_fitting(mi, ys);
 
       /* Metric at the initial position.
          sexact:  exact Kerr-Schild analytic metric (evaluated directly;
@@ -5105,6 +5376,19 @@ void geodesics_integrate (CCTK_ARGUMENTS)
 
   /* the per-particle cache (pgeodesic) is kept and reused at the next
      Cactus step; it is reclaimed by the OS at the end of the run */
+}
+
+/* GLOBAL-mode entry point for CarpetX (see schedule.ccl): exactly one call
+   per Cactus step, with the driver's global-mode cGH that
+   CarpetX_Interpolate requires.  No-op under Carpet, where the per-level
+   geodesics_integrate above does the work. */
+void geodesics_integrate_carpetx (CCTK_ARGUMENTS)
+{
+  if (!CCTK_IsThornActive ("CarpetX")) return;
+
+  cx_global_call = 1;
+  geodesics_integrate (cctkGH);
+  cx_global_call = 0;
 }
 
 

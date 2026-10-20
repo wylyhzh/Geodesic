@@ -151,9 +151,14 @@ samplers (`Geodesic::metric_interp`):
 
 ## Required thorns
 
-- `ADMBase` — always required (the schedule reads its fields); for
+- `ADMBase` — required by the grid samplers `l27`, `local27`, `aei` and
+  `carpet` (they fetch its fields by name at run time); for
   `Exact = yes` only the grid geometry (dimensions, spacing, origin,
-  ghost zones) is used, the metric values are ignored
+  ghost zones) is used, the metric values are ignored.  Not needed for
+  `metric_interp = carpetx`, which samples `ADMBaseX` instead (ADMBase
+  and CarpetX cannot be combined: CarpetX asserts that every non-grid
+  group is REAL and CONSTANT, while ADMBase declares INT SCALAR groups)
+- `CarpetX` — only for `metric_interp = carpetx`
 - `GSL` (Runge--Kutta integrator)
 - `Carpet` (required in current Einstein Toolkit builds: it is the
   only thorn implementing Cactus group storage, which `particle_arrays`

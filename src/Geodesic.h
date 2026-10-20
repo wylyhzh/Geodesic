@@ -396,13 +396,21 @@ typedef struct {
   bool check_velocity;    /* particle velocity check */
   /* spatial metric sampler (par Geodesic::metric_interp):
      0 = l27 (simplest 27-point fit), 1 = aei (AEILocalInterp),
-     2 = carpet, 3 = local27 (the self-contained 125-node fit).
+     2 = carpet, 3 = local27 (the self-contained 125-node fit),
+     4 = carpetx (CarpetX InterpGridArrays on the ADMBaseX grid).
      Grid mode only (Exact = no); the default is local27. */
   CCTK_INT sinterp_mode;
   /* aei: interpolation + coordinate-system handles (resolved lazily on
      the first grid-mode integration; -1 until then) */
   int aei_handle;
   int aei_coordsys;
+  /* carpetx: the CarpetX interpolation handle (resolved lazily; -1 until
+     then) and the driver flag set once per integration call.  CarpetX
+     does not hand Geodesic a level-mode cGH, so the level-0 LevelData is
+     synthesised from the CarpetX grid parameters instead (see
+     carpetx_fill_geometry). */
+  int cx_handle;
+  bool carpetx_mode;
   /* carpet: the cGH of the integration call (CarpetInterp needs it);
      single-process only */
   cGH *cur_gh;
@@ -450,6 +458,10 @@ typedef struct {
   CCTK_INT nmaps;
 } GeodesicState;
 extern GeodesicState gstate;
+
+/* CarpetX grid parameters (see carpetx_fill_geometry in
+   Geodesic_integrate.c); returns -1 for an invalid domain. */
+int geodesic_carpetx_domain (double lo[3], double hi[3], int nc[3], int *ngz);
 
 /* -------------------- Per-step ODE parameters for func_ode -------------------- */
 typedef struct ODE_DATA {
