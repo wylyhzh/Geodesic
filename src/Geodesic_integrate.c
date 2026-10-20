@@ -4309,6 +4309,45 @@ void geodesics_integrate (CCTK_ARGUMENTS)
        fixed during the step, so the chunk-boundary re-owning reuses
        the same gathered boxes. */
     geodesic_recompute_owner_map(cctkGH, bd, npr, nlev);
+
+    /* Rank-face start-up report (one-shot, rank-local): count the
+       particles this rank owns whose centred stencil window reaches
+       past the interior box of the level-0 patch, i.e. the stencil
+       crosses a rank face (or the domain boundary) and reads cells
+       supplied by the neighbouring rank through its ghost zones and
+       the halo copy.  This is exactly the geometry that silently
+       corrupted the equatorial orbits before the halo exchange
+       existed; with the halo active the case is handled correctly,
+       but it is now reported at start-up instead of silently
+       accepted. */
+    if (!gstate.face_reported &&
+        (gstate.sinterp_mode == 0 || gstate.sinterp_mode == 3) &&
+        !gstate.sexact && gstate.LD[0][0].halo[0][0] != NULL)
+    {
+      const LevelData *L0 = &gstate.LD[0][0];
+      const int W = (gstate.sinterp_mode == 3) ? 5 : 4;
+      int straddle = 0, owned = 0;
+      for (int mi = 0; mi < (int)particle_n_total; mi++)
+      {
+        if (gstate.owner_of[mi] != me || gstate.owner_lvl[mi] != 0) continue;
+        owned++;
+        const double p[3] = { particle_tx[mi], particle_ty[mi], particle_tz[mi] };
+        for (int d = 0; d < 3; d++)
+        {
+          const CCTK_INT tp = lrint(floor((p[d] - L0->origin[d]) * L0->inv_dx[d] + 0.5));
+          const int ilo = (int)L0->nghostzones[d];
+          const int ihi = (int)L0->lsh[d] - 1 - (int)L0->nghostzones[d];
+          if (tp - W < ilo || tp + W > ihi) { straddle++; break; }
+        }
+      }
+      if (straddle > 0)
+        CCTK_VInfo(CCTK_THORNSTRING,
+                   "rank %d: %d of %d owned level-0 particles have stencil "
+                   "windows crossing a rank face (window half-width %d cells); "
+                   "served by ghost zones and the %d-cell halo exchange",
+                   me, straddle, owned, W, GEODESIC_HALO_W);
+      gstate.face_reported = 1;
+    }
   }
 #endif
 

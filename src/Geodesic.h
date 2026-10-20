@@ -407,6 +407,10 @@ typedef struct {
      single-process only */
   cGH *cur_gh;
   CCTK_INT aei_warned, carpet_warned;  /* one-shot warning flags */
+  /* one-shot start-up report that the stencil windows of owned particles
+     straddle a rank face and are served by the halo exchange (the
+     situation of the bug reported by E. Schnetter) */
+  CCTK_INT face_reported;
   CCTK_REAL sstep;
   CCTK_INT step_cap_warned, pastlevels_warned;
   CCTK_INT  ld_generation, samr_levels, l0_seen_iter, last_integ_iter,
