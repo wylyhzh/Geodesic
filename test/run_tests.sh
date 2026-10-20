@@ -72,6 +72,7 @@ CONFIG="sim"
 DEFAULT_TESTS="Geodesic/conv100 \
   Geodesic/conv100_l27 \
   Geodesic/conv100_local27 \
+  Geodesic/conv100_local27_1p \
   Geodesic/conv100_aei \
   Geodesic/conv100_carpet \
   Geodesic/circ_orbit \

@@ -173,6 +173,13 @@ coordinate-time chunks whose boundaries keep every live particle
 strictly inside its owner's interior box, and an
 \texttt{MPI\_Allgather} of the per-particle state at each chunk
 boundary keeps the replicated arrays bit-identical on every rank.
+In \texttt{Exact = no} runs the ten \texttt{ADMBase} metric, lapse and
+shift fields, at all three stored time levels, are additionally
+exchanged as a five-cell halo around each rank's box before every
+integration batch, and the samplers' fit-history flags travel with the
+particle state, so a particle sees the same stencil data before and
+after a rank hand-over: one-, two- and four-rank dumps of the same run
+are byte-for-byte identical (\texttt{test/check\_mpi\_identity.sh}).
 This mode supports at most four ranks (a $2 \times 2$ decomposition in
 $y$ and $z$, one patch per rank per level); more ranks abort with an
 explicit error.  Note that a bit-identical replicated state is not the

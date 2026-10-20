@@ -27,3 +27,6 @@ doc/*.aux
 doc/*.log
 doc/*.out
 doc/documentation.pdf
+
+# pre-halo regression reference backups
+*.bak-prehalo

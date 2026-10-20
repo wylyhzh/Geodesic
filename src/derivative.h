@@ -1372,16 +1372,19 @@ static CCTK_REAL g4dn(CCTK_INT tl, CCTK_INT j1, CCTK_INT j2, CCTK_INT ix, CCTK_I
   CCTK_REAL ret;
   CCTK_INT index, i1, i2;
 
-  if (ix < 1 || iy < 1 || iz < 1 ||
-    ix > gview.lsh[0] || iy > gview.lsh[1] || iz > gview.lsh[2])
+  if (ix < gview.halo_lo[0] + 1 || iy < gview.halo_lo[1] + 1 || iz < gview.halo_lo[2] + 1 ||
+    ix > gview.halo_hi[0] + 1 || iy > gview.halo_hi[1] + 1 || iz > gview.halo_hi[2] + 1)
   {
     /* Outside the patch (the 6th-order FD window reaches 3 cells out, past
-       the patch edge).  Return NaN, not a finite filler: every caller
-       (ndg4dn_tl via cf2_grid, and pointwise_cf2_tl) feeds a Christoffel
-       stencil that is immediately scanned with isfinite(), which then
-       discards the fit for this particle.  A silent 0.0 would pass that
-       scan and corrupt the interpolant instead.  No warning here: this is
-       hit from OpenMP loops, once per stencil node. */
+       the patch edge).  With the multi-process halo active the bounds are
+       the halo extent, so a centred stencil across a rank face reads the
+       exchanged neighbour values instead of getting NaN.  Return NaN, not
+       a finite filler: every caller (ndg4dn_tl via cf2_grid, and
+       pointwise_cf2_tl) feeds a Christoffel stencil that is immediately
+       scanned with isfinite(), which then discards the fit for this
+       particle.  A silent 0.0 would pass that scan and corrupt the
+       interpolant instead.  No warning here: this is hit from OpenMP
+       loops, once per stencil node. */
     return NAN;
   }
 

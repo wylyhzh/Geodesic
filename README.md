@@ -175,9 +175,14 @@ Kerr--Schild formulas used by `Exact = yes` are built in.  Activate
   (`DISTRIB=CONSTANT`).  In multi-process grid runs (`multi_amr` /
   `multi_exact` mode) the domain is partitioned among the ranks and
   each rank integrates the particles it owns; the per-particle state
-  is exchanged between the ranks once per Cactus step, so multi-rank
-  runs are bit-for-bit reproducible (verified against single-rank
-  baselines in the conv test series).  The testsuite's 2-rank test
+  is exchanged between the ranks once per Cactus step, and in
+  `Exact = no` runs the grid fields read by the interpolation stencils
+  are exchanged as a five-cell halo around each rank's box, so a
+  particle sees the same stencil data before and after a rank
+  hand-over.  Multi-rank runs are therefore bit-for-bit reproducible
+  (verified against single-rank baselines in the conv test series, and
+  by `test/check_mpi_identity.sh`, which compares 1-, 2- and 4-rank
+  dumps byte for byte).  The testsuite's 2-rank test
   (`test/circ_orbit_mpi`) and the 4-rank `conv100` / TwoPunctures
   tests are part of the default test set (see Tests below).
 - The `Exact = no` mode reads the metric and its time derivative from
@@ -295,18 +300,18 @@ be traced back to the code and parameter set that produced it.
 
 ## Tests
 
-The thorn ships a Cactus testsuite in `test/` with 18 tests, driven by
+The thorn ships a Cactus testsuite in `test/` with 19 tests, driven by
 the official `RunTest.pl` infrastructure.  The convenient launcher is
 `test/run_tests.sh`:
 
-- `./run_tests.sh` (no argument) runs the 8-test default set, which
+- `./run_tests.sh` (no argument) runs the 9-test default set, which
   covers all four metric-sampling back-ends and both metric families
   (stationary Kerr grid and the two-puncture frozen-initial-data
   background; see the paper for the ML_BSSN-evolved merger runs):
-  `conv100`, `conv100_l27`, `conv100_local27`, `conv100_aei`,
-  `conv100_carpet`, `circ_orbit`, `tp_local27_025`,
+  `conv100`, `conv100_l27`, `conv100_local27`, `conv100_local27_1p`,
+  `conv100_aei`, `conv100_carpet`, `circ_orbit`, `tp_local27_025`,
   `tp_far_local27_025_t80`.
-- `./run_tests.sh -all` runs all 18 tests in `test/test.ccl`.
+- `./run_tests.sh -all` runs all 19 tests in `test/test.ccl`.
 
 Following the Einstein Toolkit convention that the user declares the
 local machine, `run_tests.sh` auto-detects the core count (`nproc`)
@@ -398,6 +403,11 @@ contain `formaline-*` / timer artifacts, which the comparator ignores.
   `conv100_l27` runs single process: the equatorial ring sits on rank
   faces in the default 2x2 (y,z) multi-rank decomposition, where the
   `l27` stencil is clipped out of the particle (see Limitations).
+- `conv100_local27_1p` is the single-process twin of `conv100_local27`
+  compared against the four-process reference dump: a PASS is a
+  1-vs-4-rank bit-identity check of the `local27` back-end (see
+  `test/check_mpi_identity.sh` for the 1/2/4-rank version at three
+  rank counts in one run).
 - `tp_local27_025`, `tp_aei_025`, `tp_carpet_025` are NEAR-field
   probes on the two-puncture `GW150914` background (TwoPunctures
   initial data, 144^3 grid, dx = 0.25, no AMR, excised radius 2):

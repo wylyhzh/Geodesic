@@ -167,12 +167,20 @@ typedef struct {
   CCTK_INT metric_static;
   CCTK_REAL delta_inv[3], origin_space[3], delta_space[3], r_lbnd[3], r_ubnd[3];
   CCTK_INT lsh[3];
+  /* stride the arrays this view points at are laid out with: lsh for the
+     raw patch arrays, lsh+2*HALO_W when the view points at the
+     halo-padded copies */
+  CCTK_INT rsh[3];
+  /* valid read-index range in the local frame: the raw patch when no
+     halo is active, [-HALO_W, lsh-1+HALO_W] when the view points at
+     the halo-padded arrays */
+  CCTK_INT halo_lo[3], halo_hi[3];
   CCTK_INT map, level, gen;
 } GeodesicView;
 static GEODESIC_TLS GeodesicView gview = { .map = -1, .level = -1, .gen = -1 };
 
 /* linear index into the current thread's level arrays (i,j,k are 0-based) */
-#define LD_INDEX(i,j,k) ((i) + gview.lsh[0]*((j) + gview.lsh[1]*(k)))
+#define LD_INDEX(i,j,k) ((i) + gview.rsh[0]*((j) + gview.rsh[1]*(k)))
 
 /* point this thread's grid view at (map, level l) (self-guarded, cheap) */
 static void switch_to_level(int map, int l)
@@ -185,24 +193,41 @@ static void switch_to_level(int map, int l)
   LevelData *L = &gstate.LD[map][l];
   gview.GH = &L->gh;
   {
+    /* halo[0][0] non-NULL  <=>  this level has halo-padded buffers
+       (multi-process grid mode with a stencil sampler); the view then
+       reads the padded copies, whose pointers are offset so that
+       LD_INDEX with LOCAL indices addresses the halo band as well */
+    const int use_halo = (L->halo[0][0] != NULL);
     CCTK_REAL **pp[10] = { L->gxx, L->gxy, L->gxz, L->gyy, L->gyz, L->gzz,
                            L->alp, L->betax, L->betay, L->betaz };
     CCTK_REAL **qq[10] = { gview.gxx, gview.gxy, gview.gxz, gview.gyy, gview.gyz, gview.gzz,
                            gview.alp, gview.betax, gview.betay, gview.betaz };
     for (int i=0; i<10; i++)
       for (int tl=0; tl<3; tl++)
-        qq[i][tl] = pp[i][tl];
+        qq[i][tl] = use_halo ? L->halo[i][tl] : pp[i][tl];
   }
   gview.dt = L->dt;
   gview.metric_static = L->metric_static;
   for (int i=0; i<3; i++)
   {
     gview.lsh[i]         = L->lsh[i];
+    gview.rsh[i]         = (L->halo[0][0] != NULL)
+                             ? L->lsh[i] + 2 * GEODESIC_HALO_W : L->lsh[i];
     gview.delta_space[i] = L->dx[i];
     gview.delta_inv[i]   = L->inv_dx[i];
     gview.origin_space[i]= L->origin[i];
     gview.r_lbnd[i]      = L->r_lbnd[i];
     gview.r_ubnd[i]      = L->r_ubnd[i];
+    if (L->halo[0][0] != NULL)
+    {
+      gview.halo_lo[i] = L->halo_lo[i];
+      gview.halo_hi[i] = L->halo_hi[i];
+    }
+    else
+    {
+      gview.halo_lo[i] = 0;
+      gview.halo_hi[i] = L->lsh[i] - 1;
+    }
   }
 }
 
@@ -227,6 +252,284 @@ static int metric_is_static(const LevelData *L)
           if (rel > maxrel) maxrel = rel;
         }
   return maxrel < 1.0e-12;
+}
+
+/* ============================================================================
+   Multi-process stencil halo (grid mode, l27/local27 samplers)
+
+   The stencil samplers read a window centred on the particle's nearest node:
+   [tp-5, tp+5] for local27 (5x5x5 nodes + 6th-order FD metric derivatives),
+   [tp-4, tp+4] for l27.  With a domain decomposition, a particle near a rank
+   face has its window sticking out of the local patch: the patch's own ghost
+   zones (3 cells) are too thin, and clipping the centre to the patch breaks
+   the stencil's centring -- equatorial particles on a z=0 rank face acquired
+   a spurious vertical velocity (the bug reported by E. Schnetter: MPI runs
+   disagreeing with scalar runs).
+
+   Fix: keep a halo-padded copy of the ten ADMBase fields (all three time
+   levels) per level, and exchange the outer HALO_W-cell band with the
+   face-adjacent ranks at every acquire.  The view then reads the padded
+   arrays (switch_to_level), the stencil centre stays exactly centred on the
+   particle in every decomposition, and the rank count stops being an
+   accuracy parameter.  Values across a face are bit-identical copies of the
+   neighbour's own array (same-level face exchange), so 1/2/4-rank runs of
+   the same par file agree bit-for-bit.
+
+   Geometry (per direction d, global patch indices, ghost zones included):
+   the patch's INTERIOR is [lbnd+ngz, ubnd-ngz]; its interior faces are the
+   rank faces.  Each rank needs HALO_W cells beyond each interior face; the
+   neighbour across the face owns exactly those global cells in its interior
+   or ghost band, and sends them verbatim.  The same global cells are
+   computed from both sides, so the Sendrecv counts match on both ranks.
+
+   Called from the acquire phase for every rank and every level, in the same
+   (level-mode) order on all ranks, so its collectives are safe.  No-op when
+   single-process or with a pointwise sampler (aei/carpet) or Exact=yes.
+   ============================================================================ */
+static void geodesic_halo_update(cGH *cctkGH, int map, int level)
+{
+#ifdef CCTK_MPI
+  const int npr = CCTK_nProcs(cctkGH);
+  const int me  = CCTK_MyProc(cctkGH);
+#else
+  const int npr = 1, me = 0;
+#endif
+  LevelData *L = &gstate.LD[map][level];
+  const int HW = GEODESIC_HALO_W;
+
+  if (npr <= 1 || gstate.sexact ||
+      (gstate.sinterp_mode != 0 && gstate.sinterp_mode != 3))
+    return;
+
+  /* ---- size (and (re)allocate) the padded buffers when lsh changed ---- */
+  int ash[3];
+  size_t pstride = 1, slab_max = 1;
+  for (int d = 0; d < 3; d++)
+  {
+    ash[d] = (int)L->lsh[d] + 2 * HW;
+    pstride *= (size_t)ash[d];
+    L->halo_lo[d] = -HW;
+    L->halo_hi[d] = (int)L->lsh[d] - 1 + HW;
+  }
+  if (L->halo_alloc_lsh[0] != L->lsh[0] ||
+      L->halo_alloc_lsh[1] != L->lsh[1] ||
+      L->halo_alloc_lsh[2] != L->lsh[2])
+  {
+    for (int f = 0; f < 10; f++)
+      for (int tl = 0; tl < 3; tl++)
+        free(L->halo_base[f][tl]);
+    for (int f = 0; f < 10; f++)
+      for (int tl = 0; tl < 3; tl++)
+      {
+        /* offset so that halo[f][tl][LD_HALO_INDEX(i,j,k)] addresses the
+           local index (i,j,k) in [-HW, lsh-1+HW] */
+        CCTK_REAL *b = (CCTK_REAL *)malloc(pstride * sizeof(CCTK_REAL));
+        if (!b)
+          CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: halo buffer allocation failed.");
+        /* poison with NaN: halo cells that are never written (corners,
+           transverse out-of-overlap strips) then read as NaN, exactly like
+           g4dn's out-of-range return on a single rank, so the isfinite
+           scans discard the fit the same way */
+        for (size_t q = 0; q < pstride; q++) b[q] = NAN;
+        L->halo_base[f][tl] = b;
+        L->halo[f][tl] = b + (size_t)HW * (1 + (size_t)ash[0] * (1 + (size_t)ash[1]));
+      }
+    for (int d = 0; d < 3; d++) L->halo_alloc_lsh[d] = L->lsh[d];
+  }
+  const size_t hs0 = (size_t)ash[0], hs1 = (size_t)ash[1];
+#define LD_HALO_INDEX(i,j,k) \
+  ((size_t)(i) + hs0 * ((size_t)(j) + hs1 * (size_t)(k)))
+
+  /* ---- copy the local patch (its ghost zones included: they hold the
+          correct same-level face values) into the padded interior ---- */
+  CCTK_REAL **raw[10] = { L->gxx, L->gxy, L->gxz, L->gyy, L->gyz, L->gzz,
+                          L->alp, L->betax, L->betay, L->betaz };
+  for (int f = 0; f < 10; f++)
+    for (int tl = 0; tl < 3; tl++)
+    {
+      CCTK_REAL *dst = L->halo[f][tl];
+      const CCTK_REAL *src = raw[f][tl];
+      if (src == NULL)
+      {
+        /* past time level not readable (ADMBase timelevels < 3): poison
+           the whole padded array with NaN.  The static-metric path never
+           reads these levels; a read that does happen is caught by the
+           isfinite scans (a silent 0.0 would pass them and corrupt the
+           fit).  The exchange below skips this (f,tl) on both ranks. */
+        for (CCTK_INT k = L->halo_lo[2]; k <= L->halo_hi[2]; k++)
+          for (CCTK_INT j = L->halo_lo[1]; j <= L->halo_hi[1]; j++)
+            for (CCTK_INT i = L->halo_lo[0]; i <= L->halo_hi[0]; i++)
+              dst[LD_HALO_INDEX(i, j, k)] = NAN;
+        continue;
+      }
+      for (CCTK_INT k = 0; k < L->lsh[2]; k++)
+        for (CCTK_INT j = 0; j < L->lsh[1]; j++)
+          memcpy(dst + LD_HALO_INDEX(0, j, k),
+                 src + ((size_t)k * (size_t)L->lsh[1] + (size_t)j) * (size_t)L->lsh[0],
+                 (size_t)L->lsh[0] * sizeof(CCTK_REAL));
+    }
+
+#ifdef CCTK_MPI
+  /* ---- gather every rank's patch index box for this level ---- */
+  int *bb = (int *)malloc((size_t)npr * 6 * sizeof(int));
+  if (!bb)
+    CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: halo box buffer allocation failed.");
+  for (int d = 0; d < 3; d++)
+  {
+    bb[me * 6 + d]     = (int)L->lbnd[d];
+    bb[me * 6 + 3 + d] = (int)L->ubnd[d];
+  }
+  MPI_Allgather(bb + me * 6, 6, MPI_INT, bb, 6, MPI_INT, MPI_COMM_WORLD);
+
+  /* worst-case slab volume: HW cells thick, at most the local transverse
+     extent wide */
+  for (int d = 0; d < 3; d++)
+  {
+    size_t vol = (size_t)HW;
+    for (int e = 0; e < 3; e++)
+      if (e != d) vol *= (size_t)L->lsh[e];
+    if (vol > slab_max) slab_max = vol;
+  }
+  CCTK_REAL *sbuf = (CCTK_REAL *)malloc(slab_max * sizeof(CCTK_REAL));
+  CCTK_REAL *rbuf = (CCTK_REAL *)malloc(slab_max * sizeof(CCTK_REAL));
+  if (!sbuf || !rbuf)
+    CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: halo slab buffer allocation failed.");
+
+  if (getenv("GEODESIC_HALO_DEBUG"))
+  {
+    fprintf(stderr, "HALODBG rank=%d lvl=%d lsh=(%d,%d,%d) lbnd=(%d,%d,%d) ubnd=(%d,%d,%d) ngz=(%d,%d,%d)\n",
+            me, level, L->lsh[0], L->lsh[1], L->lsh[2],
+            (int)L->lbnd[0], (int)L->lbnd[1], (int)L->lbnd[2],
+            (int)L->ubnd[0], (int)L->ubnd[1], (int)L->ubnd[2],
+            (int)L->nghostzones[0], (int)L->nghostzones[1], (int)L->nghostzones[2]);
+    for (int r = 0; r < npr; r++)
+      fprintf(stderr, "HALODBG rank=%d box r=%d lo=(%d,%d,%d) hi=(%d,%d,%d)\n",
+              me, r, bb[r * 6], bb[r * 6 + 1], bb[r * 6 + 2],
+              bb[r * 6 + 3], bb[r * 6 + 4], bb[r * 6 + 5]);
+  }
+
+  for (int d = 0; d < 3; d++)
+  for (int s = 0; s < 2; s++)
+  for (int r = 0; r < npr; r++)
+  {
+    if (r == me) continue;
+    const int nb = r;
+    /* The padded copy of the raw array fills the halo only over the raw
+       (interior+ghost) range [lbnd, ubnd]; the halo cells that still hold
+       poison are the HW cells just OUTSIDE that range.  The exchange must
+       therefore cross the raw OUTER edge, not the interior face:
+       s==1 receives [ubnd+1, ubnd+HW], s==0 receives [lbnd-HW, lbnd-1].
+       Both ranges are clipped to the intersection of the two raw ranges,
+       which each rank computes from the allgathered boxes, so the range we
+       receive equals the range the peer sends and vice versa.  Note that a
+       rank can have MORE THAN ONE candidate supplier per face (Carpet's
+       overlapping sub-grids), so every rank pair is considered rather than
+       the first match; suppliers then fill the same halo cells with
+       identical values. */
+    const int rlo = bb[r * 6 + d];
+    const int rhi = bb[r * 6 + 3 + d];
+    int rx_lo, rx_hi, sx_lo, sx_hi;
+    if (s)
+    {
+      rx_lo = ((int)L->ubnd[d] + 1 > rlo) ? (int)L->ubnd[d] + 1 : rlo;
+      rx_hi = ((int)L->ubnd[d] + HW < rhi) ? (int)L->ubnd[d] + HW : rhi;
+      sx_lo = (rlo - HW > (int)L->lbnd[d]) ? rlo - HW : (int)L->lbnd[d];
+      sx_hi = (rlo - 1 < (int)L->ubnd[d]) ? rlo - 1 : (int)L->ubnd[d];
+    }
+    else
+    {
+      rx_lo = ((int)L->lbnd[d] - HW > rlo) ? (int)L->lbnd[d] - HW : rlo;
+      rx_hi = ((int)L->lbnd[d] - 1 < rhi) ? (int)L->lbnd[d] - 1 : rhi;
+      sx_lo = (rhi + 1 > (int)L->lbnd[d]) ? rhi + 1 : (int)L->lbnd[d];
+      sx_hi = (rhi + HW < (int)L->ubnd[d]) ? rhi + HW : (int)L->ubnd[d];
+    }
+    if (rx_lo > rx_hi && sx_lo > sx_hi) continue;
+
+    /* transverse overlap of the two raw (interior+ghost) index ranges:
+       computed identically from both ranks' boxes, so the Sendrecv
+       counts match regardless of how the two ranks are decomposed */
+    int o0[3], o1[3];
+    int ok = 1;
+    for (int e = 0; e < 3; e++)
+    {
+      if (e == d) continue;
+      const int rlo_e = bb[r * 6 + e];
+      const int rhi_e = bb[r * 6 + 3 + e];
+      o0[e] = (int)L->lbnd[e] > rlo_e ? (int)L->lbnd[e] : rlo_e;
+      o1[e] = (int)L->ubnd[e] < rhi_e ? (int)L->ubnd[e] : rhi_e;
+      if (o0[e] > o1[e]) { ok = 0; break; }
+    }
+    if (!ok) continue;
+
+    /* transverse overlap in our local frame (the neighbour computes the
+       same global extents in its own frame; extents and counts match) */
+    int pl[3], ph[3];
+    for (int e = 0; e < 3; e++)
+    {
+      if (e == d) continue;
+      pl[e] = o0[e] - (int)L->lbnd[e];
+      ph[e] = o1[e] - (int)L->lbnd[e];
+    }
+    const int nx = sx_hi - sx_lo + 1;   /* sent thickness  (== neighbour's received) */
+    const int mx = rx_hi - rx_lo + 1;   /* received thickness (== neighbour's sent) */
+    size_t cnt_s = (size_t)(nx > 0 ? nx : 0), cnt_r = (size_t)(mx > 0 ? mx : 0);
+    for (int e = 0; e < 3; e++)
+      if (e != d)
+      {
+        cnt_s *= (size_t)(ph[e] - pl[e] + 1);
+        cnt_r *= (size_t)(ph[e] - pl[e] + 1);
+      }
+    if (cnt_s > slab_max || cnt_r > slab_max) continue;  /* defensive */
+
+    /* the two ranks of a face pair have opposite s, and either rank may be
+       the one that initiated the pairing, so the tags must name the
+       *sender*: sendtag carries our own rank, recvtag the peer's */
+    const int tagbase = 7000 + (level * 6 + d * 2) * 512;
+    const int sendtag = tagbase + s * 512 + (me & 511);
+    const int recvtag = tagbase + (1 - s) * 512 + (nb & 511);
+    const int a0 = pl[(d+1)%3], a1 = ph[(d+1)%3];
+    const int b0 = pl[(d+2)%3], b1 = ph[(d+2)%3];
+    for (int f = 0; f < 10; f++)
+    for (int tl = 0; tl < 3; tl++)
+    {
+      if (raw[f][tl] == NULL) continue;   /* poisoned level: nothing to
+                                             exchange (the neighbour
+                                             skips it identically) */
+      /* pack the send slab from our raw array (local indices) */
+      size_t o = 0;
+      for (int a = a0; a <= a1; a++)
+      for (int b = b0; b <= b1; b++)
+      for (int g = 0; g < nx; g++)
+      {
+        const CCTK_INT ix = (CCTK_INT)(sx_lo - (int)L->lbnd[d] + g);
+        int idx[3];
+        idx[d] = ix; idx[(d+1)%3] = a; idx[(d+2)%3] = b;
+        sbuf[o++] = raw[f][tl][((size_t)idx[2] * (size_t)L->lsh[1]
+                                + (size_t)idx[1]) * (size_t)L->lsh[0]
+                               + (size_t)idx[0]];
+      }
+      MPI_Sendrecv(sbuf, (int)cnt_s, MPI_DOUBLE, nb, sendtag,
+                   rbuf, (int)cnt_r, MPI_DOUBLE, nb, recvtag,
+                   MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      /* unpack the received slab into our halo (local indices may be
+         negative; the halo covers them).  The transverse local indices are
+         in our own frame (pl..ph): the buffer is ordered by the global
+         overlap range, identical on both sides. */
+      o = 0;
+      for (int a = pl[(d+1)%3]; a <= ph[(d+1)%3]; a++)
+      for (int b = pl[(d+2)%3]; b <= ph[(d+2)%3]; b++)
+      for (int g = 0; g < mx; g++)
+      {
+        int idx[3];
+        idx[d] = rx_lo - (int)L->lbnd[d] + g;
+        idx[(d+1)%3] = a; idx[(d+2)%3] = b;
+        L->halo[f][tl][LD_HALO_INDEX(idx[0], idx[1], idx[2])] = rbuf[o++];
+      }
+    }
+  }
+  free(sbuf); free(rbuf); free(bb);
+#endif
+#undef LD_HALO_INDEX
 }
 
 /* safe-region margin in cells: the local27 (poly27) branch reads a 3x3x3
@@ -1113,16 +1416,21 @@ int cf2_fitting (int m, const double y[])
     tpoint[i] = lrint (floor ((y[i] - gstate.LD[pm][lvl].origin[i-1]) * gstate.LD[pm][lvl].inv_dx[i-1] + 0.5));
   }
 
-  /* multi_amr gap band: a particle that lies in the gap between rank
-     sub-patches maps its raw stencil center tpoint outside [1, lsh-1].
-     The clip below would then centre the 27-point stencil 4+ cells away,
-     giving a huge extrapolation and a garbage fit (superluminal velocity
-     -> drop).  A particle in the *face cell* (tpoint within [1, lsh-1])
-     is fine (the centred stencil still contains the particle), so only the
-     genuine out-of-box case is dropped (l27_bad gate; l27 has no
-     extrapolant in this version).  In single-proc runs the owning box is
-     the full grid, so a particle is never out-of-box. */
+  /* multi_amr gap band (no-halo path only): a particle that lies in the
+     gap between rank sub-patches maps its raw stencil center tpoint
+     outside [1, lsh-1].  The clip below would then centre the 27-point
+     stencil 4+ cells away, giving a huge extrapolation and a garbage fit
+     (superluminal velocity -> drop).  A particle in the *face cell*
+     (tpoint within [1, lsh-1]) is fine (the centred stencil still
+     contains the particle), so only the genuine out-of-box case is
+     dropped (l27_bad gate; l27 has no extrapolant in this version).  In
+     single-proc runs the owning box is the full grid, so a particle is
+     never out-of-box.  With the multi-process halo active the stencil
+     window is checked centred against the halo extent below (the centre
+     must lie in the patch interior), which subsumes this position-based
+     shadow-zone test, so it is skipped there. */
   if (gstate.multi_amr && gstate.sinterp_mode == 0 &&
+      gstate.LD[pm][lvl].halo[0][0] == NULL &&
       lvl >= 0 && lvl < gstate.samr_levels)
   {
     const LevelData *L = &gstate.LD[pm][lvl];
@@ -1143,7 +1451,39 @@ int cf2_fitting (int m, const double y[])
     }
   }
 
-  /* l27 (sinterp_mode 0): clip the index into the stencil-safe range.
+  /* Stencil-fit test with the multi-process halo active: the only hard
+     requirement is that the full window [tp-W, tp+W] fits inside this
+     patch's halo extent, i.e. every node the stencil reads actually holds
+     valid data here.  W = 5 for local27 (5x5x5 nodes + 6th-order FD),
+     4 for l27.  The stencil centre tp is the node nearest the particle;
+     the particle itself is inside the owner's interior box, but the
+     nearest node may sit in a ghost zone (e.g. a particle just below a
+     ghost-zone node).  That is legitimate and decomposition-independent:
+     ghost cells are filled by Carpet's inter-processor boundaries and are
+     bit-identical to the neighbour's interior cells, so the same global
+     node and the same values are used in a 1-, 2- and 4-rank run.
+     Requiring an interior centre instead would reject such particles and
+     make the result depend on where the rank face happens to fall.
+     (No silent shift: the window test is a hard validity failure, since
+     an off-centre stencil is what broke the equatorial symmetry across
+     the z=0 rank face.) */
+  if (gstate.LD[pm][lvl].halo[0][0] != NULL && !gstate.sexact &&
+      (gstate.sinterp_mode == 0 || gstate.sinterp_mode == 3))
+  {
+    const LevelData *L = &gstate.LD[pm][lvl];
+    const int W = (gstate.sinterp_mode == 3) ? 5 : 4;
+    for (i=1; i<4; i++)
+    {
+      if (tpoint[i] - W < L->halo_lo[i-1] || tpoint[i] + W > L->halo_hi[i-1])
+      {
+        if (gstate.sinterp_mode == 3) gstate.pgeodesic[m].local27_bad = 1;
+        else                          gstate.pgeodesic[m].l27_bad = 1;
+        return 0;
+      }
+    }
+  }
+
+  /* l27 (sinterp_mode 0, no halo): clip the index into the stencil-safe range.
      Every grid read here goes through g4dn() or a direct LD_INDEX, which
      accept only valid cells (1-based ix in [1, lsh]).  The stencil is the
      three nodes (tpoint-1, tpoint, tpoint+1) (0-based), centred on the
@@ -1160,8 +1500,11 @@ int cf2_fitting (int m, const double y[])
      fires and the particle sits at tx in [-0.5, +0.5] relative to
      'below', inside the centred stencil (pure interpolation);
      near-boundary particles that the clip pushes out of the stencil are
-     dropped instead (l27_bad gate). */
-  if (gstate.sinterp_mode == 0 && !gstate.sexact)
+     dropped instead (l27_bad gate).  NOTE: single-process only (the halo
+     path above takes precedence); the clip is kept bit-identical for
+     single-process runs so existing references stay valid. */
+  if (gstate.sinterp_mode == 0 && !gstate.sexact &&
+      gstate.LD[pm][lvl].halo[0][0] == NULL)
   {
     for (i=1; i<4; i++)
     {
@@ -1171,20 +1514,31 @@ int cf2_fitting (int m, const double y[])
         tpoint[i] = gstate.LD[pm][lvl].lsh[i-1] - 5;
     }
   }
-  /* local27 (sinterp_mode 3): the 5x5x5 stencil reads nodes tp-2..tp+2 and the
+  /* local27 (sinterp_mode 3, no halo): the 5x5x5 stencil reads nodes tp-2..tp+2 and the
      nodal Christoffels take 6th-order FD derivatives (+/-3 around each
      node), so the full read window is [tp-5, tp+5] (0-based); the safe
-     range for tpoint is [5, lsh-6].  Same rationale as the mode-0 clip
-     above (keep every read inside valid cells; interior particles are
-     unaffected). */
-  if (gstate.sinterp_mode == 3 && !gstate.sexact)
+     range for tpoint is [5, lsh-6].  Unlike the mode-0 clip above this is
+     a hard validity failure, not a shift: a clipped centre is no longer
+     centred on the particle, so the quartic fit loses its symmetry and the
+     nodal Christoffels acquire a spurious odd part in the clipped
+     direction.  In a multi-rank run, where a rank face can cut through the
+     particle region, that pushed equatorial particles off the symmetry
+     plane (z and u_z grew from 1e-9 to 4e-6 over t=20 while the
+     single-rank run kept them at roundoff).  The particle is rejected
+     through local27_bad and the loss policy instead.  With the halo
+     active the centred window always exists and the halo test above
+     applies instead. */
+  if (gstate.sinterp_mode == 3 && !gstate.sexact &&
+      gstate.LD[pm][lvl].halo[0][0] == NULL)
   {
     for (i=1; i<4; i++)
     {
-      if (tpoint[i] < 5)
-        tpoint[i] = 5;
-      if (tpoint[i] > gstate.LD[pm][lvl].lsh[i-1] - 6)
-        tpoint[i] = gstate.LD[pm][lvl].lsh[i-1] - 6;
+      if (tpoint[i] < 5 ||
+          tpoint[i] > gstate.LD[pm][lvl].lsh[i-1] - 6)
+      {
+        gstate.pgeodesic[m].local27_bad = 1;   /* gate to the drop policy */
+        return 0;
+      }
     }
   }
 
@@ -1464,7 +1818,7 @@ int cf2_fitting (int m, const double y[])
         for (nu=0; nu<4 && cf2_fin; nu++)
         for (dd=0; dd<4 && cf2_fin; dd++)
           if (!isfinite((double)cf2n[k][mu][nu][dd]))
-            cf2_fin = 0;
+          { cf2_fin = 0; }
         if (cf2_fin)
           fit_cf2_poly125(cf2n, gstate.pgeodesic[m].pcf2_125[tl],
                           gstate.pgeodesic[m].pcf2_125c[tl]);
@@ -2548,18 +2902,17 @@ int func_ode (double t, const double y[], double f[], void *params)
           const LevelData *Lo = &gstate.LD[pm][lvl];
           for (int d = 0; d < 3; d++)
           {
-            /* mid-step reachability: the local27 stencil (3x3x3 + 6th-order
-               FD, clamped to the stencil-safe window [4, lsh-5]) fits
-               anywhere inside the full local grid [origin,
-               origin+(lsh-1)*dx] -- the clip keeps every grid read within
-               [1, lsh].  The old 0.5-cell tolerance around the interior box
-               was far too tight for shadow-zone particles (outside the
-               interior box but inside the grid, e.g. a y=0 equatorial
-               particle on the y+ rank whose interior box starts at y=0.25
-               and which moves in -y): it flagged them outbd on the first
-               step.  Use the grid extent as the bound so such particles can
-               move freely within the grid, where the (clipped) stencil is
-               valid. */
+            /* mid-step reachability: the stencil is never clipped, so the
+               only requirement is that its full window around the nearest
+               node fits inside the halo-extended local array, which is
+               checked when the stencil is fitted (see the W-window test).
+               Here the particle is simply confined to the local grid
+               [origin, origin+(lsh-1)*dx].  The old 0.5-cell tolerance
+               around the interior box was far too tight for shadow-zone
+               particles (outside the interior box but inside the grid, e.g.
+               a y=0 equatorial particle on the y+ rank whose interior box
+               starts at y=0.25 and which moves in -y): it flagged them
+               outbd on the first step. */
             const double lo = Lo->origin[d];
             const double hi = Lo->origin[d]
                               + (CCTK_REAL)((CCTK_INT)Lo->lsh[d] - 1) * Lo->dx[d];
@@ -2769,8 +3122,9 @@ static void geodesic_dump_header(FILE *fp)
    MPI_Allgather so every rank ends with the identical state.
    Payload per particle (GEODESIC_MPI_NPAY doubles):
    tt tx ty tz ttv txv tyv tzv ttw dead renorm_warn norm_bad
-   freeze_warn rl_last outbd.  Full exchange (200 x 15 =
-   22.5 KB/rank) keeps the code simple; every rank holds the complete
+   freeze_warn rl_last outbd local27_cf2_bad old_level_bad
+   local27_lvl2_bad local27_bad.  Full exchange (200 x 19 =
+   30.4 KB/rank) keeps the code simple; every rank holds the complete
    state.  The particle arrays are
    DISTRIB=CONSTANT grid variables, addressed through the patch-local
    pointers that DECLARE_CCTK_ARGUMENTS injects (cctkGH). */
@@ -2797,6 +3151,10 @@ static void geodesic_mmpi_sync(cGH *cctkGH, const int npr, const int me, const i
     p[10] = (double)gstate.pgeodesic[mi].renorm_warn; p[11] = (double)gstate.pgeodesic[mi].norm_bad;
     p[12] = (double)gstate.pgeodesic[mi].freeze_warn; p[13] = gstate.pgeodesic[mi].rl_last;
     p[14] = (double)gstate.pgeodesic[mi].outbd;
+    p[15] = (double)gstate.pgeodesic[mi].local27_cf2_bad;
+    p[16] = (double)gstate.pgeodesic[mi].old_level_bad;
+    p[17] = (double)gstate.pgeodesic[mi].local27_lvl2_bad;
+    p[18] = (double)gstate.pgeodesic[mi].local27_bad;
   }
   MPI_Allgather(s, (int)n, MPI_DOUBLE, full, (int)n, MPI_DOUBLE, MPI_COMM_WORLD);
   /* Write back per-particle, taking each particle's copy from the rank
@@ -2820,6 +3178,17 @@ static void geodesic_mmpi_sync(cGH *cctkGH, const int npr, const int me, const i
     gstate.pgeodesic[mi].freeze_warn = (CCTK_INT)p[12];
     gstate.pgeodesic[mi].rl_last     = p[13];
     gstate.pgeodesic[mi].outbd       = (CCTK_INT)p[14];
+    gstate.pgeodesic[mi].local27_cf2_bad  = (CCTK_INT)p[15];
+    gstate.pgeodesic[mi].old_level_bad    = (CCTK_INT)p[16];
+    gstate.pgeodesic[mi].local27_lvl2_bad = (CCTK_INT)p[17];
+    gstate.pgeodesic[mi].local27_bad      = (CCTK_INT)p[18];
+    /* The sticky fit-history flags above decide, per particle, whether the
+       local27 Christoffels come from the fitted poly or from the analytic
+       assembly.  They must travel with the particle: if a new owner lost
+       them it would integrate the same geodesic through a different
+       Christoffel path.  The cached fits themselves (pgd125/pcf2_125 and
+       their validity flag) deliberately do NOT travel -- the new owner does
+       not have them and re-fits from the grid it now owns. */
   }
 }
 #endif
@@ -3426,6 +3795,23 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   if (gstate.multi_amr && CCTK_nProcs(cctkGH) > 4)
     CCTK_ERROR("Geodesic (multi-process AMR): at most 4 MPI ranks are supported.");
 
+  /* parse metric_interp before the acquire block: the halo update below
+     must know whether the sampler is a stencil (l27/local27) or pointwise.
+     The keyword is fixed for the run, so parse once and cache.  (The
+     authoritative parse that selects the particle cache pools runs later
+     in this routine, on every call; same string, same result.) */
+  {
+    static int sinterp_mode_cached = -1;
+    if (sinterp_mode_cached < 0)
+    {
+      if      (strcmp(metric_interp, "aei")     == 0) sinterp_mode_cached = 1;
+      else if (strcmp(metric_interp, "carpet")  == 0) sinterp_mode_cached = 2;
+      else if (strcmp(metric_interp, "local27") == 0) sinterp_mode_cached = 3;
+      else                                            sinterp_mode_cached = 0;
+    }
+    gstate.sinterp_mode = sinterp_mode_cached;
+  }
+
   /* ================================================================================
      AMR acquire phase.
 
@@ -3632,14 +4018,25 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     {
       L->metric_static = 1;
     }
+
+    /* multi-process stencil halo: build the padded copies and exchange the
+       face bands with the neighbouring ranks (no-op single-process,
+       Exact=yes, and the pointwise samplers).  Runs on every rank for
+       every level, in the same order everywhere, so its collectives
+       match; must run before the integration trigger below. */
+    geodesic_halo_update(cctkGH, map, level);
+
     /* minimal ghost cGH exposing THIS level's geometry.  Only the fields
        set here are valid (everything else is zero); this lets legacy
        code such as g4dn() in derivative.h keep using
        CCTK_GFINDEX3D(gview.GH,...) against the current level's view.  It
        must NOT be used for CCTK_VarDataPtrI or any other driver API. */
     memset(&L->gh, 0, sizeof(cGH));
+    for (int d = 0; d < 3; d++)
+      L->halo_ash[d] = (L->halo[0][0] != NULL)
+                         ? L->lsh[d] + 2 * GEODESIC_HALO_W : L->lsh[d];
     L->gh.cctk_lsh          = L->lsh;
-    L->gh.cctk_ash          = L->lsh;    /* CCTK_GFINDEX3D uses ash, not lsh */
+    L->gh.cctk_ash          = L->halo_ash; /* CCTK_GFINDEX3D uses ash, not lsh */
     L->gh.cctk_lbnd         = L->lbnd;
     L->gh.cctk_ubnd         = L->ubnd;
     L->gh.cctk_nghostzones  = L->nghostzones;
@@ -4320,8 +4717,6 @@ void geodesics_integrate (CCTK_ARGUMENTS)
         /* ---- chunk end (computed identically on all ranks) ---- */
         double t_chunk = t_target;
         int chunk_live = 0;
-        int best_mi = -1;    /* diagnostic: the particle that constrains t_chunk */
-        int nnear = 0;       /* diagnostic: live particles with t_hit < 1e-3 */
         for (mi = 0; mi < particle_n_total; mi++)
         {
           if (gstate.pgeodesic[mi].dead || gstate.pgeodesic[mi].outbd)
@@ -4395,14 +4790,9 @@ void geodesics_integrate (CCTK_ARGUMENTS)
           else if (vz < 0.0) { const double d = pz - bo[2]; if (d >= FACE_EPS) { const double th = d / -vz; if (th < t_hit) t_hit = th; } }
           if (t_hit < 1.0e299)
           {
-            if (t_hit < 1.0e-3)
-              nnear++;
             const double tc = t_now + margin * t_hit;
             if (tc - t_now >= 1e-11 * fmax(1.0, fabs(t_target - t_now)) && tc < t_chunk)
-            {
               t_chunk = tc;
-              best_mi = mi;
-            }
           }
         }
 
@@ -4417,36 +4807,6 @@ void geodesics_integrate (CCTK_ARGUMENTS)
             if (!gstate.pgeodesic[mi].dead && !gstate.pgeodesic[mi].outbd)
               gstate.pgeodesic[mi].outbd = 1;
           break;
-        }
-
-        /* diagnostic: detect a spin in the chunk loop (nchunks far above
-           the normal few per step) and log the constraining particle on
-           rank 0 at a handful of iteration marks */
-        if (me == 0 && best_mi >= 0 &&
-            (nchunks == 1000 || nchunks == 5000 || nchunks == 10000 ||
-             (nchunks >= 20000 && (nchunks % 20000) == 0)))
-        {
-          const int bm = best_mi;
-          const int br = gstate.owner_of[bm], bl = gstate.owner_lvl[bm];
-          const double *bbo = bd + (size_t)br * nlev * 11 + (size_t)bl * 11;
-          const double but = particle_ttv[bm];
-          const double bvx = particle_txv[bm]/but,
-                       bvy = particle_tyv[bm]/but,
-                       bvz = particle_tzv[bm]/but;
-          double bx = 1.0e300, by = 1.0e300, bz = 1.0e300;
-          if (bvx > 0.0) bx = (bbo[3] - particle_tx[bm]) / bvx;
-          else if (bvx < 0.0) bx = (particle_tx[bm] - bbo[0]) / -bvx;
-          if (bvy > 0.0) by = (bbo[4] - particle_ty[bm]) / bvy;
-          else if (bvy < 0.0) by = (particle_ty[bm] - bbo[1]) / -bvy;
-          if (bvz > 0.0) bz = (bbo[5] - particle_tz[bm]) / bvz;
-          else if (bvz < 0.0) bz = (particle_tz[bm] - bbo[2]) / -bvz;
-          CCTK_VInfo(CCTK_THORNSTRING,
-                     "chunkspin iter=%d t_now=%.17g t_chunk=%.17g nnear=%d argmin_mi=%d pos=(%.17g,%.17g,%.17g) v=(%.17g,%.17g,%.17g) owner=(%d,%d) box=([%.17g,%.17g)x[%.17g,%.17g)x[%.17g,%.17g)) th=(%.17g,%.17g,%.17g)",
-                     nchunks, t_now, t_chunk, nnear, bm,
-                     particle_tx[bm], particle_ty[bm], particle_tz[bm],
-                     particle_txv[bm], particle_tyv[bm], particle_tzv[bm],
-                     br, bl, bbo[0], bbo[3], bbo[1], bbo[4], bbo[2], bbo[5],
-                     bx, by, bz);
         }
 
         /* ---- integrate the chunk (each rank: its owned particles) ----

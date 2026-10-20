@@ -84,7 +84,7 @@
    and written into the header of every particle dump; bump it whenever
    behaviour changes.  Format: YYYY.MM.DD-<counter>. */
 #ifndef GEODESIC_REVISION
-#define GEODESIC_REVISION "2026.10.18-1"
+#define GEODESIC_REVISION "2026.10.20-1"
 #endif
 
 /* -------------------- Polynomial interpolation order (fixed) -------------------- */
@@ -99,6 +99,15 @@
 /* local27 (sinterp_mode 3): 125-node 5x5x5 quartic tensor-product polynomial */
 #ifndef POLY125
 #define POLY125 125
+#endif
+
+/* -------------------- Multi-process stencil halo width --------------------
+   The local27 stencil window around a centred stencil centre spans
+   [tp-5, tp+5] (5x5x5 nodes plus the 6th-order FD window); l27 spans
+   [tp-4, tp+4].  A halo of HALO_W=5 cells around the local patch covers
+   both, so the centred stencil stays available across a rank face. */
+#ifndef GEODESIC_HALO_W
+#define GEODESIC_HALO_W 5
 #endif
 
 /* -------------------- AMR: maximum number of refinement levels --------------------
@@ -117,8 +126,17 @@
    tt tx ty tz ttv txv tyv tzv ttw dead renorm_warn norm_bad freeze_warn
    rl_last outbd. outbd (particle crossed a local box edge this step) is
    needed by the chunked integrator on every rank to pick a common chunk
-   boundary. */
-#define GEODESIC_MPI_NPAY 15
+   boundary.
+
+   The four local27 fit-history flags (local27_cf2_bad, old_level_bad,
+   local27_lvl2_bad, local27_bad) travel too.  They are sticky per-particle
+   history, not per-rank cache: a rank that has never integrated a particle
+   has them all zero, so when ownership moves, the new owner would pick a
+   different Christoffel path (fitted poly vs analytic assembly) than the
+   single-process run and the trajectory would branch.  The cached fits
+   themselves (pgd125, pcf2_125) are NOT sent -- the new owner refits from
+   its own grid data, which is identical once the halo is exchanged. */
+#define GEODESIC_MPI_NPAY 19
 
 /* -------------------- Base data containers at grid points -------------------- */
 typedef struct CF2_DATA {
@@ -326,6 +344,27 @@ typedef struct {
      three time levels: [0] = now, [1] = t - dt, [2] = t - 2dt */
   CCTK_REAL *gxx[3], *gxy[3], *gxz[3], *gyy[3], *gyz[3], *gzz[3];
   CCTK_REAL *alp[3], *betax[3], *betay[3], *betaz[3];
+
+  /* multi-process stencil halo (grid mode, l27/local27): padded copies
+     of the ten fields for all three time levels.  The local patch's
+     values are copied into the interior and the outer HALO_W-cell band
+     is exchanged with the face-adjacent ranks, so a centred stencil
+     window that sticks out over a rank face reads the neighbour's real
+     values instead of being clipped (the rank-face symmetry-breaking
+     bug reported by E. Schnetter).  halo is NULL when single-process
+     (or a pointwise sampler): the view then points at the raw arrays.
+     halo_alloc_lsh records the lsh the buffers were sized for. */
+  CCTK_REAL *halo[10][3];
+  CCTK_REAL *halo_base[10][3];   /* malloc base of halo[f][tl] (halo is offset) */
+  CCTK_INT   halo_alloc_lsh[3];
+  /* halo extent per direction (valid read indices into the padded
+     arrays, local frame): [-HALO_W, lsh-1+HALO_W] */
+  CCTK_INT   halo_lo[3], halo_hi[3];
+  /* stride the padded arrays are laid out with: lsh+2*HALO_W while the
+     halo buffers are active, lsh otherwise.  The ghost cGH's cctk_ash
+     points here so CCTK_GFINDEX3D in derivative.h matches the layout
+     the halo buffers (and the raw arrays when halo is NULL) use. */
+  CCTK_INT   halo_ash[3];
 
   /* minimal ghost cGH: ONLY the fields assigned in the acquire phase are
      valid (geometry + time scalars); everything else is zero/NULL.       */

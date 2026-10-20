@@ -59,8 +59,8 @@ NaNChecker::action_if_found = "just warn"
 TerminationTrigger::max_walltime          =  24.0   # hours
 TerminationTrigger::on_remaining_walltime = 10.0   # minutes
 TerminationTrigger::termination_from_file   = "yes"
-TerminationTrigger::create_termination_file = "yes"
-TerminationTrigger::termination_file        = "../TERMINATE"
+TerminationTrigger::create_termination_file = "no"
+TerminationTrigger::termination_file        = "TERMINATE"
 
 #------------------------------------------------------------------------------
 # Run parameters:

@@ -99,12 +99,13 @@
 #
 #   conv100              P0 circular orbit (r = 10, M = 2, a = 0.5),
 #                        Exact = no on a 100^3 grid (dx = 0.5), the
-#                        full paper run: 1500 steps (t = 150.1, ~1
-#                        orbital period).  4 MPI ranks.
+#                        paper convergence run shortened for the
+#                        testsuite: 200 steps (t = 20.0).  4 MPI ranks.
 #
 #   conv100_l27 / conv100_local27 / conv100_aei /
 #   conv100_carpet       the same orbit shortened to 200 steps
-#                        (t = 20.0), one per metric-sampling back-end:
+#                        (t = 20.0; conv100_l27, single process, to
+#                        100 steps), one per metric-sampling back-end:
 #                        l27 (27-point Lagrange stencil), local27
 #                        (local 27-point stencil), aei (via
 #                        AEILocalInterp) and carpet (via LocalInterp).
@@ -121,10 +122,14 @@
 #                        merger background (144^3, dx = 0.25, no AMR,
 #                        excised_radius = 2): 100-particle ring at
 #                        r = 8 with strong inward velocity, 20 steps.
-#                        The strong-field plunge drives deterministic
-#                        NaN drops (loss_policy = drop); the NaN-aware
-#                        comparator requires exactly the same particles
-#                        to drop at the same steps.
+#                        The strong-field plunge drives NaN drops
+#                        (loss_policy = drop); the NaN-aware comparator
+#                        requires exactly the same particles to drop at
+#                        the same steps.  Which particles drop is a
+#                        knife-edge property of the plunge, so the drop
+#                        count can shift by a particle or two when the
+#                        integration changes; the surviving trajectories
+#                        themselves are what the test pins down.
 #
 #   tp_far_local27_025_t80 / tp_far_aei_025_t80 /
 #   tp_far_carpet_025_t80
@@ -218,6 +223,14 @@ TEST conv100_local27
 {
   RELTOL 1e-12
   NPROCS 4
+}
+
+# Single-process twin of conv100_local27 whose reference dump is the
+# four-process one: a PASS is a 1-vs-4-rank bit-identity check.
+TEST conv100_local27_1p
+{
+  RELTOL 1e-12
+  NPROCS 1
 }
 
 TEST conv100_aei
