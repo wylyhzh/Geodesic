@@ -3,13 +3,56 @@
 
 implements: Geodesic
 
-inherits: Grid
-inherits: ADMBase
+# No "inherits: Grid"/"inherits: ADMBase" here on purpose: the ancestor
+# check is done at runtime (src/main/ActiveThorns.c) from what the ccl
+# said at configuration time, so it cannot be made conditional on the
+# metric backend, and requiring ADMBase would force it active -- which
+# breaks CarpetX (its SetupGlobals() asserts that every non-GF group is
+# REAL and CONSTANT, while ADMBase declares INT SCALAR groups such as
+# shift_state).  The grid and ADMBase variables are instead fetched by
+# name at runtime (CCTK_VarIndex/CCTK_VarDataPtrI), and the schedule entry
+# declares no READS at all (see schedule.ccl).
 
 # Multi-patch aware: Geodesic tracks particles on whichever map (patch)
 # of the multipath coordinate system owns them.  It asks the driver for
 # the current map, the total map count, and the global<->local coordinate
 # transforms (plus their Jacobians) of the Thornburg-style patch system.
+#
+# The signatures are declared here as well as used: Cactus only emits a
+# stub for an aliased function whose signature is declared by some thorn
+# in the thornlist, and the only thorn that declares these three
+# (Llama/Coordinates) is not part of every simulation.  Declaring one
+# signature in several thorns is allowed (Carpet, CarpetX and Accelerator
+# all declare MultiPatch_GetSystemSpecification).
+
+CCTK_INT FUNCTION                              \
+    MultiPatch_LocalToGlobal                   \
+        (CCTK_POINTER_TO_CONST IN cctkGH,      \
+         CCTK_INT IN ndims,                    \
+         CCTK_INT IN npoints,                  \
+         CCTK_INT ARRAY IN patch,              \
+         CCTK_POINTER_TO_CONST IN localcoords, \
+         CCTK_POINTER IN globalcoords,         \
+         CCTK_POINTER IN dxda,                 \
+         CCTK_POINTER IN det_dxda,             \
+         CCTK_POINTER IN dadx,                 \
+         CCTK_POINTER IN ddxdada,              \
+         CCTK_POINTER IN ddadxdx,              \
+         CCTK_POINTER IN dddxdadada)
+
+CCTK_INT FUNCTION                               \
+    MultiPatch_GlobalToLocal                    \
+        (CCTK_POINTER_TO_CONST IN cctkGH,       \
+         CCTK_INT IN ndims,                     \
+         CCTK_INT IN npoints,                   \
+         CCTK_POINTER_TO_CONST IN globalcoords, \
+         CCTK_INT ARRAY OUT patch,              \
+         CCTK_POINTER IN localcoords,           \
+         CCTK_POINTER IN dadx,                  \
+         CCTK_POINTER IN ddadxdx)
+
+CCTK_INT FUNCTION MultiPatch_GetMaps (CCTK_POINTER_TO_CONST IN cctkGH)
+
 USES FUNCTION MultiPatch_GetMap
 USES FUNCTION MultiPatch_GetMaps
 USES FUNCTION MultiPatch_GlobalToLocal
