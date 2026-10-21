@@ -4766,9 +4766,10 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   }
 
   /* ------- particle_start_time / particle_start_steps: hold, release -------
-     While the grid time is below particle_start_time, or fewer than
-     particle_start_steps integration steps have run, the particles are not
-     integrated at all: they stay at their initial position and velocity (the
+     Particles are advanced from integration step particle_start_steps onwards
+     (0 = from step 0) and only once the grid time has reached
+     particle_start_time; before that they are not integrated at all: they
+     stay at their initial position and velocity (the
      dump still records them, so the block cadence stays one per
      particle_dump_every iterations).  At the first integrating step at or
      after particle_start_time their coordinate-time clock is re-anchored to

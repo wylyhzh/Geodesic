@@ -93,15 +93,17 @@ REAL particle_start_time "Coordinate time before which particles are held fixed 
   0.0:* :: "hold every particle at its initial position and velocity until the grid reaches this time, then release it"
 } 0.0
 
-# Same hold, counted in integration steps instead of coordinate time.  A step
-# count is resolution independent: the junk transient of the initial data
-# crosses a fixed number of CFL steps per refinement level, so the matching
-# hold is 2 steps at h=1/4, 4 at h=1/8, 8 at h=1/16 (the same physical time
-# when dt = cfl*dx).  The two holds compose: particles are integrated only
-# once both the step count and the coordinate time are past their thresholds.
-INT particle_start_steps "Number of integration steps during which particles are held fixed (0 = no step-based hold)"
+# Same hold, counted in integration steps instead of coordinate time: the
+# particles are integrated from integration step N onwards, so 0 integrates
+# from step 0 (no hold) and 1 skips only step 0.  A step count is resolution
+# independent: the junk transient of the initial data crosses a fixed number
+# of CFL steps per refinement level, so the matching hold is 2 steps at
+# h=1/4, 4 at h=1/8, 8 at h=1/16 (the same physical time when dt = cfl*dx).
+# The two holds compose: particles are integrated only once both the step
+# count and the coordinate time are past their thresholds.
+INT particle_start_steps "First integration step at which particles are advanced (0 = advance from step 0)"
 {
-  0:* :: "hold every particle for this many integration steps, then release it"
+  0:* :: "integrate every particle from this integration step on, holding it at its initial position and velocity before that"
 } 0
 
 # Maximum number of tau-steps (Runge-Kutta sub-steps) the ODE loop may take
