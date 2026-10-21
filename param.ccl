@@ -100,7 +100,10 @@ REAL particle_start_time "Coordinate time before which particles are held fixed 
 # of CFL steps per refinement level, so the matching hold is 2 steps at
 # h=1/4, 4 at h=1/8, 8 at h=1/16 (the same physical time when dt = cfl*dx).
 # The two holds compose: particles are integrated only once both the step
-# count and the coordinate time are past their thresholds.
+# count and the coordinate time are past their thresholds.  At the release
+# step the 4-velocity is normalized against the metric sampled there (the
+# ring IC's velocity is defined with respect to the analytic background, not
+# to the evolved numerical metric), and nothing is dumped before release.
 INT particle_start_steps "First integration step at which particles are advanced (0 = advance from step 0)"
 {
   0:* :: "integrate every particle from this integration step on, holding it at its initial position and velocity before that"

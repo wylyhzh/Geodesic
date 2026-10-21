@@ -3312,6 +3312,96 @@ int func_ode (double t, const double y[], double f[], void *params)
    "some/dir/geodesic_particles.txt".  Already-existing components
    are skipped; any other failure (permissions, ...) is ignored --
    the fopen below will report the problem. */
+/* Step-start 4-velocity normalization of one particle: sample the metric at
+   the particle position and enforce g(u,u) = -1.  local27 rescales all four
+   components; aei / carpet keep the spatial velocity and re-solve u^0 (a full
+   rescale would amplify the spatial velocity when the IC norm deviates from
+   -1, the TP-ring IC being well off -1).  Returns g(u,u) after the fix and
+   records it in rl_last; rl_before, when given, receives g(u,u) before it.
+   A failed interpolation or an unfixable norm flags the particle
+   out-of-bounds so the loss policy after the loop handles it.  ttv is the
+   caller's Geodesic::particle_ttv array (grid arrays are function arguments,
+   not visible at file scope). */
+static double geodesic_normalize_u_at_start(int mi, CCTK_REAL ys[8], CCTK_REAL *ttv, double *rl_before)
+{
+  double gdn[4][4];
+  for (int mu=0; mu<4; ++mu)
+    for (int nu=0; nu<4; ++nu)
+      gdn[mu][nu] = 0.0;
+
+  /* 4-metric at the particle position (sexact / local27 / aei / carpet,
+     see metric_at_point); an interpolation failure leaves gdn zeroed
+     and flags the particle out-of-bounds, which the norm check below
+     reports naturally */
+  metric_at_point(mi, ys, ys[0], gdn);
+
+  /* compute rl = u_mu u^mu */
+  double u[4] = { ys[4], ys[5], ys[6], ys[7] };
+  double u_cov[4] = {0,0,0,0};
+  for (int mu=0; mu<4; ++mu)
+    for (int nu=0; nu<4; ++nu)
+      u_cov[mu] += gdn[mu][nu]*u[nu];
+
+  double rl = 0.0;
+  for (int mu=0; mu<4; ++mu) rl += u_cov[mu]*u[mu];
+  if (rl_before) *rl_before = rl;
+
+  if (!isfinite(rl) || rl >= 0.0)
+  {
+    gstate.pgeodesic[mi].renorm_warn = 1;   /* aggregated after the loop */
+  }
+  else if (gstate.sinterp_mode == 0)
+  {
+    /* local27: full 4-velocity renormalization: rescale all four
+       components by 1/sqrt(-rl) so that g(u,u) = -1 holds exactly in
+       this metric frame; the ODE-produced direction is kept as-is.
+       (This full rescale fixes the local27 norm drift.) */
+    const double inv_n = 1.0 / sqrt(-rl);
+    u[0] *= inv_n; u[1] *= inv_n; u[2] *= inv_n; u[3] *= inv_n;
+    if (!isfinite(u[0]) || u[0] <= 0.0)
+    {
+      gstate.pgeodesic[mi].norm_bad = 1;   /* aggregated after the loop */
+      gstate.pgeodesic[mi].outbd = 1;   /* let the loss policy below handle this particle */
+    }
+    else
+    {
+      ys[4] = u[0]; ys[5] = u[1]; ys[6] = u[2]; ys[7] = u[3];
+      ttv[mi] = ys[4];
+    }
+  }
+  else
+  {
+    /* aei / carpet: keep the spatial velocity unchanged and re-solve
+       u^0 (legacy behavior).  A full rescale would amplify the spatial
+       velocity when the IC norm deviates from -1 in this metric (the
+       TP-ring IC has u.u well off -1), flinging particles deeper into
+       the strong field than intended. */
+    const double u_spatial_init[3] = { ys[5], ys[6], ys[7] };
+    const double u0_predictor = ys[4];     /* u^0 already in the particle state: continuity anchor */
+    double u0_solved;
+    if (solve_u0_future_directed(gdn, u_spatial_init, u0_predictor, &u0_solved))
+    {
+      ys[4] = u0_solved;
+      ttv[mi] = ys[4];
+    }
+    else
+    {
+      gstate.pgeodesic[mi].norm_bad = 1;   /* aggregated after the loop */
+      gstate.pgeodesic[mi].outbd = 1;   /* let the loss policy below handle this particle */
+    }
+  }
+  u[0] = ys[4]; u[1] = ys[5]; u[2] = ys[6]; u[3] = ys[7];
+  u_cov[0] = 0; u_cov[1] = 0; u_cov[2] = 0; u_cov[3] = 0;
+  for (int mu=0; mu<4; ++mu)
+    for (int nu=0; nu<4; ++nu)
+      u_cov[mu] += gdn[mu][nu]*u[nu];
+  rl = 0.0;
+  for (int mu=0; mu<4; ++mu) rl += u_cov[mu]*u[mu];
+
+  gstate.pgeodesic[mi].rl_last = rl;   /* reported after the loop */
+  return rl;
+}
+
 static void geodesic_mkdir_parents(const char *path)
 {
   char buf[4096];
@@ -3590,85 +3680,9 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
     ys[6] = particle_tyv[mi];
     ys[7] = particle_tzv[mi];
 
-    {
-      double gdn[4][4];
-      for (int mu=0; mu<4; ++mu)
-        for (int nu=0; nu<4; ++nu)
-          gdn[mu][nu] = 0.0;
-
-      /* 4-metric at the particle position (sexact / local27 / aei / carpet,
-         see metric_at_point); an interpolation failure leaves gdn zeroed
-         and flags the particle out-of-bounds, which the norm check below
-         reports naturally */
-      metric_at_point(mi, ys, ys[0], gdn);
-
-      /* compute rl = u_mu u^mu */
-      double u[4] = { ys[4], ys[5], ys[6], ys[7] };
-      double u_cov[4] = {0,0,0,0};
-      for (int mu=0; mu<4; ++mu)
-        for (int nu=0; nu<4; ++nu)
-          u_cov[mu] += gdn[mu][nu]*u[nu];
-
-      double rl = 0.0;
-      for (int mu=0; mu<4; ++mu) rl += u_cov[mu]*u[mu];
-
-
-
-      if (!isfinite(rl) || rl >= 0.0)
-      {
-        gstate.pgeodesic[mi].renorm_warn = 1;   /* aggregated after the loop */
-      }
-      else if (gstate.sinterp_mode == 0)
-      {
-        /* local27: full 4-velocity renormalization: rescale all four
-           components by 1/sqrt(-rl) so that g(u,u) = -1 holds exactly in
-           this metric frame; the ODE-produced direction is kept as-is.
-           (This full rescale fixes the local27 norm drift.) */
-        const double inv_n = 1.0 / sqrt(-rl);
-        u[0] *= inv_n; u[1] *= inv_n; u[2] *= inv_n; u[3] *= inv_n;
-        if (!isfinite(u[0]) || u[0] <= 0.0)
-        {
-          gstate.pgeodesic[mi].norm_bad = 1;   /* aggregated after the loop */
-          gstate.pgeodesic[mi].outbd = 1;   /* let the loss policy below handle this particle */
-        }
-        else
-        {
-          ys[4] = u[0]; ys[5] = u[1]; ys[6] = u[2]; ys[7] = u[3];
-          particle_ttv[mi] = ys[4];
-        }
-      }
-      else
-      {
-        /* aei / carpet: keep the spatial velocity unchanged and re-solve
-           u^0 (legacy behavior).  A full rescale would amplify the spatial
-           velocity when the IC norm deviates from -1 in this metric (the
-           TP-ring IC has u.u well off -1), flinging particles deeper into
-           the strong field than intended. */
-        const double u_spatial_init[3] = { ys[5], ys[6], ys[7] };
-        const double u0_predictor = ys[4];     /* u^0 already in the particle state: continuity anchor */
-        double u0_solved;
-        if (solve_u0_future_directed(gdn, u_spatial_init, u0_predictor, &u0_solved))
-        {
-          ys[4] = u0_solved;
-          particle_ttv[mi] = ys[4];
-        }
-        else
-        {
-          gstate.pgeodesic[mi].norm_bad = 1;   /* aggregated after the loop */
-          gstate.pgeodesic[mi].outbd = 1;   /* let the loss policy below handle this particle */
-        }
-      }
-      u[0] = ys[4]; u[1] = ys[5]; u[2] = ys[6]; u[3] = ys[7];
-      u_cov[0] = 0; u_cov[1] = 0; u_cov[2] = 0; u_cov[3] = 0;
-      for (int mu=0; mu<4; ++mu)
-        for (int nu=0; nu<4; ++nu)
-          u_cov[mu] += gdn[mu][nu]*u[nu];
-      rl = 0.0;
-      for (int mu=0; mu<4; ++mu) rl += u_cov[mu]*u[mu];
-
-      gstate.pgeodesic[mi].rl_last = rl;   /* reported after the loop */
-
-    }
+    /* step-start normalization: enforce g(u,u) = -1 in the metric sampled at
+       the particle position (geodesic_normalize_u_at_start) */
+    geodesic_normalize_u_at_start(mi, ys, particle_ttv, NULL);
 
     ts = particle_ttw[mi];
     /* integrate in tau until coordinate time reaches target */
@@ -4769,11 +4783,13 @@ void geodesics_integrate (CCTK_ARGUMENTS)
      Particles are advanced from integration step particle_start_steps onwards
      (0 = from step 0) and only once the grid time has reached
      particle_start_time; before that they are not integrated at all: they
-     stay at their initial position and velocity (the
-     dump still records them, so the block cadence stays one per
-     particle_dump_every iterations).  At the first integrating step at or
-     after particle_start_time their coordinate-time clock is re-anchored to
-     that step: letting it run on from the initial time would advance the
+     stay at their initial position and velocity and are not dumped, so the
+     dump file starts at the release step.  At the first integrating step at
+     or after the threshold their coordinate-time clock is re-anchored to
+     that step and their 4-velocity is normalized against the metric sampled
+     there: the ring IC's velocity belongs to the analytic background it was
+     built on, not to the evolved numerical metric at that time.  Letting the
+     clock run on from the initial time would advance the
      particle to a coordinate time that no longer matches the metric being
      sampled.  cctk_time and sstep are identical on every rank, and this runs
      once per iteration on the integrating (finest-level) call, so the hold
@@ -4790,15 +4806,35 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   if (hold_active && !hold_particles && !gstate.pstart_done)
   {
     gstate.pstart_done = true;
+    double rl0 = 0.0, rl1 = 0.0;
+    int rl_mi = -1;
     for (mi = 0; mi < particle_n_total; mi++)
       if (!gstate.pgeodesic[mi].dead)
+      {
+        CCTK_REAL ys[8];
+        double rb = 0.0;
         particle_tt[mi] = cctk_time - gstate.sstep;
+        ys[0] = particle_tt[mi];
+        ys[1] = particle_tx[mi]; ys[2] = particle_ty[mi]; ys[3] = particle_tz[mi];
+        ys[4] = particle_ttv[mi]; ys[5] = particle_txv[mi];
+        ys[6] = particle_tyv[mi]; ys[7] = particle_tzv[mi];
+        /* the initial velocity belongs to the analytic background the ring IC
+           was built on, not to the evolved numerical metric at this time, so
+           normalize it against the metric sampled at the release point before
+           the first ODE step */
+        const double r = geodesic_normalize_u_at_start(mi, ys, particle_ttv, rl_mi < 0 ? &rb : NULL);
+        particle_tt[mi] = ys[0];
+        particle_tx[mi] = ys[1]; particle_ty[mi] = ys[2]; particle_tz[mi] = ys[3];
+        particle_ttv[mi] = ys[4]; particle_txv[mi] = ys[5];
+        particle_tyv[mi] = ys[6]; particle_tzv[mi] = ys[7];
+        if (rl_mi < 0) { rl_mi = mi; rl0 = rb; rl1 = r; }
+      }
     if (report_here)
     {
-      char pmsg[192];
+      char pmsg[256];
       snprintf(pmsg, sizeof(pmsg),
-               "Geodesic: particle start reached (t=%.6g, integration step %d): particles released at their initial position and velocity",
-               (double)cctk_time, gstate.nint_steps);
+               "Geodesic: particle start reached (t=%.6g, integration step %d): particles released at their initial position, u normalized to the sampled metric (particle %d: u.u %g -> %g)",
+               (double)cctk_time, gstate.nint_steps, rl_mi, rl0, rl1);
       CCTK_INFO(pmsg);
     }
   }
@@ -5002,11 +5038,14 @@ void geodesics_integrate (CCTK_ARGUMENTS)
      loop): when particle_dump_every > 0, open the file named by
      particle_dump_file at the first iteration and record the initial
      state (t=0) BEFORE any integration step, so the file's first data
-     row is the parfile input (after the init check above).  Parent
+     row is the parfile input (after the init check above).  With a
+     particle_start_steps / particle_start_time hold the seed row is
+     skipped: the initial state is only meaningful once the metric has
+     settled, so the file starts at the release step instead.  Parent
      directories are created as needed.
      ================================================================== */
   if (particle_dump_every > 0 && cctk_iteration == 0 &&
-      report_here)
+      !hold_active && report_here)
   {
     geodesic_mkdir_parents(particle_dump_file);
     gstate.dfp = fopen(particle_dump_file, "w");
@@ -5274,6 +5313,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   if (lvl == gstate.nlev_seen - 1 &&
       gstate.last_integ_iter == cctk_iteration &&
       particle_dump_every > 0 &&
+      (!hold_active || gstate.pstart_done) &&
       (cctk_iteration % particle_dump_every == 0) &&
       gstate.last_dump_iter != cctk_iteration &&
       report_here)
