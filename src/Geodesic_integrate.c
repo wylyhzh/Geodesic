@@ -4777,13 +4777,16 @@ void geodesics_integrate (CCTK_ARGUMENTS)
      sampled.  cctk_time and sstep are identical on every rank, and this runs
      once per iteration on the integrating (finest-level) call, so the hold
      and the one-shot re-anchoring agree everywhere -- in multi_amr the S2
-     sync after the ODE loop then sees the same state on all ranks. */
+     sync after the ODE loop then sees the same state on all ranks.  With both
+     parameters at their defaults (0) nothing here fires: no hold and no
+     re-anchoring, so the historical step-0 integration is unchanged. */
+  bool hold_active = particle_start_steps > 0 || particle_start_time > 0.0;
   bool hold_particles = false;
   if (particle_start_steps > 0 && gstate.nint_steps < particle_start_steps)
     hold_particles = true;
   if (particle_start_time > 0.0 && cctk_time < particle_start_time)
     hold_particles = true;
-  if (!hold_particles && !gstate.pstart_done)
+  if (hold_active && !hold_particles && !gstate.pstart_done)
   {
     gstate.pstart_done = true;
     for (mi = 0; mi < particle_n_total; mi++)
