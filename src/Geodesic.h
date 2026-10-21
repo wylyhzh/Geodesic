@@ -406,6 +406,11 @@ typedef struct {
                              CarpetX interpolator is an MPI collective), so
                              no owner map and no state exchange are needed
                              and only rank 0 reports */
+  bool pstart_done;       /* particle_start_time: the particles have already
+                             been released (the hold and the one-shot clock
+                             re-anchoring happen once) */
+  int nint_steps;         /* integration steps seen so far, used by
+                             particle_start_steps */
   bool sgverbose;
   bool srverbose;
   bool check_velocity;    /* particle velocity check */

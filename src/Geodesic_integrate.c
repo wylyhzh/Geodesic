@@ -4765,6 +4765,41 @@ void geodesics_integrate (CCTK_ARGUMENTS)
 #endif
   }
 
+  /* ------- particle_start_time / particle_start_steps: hold, release -------
+     While the grid time is below particle_start_time, or fewer than
+     particle_start_steps integration steps have run, the particles are not
+     integrated at all: they stay at their initial position and velocity (the
+     dump still records them, so the block cadence stays one per
+     particle_dump_every iterations).  At the first integrating step at or
+     after particle_start_time their coordinate-time clock is re-anchored to
+     that step: letting it run on from the initial time would advance the
+     particle to a coordinate time that no longer matches the metric being
+     sampled.  cctk_time and sstep are identical on every rank, and this runs
+     once per iteration on the integrating (finest-level) call, so the hold
+     and the one-shot re-anchoring agree everywhere -- in multi_amr the S2
+     sync after the ODE loop then sees the same state on all ranks. */
+  bool hold_particles = false;
+  if (particle_start_steps > 0 && gstate.nint_steps < particle_start_steps)
+    hold_particles = true;
+  if (particle_start_time > 0.0 && cctk_time < particle_start_time)
+    hold_particles = true;
+  if (!hold_particles && !gstate.pstart_done)
+  {
+    gstate.pstart_done = true;
+    for (mi = 0; mi < particle_n_total; mi++)
+      if (!gstate.pgeodesic[mi].dead)
+        particle_tt[mi] = cctk_time - gstate.sstep;
+    if (report_here)
+    {
+      char pmsg[192];
+      snprintf(pmsg, sizeof(pmsg),
+               "Geodesic: particle start reached (t=%.6g, integration step %d): particles released at their initial position and velocity",
+               (double)cctk_time, gstate.nint_steps);
+      CCTK_INFO(pmsg);
+    }
+  }
+  gstate.nint_steps++;
+
   /* ---------------- reset per-step particle fields ----------------
      (dead is persistent: it survives across steps) */
   for (mi=0; mi<particle_n_total; mi++)
@@ -5171,6 +5206,8 @@ void geodesics_integrate (CCTK_ARGUMENTS)
             continue;
           if (gstate.owner_of[mi] != me)
             continue;
+          if (hold_particles)
+            continue;
           geodesic_integrate_particle(cctkGH, mi, t_chunk, t0);
         }
 
@@ -5204,6 +5241,8 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     for (mi = 0; mi < particle_n_total; mi++)
     {
       if (gstate.pgeodesic[mi].dead)
+        continue;
+      if (hold_particles)
         continue;
       geodesic_integrate_particle(cctkGH, mi, particle_tt[mi] + gstate.sstep, particle_tt[mi]);
     }

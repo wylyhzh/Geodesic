@@ -95,11 +95,14 @@ void Geodesics_init(CCTK_ARGUMENTS)
     snprintf(cfg, sizeof(cfg),
              "revision %s: effective config: excised_radius=%g initial_radius=%g"
              " Exact=%s metric_interp=%s particle_loss_policy=%s"
-             " particle_n_total=%d particle_dump_file=%s",
+             " particle_n_total=%d particle_start_time=%g particle_start_steps=%d"
+             " particle_dump_file=%s",
              GEODESIC_REVISION,
              (double)excised_radius, (double)initial_radius,
              Exact ? "yes" : "no", metric_interp, particle_loss_policy,
-             (int)particle_n_total, particle_dump_file);
+             (int)particle_n_total, (double)particle_start_time,
+             (int)particle_start_steps,
+             particle_dump_file);
     CCTK_INFO(cfg);
   }
 
