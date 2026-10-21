@@ -3402,6 +3402,78 @@ static double geodesic_normalize_u_at_start(int mi, CCTK_REAL ys[8], CCTK_REAL *
   return rl;
 }
 
+/* Release-step velocity reconstruction for one particle (particle_start_velocity
+   = "fix_E_Lz"): take the conserved quantities of the state as it stands,
+   measured in the metric sampled at the release point,
+     E  = -u_t ,  L_z = x u_y - y u_x ,
+   and rebuild a circular 4-velocity at the same position: u^r = u^z = 0 with
+   omega = dphi/dt, so u^x = -omega y u^t and u^y = omega x u^t.  Solving
+   E = -u^t (g_tt + omega C) and L_z = u^t omega Q with
+     C = -y g_tx + x g_ty ,  Q = x^2 g_yy + y^2 g_xx - 2 x y g_xy
+   gives omega and u^t; the state is then renormalized to g(u,u) = -1, which
+   rescales E and L_z by the same factor (L_z/E preserved exactly).  Returns 0
+   (caller falls back to plain normalization) when the metric sample failed, the
+   orbit is degenerate (on axis, E <= 0, vanishing denominator) or the rebuilt
+   state is not timelike and future-directed.  The out pointers, when given,
+   carry the numbers for the release log line. */
+static int geodesic_circularize_u_at_start(int mi, CCTK_REAL ys[8], CCTK_REAL *ttv,
+                                           double *E_out, double *Lz_out, double *om_out,
+                                           double *n0_out, double *n1_out)
+{
+  double gdn[4][4];
+  for (int mu=0; mu<4; ++mu)
+    for (int nu=0; nu<4; ++nu)
+      gdn[mu][nu] = 0.0;
+  metric_at_point(mi, ys, ys[0], gdn);
+  if (gstate.pgeodesic[mi].outbd) return 0;
+
+  const double x = ys[1], y = ys[2];
+  double u[4] = { ys[4], ys[5], ys[6], ys[7] };
+  double uc[4] = {0,0,0,0};
+  for (int mu=0; mu<4; ++mu)
+    for (int nu=0; nu<4; ++nu)
+      uc[mu] += gdn[mu][nu]*u[nu];
+  double n0 = 0.0;
+  for (int mu=0; mu<4; ++mu) n0 += uc[mu]*u[mu];
+
+  const double E  = -uc[0];
+  const double Lz = x*uc[2] - y*uc[1];
+  const double C  = -y*gdn[0][1] + x*gdn[0][2];
+  const double Q  = x*x*gdn[2][2] + y*y*gdn[1][1] - 2.0*x*y*gdn[1][2];
+  const double den = -E*Q - Lz*C;
+  if (!isfinite(E) || !isfinite(Lz) || E <= 0.0 ||
+      fabs(den) < 1e-14 || fabs(Q) < 1e-14)
+    return 0;
+
+  const double om = Lz*gdn[0][0]/den;
+  const double gtt_eff = gdn[0][0] + om*C;
+  if (!isfinite(om) || fabs(gtt_eff) < 1e-14) return 0;
+  const double ut = -E/gtt_eff;
+  if (!isfinite(ut) || ut <= 0.0) return 0;
+
+  u[0] = ut; u[1] = -om*y*ut; u[2] = om*x*ut; u[3] = 0.0;
+  double uc2[4] = {0,0,0,0}, n1 = 0.0;
+  for (int mu=0; mu<4; ++mu)
+    for (int nu=0; nu<4; ++nu)
+      uc2[mu] += gdn[mu][nu]*u[nu];
+  for (int mu=0; mu<4; ++mu) n1 += uc2[mu]*u[mu];
+  if (!isfinite(n1) || n1 >= 0.0) return 0;
+
+  const double inv_n = 1.0/sqrt(-n1);
+  for (int mu=0; mu<4; ++mu) u[mu] *= inv_n;
+  ys[4] = u[0]; ys[5] = u[1]; ys[6] = u[2]; ys[7] = u[3];
+  ttv[mi] = ys[4];
+  n1 = -1.0;   /* exact by construction after the rescale */
+  gstate.pgeodesic[mi].rl_last = n1;
+
+  if (E_out)  *E_out  = E;
+  if (Lz_out) *Lz_out = Lz;
+  if (om_out) *om_out = om;
+  if (n0_out) *n0_out = n0;
+  if (n1_out) *n1_out = n1;
+  return 1;
+}
+
 static void geodesic_mkdir_parents(const char *path)
 {
   char buf[4096];
@@ -4806,13 +4878,14 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   if (hold_active && !hold_particles && !gstate.pstart_done)
   {
     gstate.pstart_done = true;
-    double rl0 = 0.0, rl1 = 0.0;
-    int rl_mi = -1;
+    double rl0 = 0.0, rl1 = 0.0, rlE = 0.0, rlL = 0.0, rlOm = 0.0;
+    int rl_mi = -1, rl_circ = 0;
     for (mi = 0; mi < particle_n_total; mi++)
       if (!gstate.pgeodesic[mi].dead)
       {
         CCTK_REAL ys[8];
-        double rb = 0.0;
+        double rb = 0.0, E = 0.0, Lz = 0.0, om = 0.0, n0 = 0.0, n1 = 0.0;
+        int circ = 0;
         particle_tt[mi] = cctk_time - gstate.sstep;
         ys[0] = particle_tt[mi];
         ys[1] = particle_tx[mi]; ys[2] = particle_ty[mi]; ys[3] = particle_tz[mi];
@@ -4820,21 +4893,35 @@ void geodesics_integrate (CCTK_ARGUMENTS)
         ys[6] = particle_tyv[mi]; ys[7] = particle_tzv[mi];
         /* the initial velocity belongs to the analytic background the ring IC
            was built on, not to the evolved numerical metric at this time, so
-           normalize it against the metric sampled at the release point before
-           the first ODE step */
-        const double r = geodesic_normalize_u_at_start(mi, ys, particle_ttv, rl_mi < 0 ? &rb : NULL);
+           rebuild it from the metric sampled at the release point before the
+           first ODE step */
+        if (CCTK_EQUALS(particle_start_velocity, "fix_E_Lz"))
+          circ = geodesic_circularize_u_at_start(mi, ys, particle_ttv, &E, &Lz, &om, &n0, &n1);
+        if (!circ)
+        {
+          n1 = geodesic_normalize_u_at_start(mi, ys, particle_ttv, rl_mi < 0 ? &rb : NULL);
+          n0 = rb;
+        }
         particle_tt[mi] = ys[0];
         particle_tx[mi] = ys[1]; particle_ty[mi] = ys[2]; particle_tz[mi] = ys[3];
         particle_ttv[mi] = ys[4]; particle_txv[mi] = ys[5];
         particle_tyv[mi] = ys[6]; particle_tzv[mi] = ys[7];
-        if (rl_mi < 0) { rl_mi = mi; rl0 = rb; rl1 = r; }
+        if (rl_mi < 0)
+        {
+          rl_mi = mi; rl0 = n0; rl1 = n1; rlE = E; rlL = Lz; rlOm = om; rl_circ = circ;
+        }
       }
     if (report_here)
     {
-      char pmsg[256];
-      snprintf(pmsg, sizeof(pmsg),
-               "Geodesic: particle start reached (t=%.6g, integration step %d): particles released at their initial position, u normalized to the sampled metric (particle %d: u.u %g -> %g)",
-               (double)cctk_time, gstate.nint_steps, rl_mi, rl0, rl1);
+      char pmsg[320];
+      if (rl_circ)
+        snprintf(pmsg, sizeof(pmsg),
+                 "Geodesic: particle start reached (t=%.6g, integration step %d): released at the initial position, circular orbit rebuilt from E=%g L_z=%g (omega=%g), u.u %g -> %g (particle %d)",
+                 (double)cctk_time, gstate.nint_steps, rlE, rlL, rlOm, rl0, rl1, rl_mi);
+      else
+        snprintf(pmsg, sizeof(pmsg),
+                 "Geodesic: particle start reached (t=%.6g, integration step %d): released at the initial position, u normalized to the sampled metric (particle %d: u.u %g -> %g)",
+                 (double)cctk_time, gstate.nint_steps, rl_mi, rl0, rl1);
       CCTK_INFO(pmsg);
     }
   }

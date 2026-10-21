@@ -104,6 +104,22 @@ REAL particle_start_time "Coordinate time before which particles are held fixed 
 # step the 4-velocity is normalized against the metric sampled there (the
 # ring IC's velocity is defined with respect to the analytic background, not
 # to the evolved numerical metric), and nothing is dumped before release.
+# How the 4-velocity is set at the release step.  "normalize" rescales the IC
+# velocity so that g(u,u) = -1 in the sampled metric (it also rescales the
+# spatial velocity, which for the TP-ring IC means a factor ~1.9).
+# "fix_E_Lz" instead keeps the conserved quantities of the IC velocity measured
+# in the sampled numerical metric, E = -u_t and L_z = x u_y - y u_x, and
+# rebuilds a circular 4-velocity (u^r = u^z = 0, omega = dphi/dt) at the same
+# position from them, then renormalizes (which rescales E and L_z by the same
+# factor, so L_z/E is preserved exactly).  E and L_z cannot both be kept exact
+# while also imposing u^r = 0 and g(u,u) = -1 at a fixed radius -- three
+# conditions for two unknowns -- so the norm is the condition enforced exactly.
+KEYWORD particle_start_velocity "How to set the 4-velocity at the release step"
+{
+  "normalize" :: "rescale the IC velocity to g(u,u) = -1 (default)"
+  "fix_E_Lz"  :: "keep E and L_z from the IC in the sampled metric, rebuild a circular orbit"
+} "normalize"
+
 INT particle_start_steps "First integration step at which particles are advanced (0 = advance from step 0)"
 {
   0:* :: "integrate every particle from this integration step on, holding it at its initial position and velocity before that"
