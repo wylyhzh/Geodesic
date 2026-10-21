@@ -1,0 +1,145 @@
+#------------------------------------------------------------------------------
+# Geodesic + CarpetX: Minkowski straight lines, four particles (stage 2 test).
+#
+# Same physics as cx_minkowski.par (exact Minkowski ADMBaseX data, so every
+# geodesic is a straight line with constant u^mu), but with four particles in
+# four different octants so that they sit in different CarpetX rank domains in
+# a multi-rank run:
+#
+#   p0 ( 2, 0, 0) v=( 0, 0.5, 0)   p2 ( 0,-2, 0) v=( 0, 0, 0.5)
+#   p1 (-2, 0, 0) v=( 0.5,0, 0)   p3 ( 0, 0, 2)  v=(-0.5,0, 0)
+#
+# with u^t = 1/sqrt(1-0.5^2) = 1.1547005383792515 and u^i = 0.5 u^t along the
+# direction of motion.  cctk_final_time = 10 keeps every particle inside the
+# 7-cell safe margin (max radius reached: 2 + 0.5*10 = 7 < 10 - 7*dx = 8.9),
+# so no particle is lost to the boundary and the whole trajectory is
+# comparable with the analytic solution.
+#
+# Run with 1, 2 and 4 ranks: the dump must be bit-identical in all three.
+#------------------------------------------------------------------------------
+Cactus::cctk_run_title = "Geodesic/CarpetX: Minkowski straight lines, 4 particles"
+
+ActiveThorns = "CarpetX ADMBaseX ODESolvers CartGrid3D CoordBase Geodesic IOUtil Formaline TimerReport"
+
+Cactus::presync_mode = "mixed-error"
+Cactus::cctk_show_schedule = no
+
+Cactus::terminate      = "time"
+Cactus::cctk_final_time = 10.0
+
+#------------------------------------------------------------------------------
+# CarpetX grid: [10,10]^3, 128 cells per dimension -> dx = 0.15625
+#------------------------------------------------------------------------------
+
+CarpetX::verbose = no
+CarpetX::poison_undefined_values = yes
+
+CarpetX::xmin = -10.0
+CarpetX::ymin = -10.0
+CarpetX::zmin = -10.0
+CarpetX::xmax = +10.0
+CarpetX::ymax = +10.0
+CarpetX::zmax = +10.0
+
+CarpetX::ncells_x = 128
+CarpetX::ncells_y = 128
+CarpetX::ncells_z = 128
+
+CarpetX::max_num_levels  = 1
+CarpetX::regrid_every    = 0
+CarpetX::ghost_size      = 3
+
+CarpetX::prolongation_type  = "ddf"
+CarpetX::prolongation_order = 5
+CarpetX::interpolation_order = 3
+
+# dt = dtfac * min(dx) = 0.25 * 0.15625 = 0.0390625 -> 256 steps to t = 10
+CarpetX::dtfac = 0.25
+
+Driver::periodic_x = no
+Driver::periodic_y = no
+Driver::periodic_z = no
+
+#------------------------------------------------------------------------------
+# Initial data: flat metric, unit lapse, zero shift
+#------------------------------------------------------------------------------
+
+ADMBaseX::initial_data  = "Cartesian Minkowski"
+ADMBaseX::initial_lapse = "one"
+ADMBaseX::initial_shift = "zero"
+
+#------------------------------------------------------------------------------
+# Geodesic: four particles, grid mode via the CarpetX sampler
+#------------------------------------------------------------------------------
+
+Geodesic::Exact          = "no"
+Geodesic::metric_interp  = "carpetx"
+Geodesic::geodesic_amr_levels = 1
+Geodesic::rverbose       = "no"
+
+Geodesic::M = 1.0
+Geodesic::a = 0.0
+
+Geodesic::excised_radius = 0.0
+Geodesic::particle_loss_policy = "flag"
+
+Geodesic::initial_radius   = 8.0
+Geodesic::particle_rand_xmin = -8.0
+Geodesic::particle_rand_xmax = +8.0
+Geodesic::particle_rand_ymin = -8.0
+Geodesic::particle_rand_ymax = +8.0
+Geodesic::particle_rand_zmin = -8.0
+Geodesic::particle_rand_zmax = +8.0
+Geodesic::particle_middle_sp = 0.0
+
+Geodesic::step              = 0.0
+Geodesic::particle_n        = 4
+Geodesic::particle_n_total  = 4
+Geodesic::particle_dump_every = 16
+Geodesic::particle_dump_file  = "cx_np4/geodesic_particles.txt"
+
+Geodesic::particle_x[0] =  2.0
+Geodesic::particle_y[0] =  0.0
+Geodesic::particle_z[0] =  0.0
+Geodesic::particle_tv[0] = 1.1547005383792515
+Geodesic::particle_xv[0] = 0.0
+Geodesic::particle_yv[0] = 0.5773502691896258
+Geodesic::particle_zv[0] = 0.0
+
+Geodesic::particle_x[1] = -2.0
+Geodesic::particle_y[1] =  0.0
+Geodesic::particle_z[1] =  0.0
+Geodesic::particle_tv[1] = 1.1547005383792515
+Geodesic::particle_xv[1] = 0.5773502691896258
+Geodesic::particle_yv[1] = 0.0
+Geodesic::particle_zv[1] = 0.0
+
+Geodesic::particle_x[2] =  0.0
+Geodesic::particle_y[2] = -2.0
+Geodesic::particle_z[2] =  0.0
+Geodesic::particle_tv[2] = 1.1547005383792515
+Geodesic::particle_xv[2] = 0.0
+Geodesic::particle_yv[2] = 0.0
+Geodesic::particle_zv[2] = 0.5773502691896258
+
+Geodesic::particle_x[3] =  0.0
+Geodesic::particle_y[3] =  0.0
+Geodesic::particle_z[3] =  2.0
+Geodesic::particle_tv[3] = 1.1547005383792515
+Geodesic::particle_xv[3] = -0.5773502691896258
+Geodesic::particle_yv[3] = 0.0
+Geodesic::particle_zv[3] = 0.0
+
+#------------------------------------------------------------------------------
+# Output
+#------------------------------------------------------------------------------
+
+IO::out_dir      = "cx_np4"
+IO::out_every    = 0
+IO::parfile_write = "no"
+
+CarpetX::out_metadata = no
+CarpetX::out_tsv      = no
+
+TimerReport::out_every    = 0
+TimerReport::out_filename = "TimerReport"

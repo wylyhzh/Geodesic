@@ -36,7 +36,10 @@ schedule Geodesics_init at CCTK_INITIAL
 # particle arrays bit-identical on all ranks (at most 4 ranks, a 2x2
 # (y,z) decomposition with one patch per rank per level).  With Exact=yes
 # (multi_exact mode) the analytic metric is valid everywhere, so rank 0
-# integrates all particles and writes the dump.
+# integrates all particles and writes the dump.  Neither mode applies under
+# CarpetX (multi_cx mode): there the integration is replicated on every
+# rank because the CarpetX interpolator is an MPI collective; see
+# Geodesic.h.
 #
 # No READS clause here on purpose.  The metric fields are fetched by name
 # at run time (CCTK_VarIndex + CCTK_VarDataPtrI), and the stencil samplers

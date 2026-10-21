@@ -190,6 +190,19 @@ Kerr--Schild formulas used by `Exact = yes` are built in.  Activate
   dumps byte for byte).  The testsuite's 2-rank test
   (`test/circ_orbit_mpi`) and the 4-rank `conv100` / TwoPunctures
   tests are part of the default test set (see Tests below).
+- With `metric_interp = carpetx` (CarpetX driver) the multi-process mode is
+  different: CarpetX's interpolator is an MPI collective (it redistributes
+  the interpolation points over the octree and exchanges the results with
+  `MPI_Alltoall`/`MPI_Alltoallv`), so the interpolation calls of all ranks
+  have to match one-for-one and an adaptive ODE step cannot be split
+  between ranks — owner-computes is not available there.  Instead every
+  rank integrates every particle from the identical replicated state
+  (`multi_cx` mode); the interpolated value is computed once, on the rank
+  owning the leaf, so all ranks stay bit-identical with no state exchange
+  at all, and rank 0 writes the dump.  The price is that the integration
+  and its communication are duplicated once per rank, and the particle
+  loop runs serially in this mode (MPI collectives must not be issued
+  concurrently from several OpenMP threads).
 - The `Exact = no` mode reads the metric and its time derivative from
   the ADMBase grid: time-varying metrics need the ADMBase
   metric/lapse/shift fields at `timelevels >= 3`, and within one

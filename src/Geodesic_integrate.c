@@ -143,6 +143,18 @@ GeodesicState gstate = { .seed = 123456789u,
    kept bit-identical on all ranks by an MPI_Allgather after the
    integration and the loss policy (geodesic_mmpi_sync).  At most 4
    ranks (a 2x2 y,z decomposition with one patch per rank per level).
+   Carpet runs only.
+
+   Multi-process + metric_interp = carpetx (multi_cx): REPLICATION, no
+   ownership.  CarpetX_InterpGridArrays is an MPI collective (it
+   redistributes the interpolation points over the octree and exchanges
+   the results with MPI_Alltoall/MPI_Alltoallv), so every rank must issue
+   the identical interpolation-call sequence; an adaptive ODE step cannot
+   be split across ranks.  Every rank therefore integrates every particle
+   from the identical replicated state, which also means no state exchange
+   is needed (the value is interpolated once, on the rank owning the leaf,
+   and sent back to every requester).  Rank 0 does the reporting.  The
+   particle loop is serial in this mode.
 
    All grid access below goes through the THREAD-LOCAL "current level
    view" (gview) switched by switch_to_level().  Legacy code that uses
@@ -4032,12 +4044,35 @@ void geodesics_integrate (CCTK_ARGUMENTS)
      (the np4 NaN bug).  Hence multi_amr is enabled for EVERY
      multi-process non-exact run, including a single tracked level
      (geodesic_amr_levels = 1): the level-0 interior boxes of the ranks
-     tile the domain, so the owner map is well-defined. */
-  gstate.multi_amr = (CCTK_nProcs(cctkGH) > 1) && !Exact;
+     tile the domain, so the owner map is well-defined.
+
+     Carpet runs only: under CarpetX the grid is not partitioned into
+     per-rank patches that Geodesic can see, and the interpolator is an MPI
+     collective (see multi_cx below), so the owner map does not apply. */
+  gstate.multi_amr = (CCTK_nProcs(cctkGH) > 1) && !Exact && !gstate.carpetx_mode;
   if (gstate.multi_amr && CCTK_nProcs(cctkGH) > 4)
     CCTK_ERROR("Geodesic (multi-process AMR): at most 4 MPI ranks are supported.");
-  if (gstate.carpetx_mode && !Exact && CCTK_nProcs(cctkGH) > 1)
-    CCTK_ERROR("Geodesic (metric_interp = carpetx): single-rank runs only (stage 1).");
+
+  /* Multi-process CarpetX (multi_cx): the integration is REPLICATED.
+     CarpetX_InterpGridArrays redistributes the interpolation points with
+     MPI collectives (AMReX ParContainer::Redistribute plus
+     MPI_Alltoall/MPI_Alltoallv, CarpetX/src/interpolate.cxx), so every
+     rank has to take part in every call and the call sequences of all
+     ranks have to match.  An adaptive ODE step cannot be split between
+     ranks (the number of right-hand-side evaluations differs per
+     particle), so owner-computes is not available here: instead every
+     rank integrates every particle from the identical replicated state and
+     therefore issues the identical call sequence.  The interpolated value
+     is computed once, on the rank owning the leaf, and sent back, so all
+     ranks stay bit-identical with no state exchange at all.  Only the
+     reporting is restricted to rank 0 (see report_here). */
+  gstate.multi_cx = (CCTK_nProcs(cctkGH) > 1) && !Exact && gstate.carpetx_mode;
+
+  /* Rank that emits Geodesic's own log lines and the particle dump: rank 0
+     in the replicated multi-process modes, every rank in a single-process
+     run (where MyProc is 0 anyway). */
+  const int report_here =
+    !(gstate.multi_amr || gstate.multi_cx) || CCTK_MyProc(cctkGH) == 0;
 
   /* parse metric_interp before the acquire block: the halo update below
      must know whether the sampler is a stencil (l27/local27) or pointwise.
@@ -4358,16 +4393,19 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   }
 
   /* ================================================================================
-     Multi-process policy (multi_exact only): only rank 0 integrates the
+     Multi-process policy: in multi_exact runs only rank 0 integrates the
      particles and writes the dump file.  The acquire phase above still
      runs on every rank (each rank caches its own local grid view;
      harmless).  This reproduces the old global-component behavior, where
      the global component (and with it the particle arrays) lived on
      rank 0.  In multi_amr runs every rank integrates its owned subset
-     (see Phase 1 below), so the gate does not apply.  With a single
+     (see Phase 1 below), and in multi_cx (CarpetX) runs every rank
+     integrates every particle (replicated -- see the multi_cx comment
+     above); in both cases the non-zero ranks pass this gate and only the
+     reporting is restricted to rank 0.  With a single
      process MyProc() == 0 and this is a no-op.
      ================================================================================ */
-  if (CCTK_MyProc(cctkGH) != 0 && !gstate.multi_amr)
+  if (CCTK_MyProc(cctkGH) != 0 && !gstate.multi_amr && !gstate.multi_cx)
     return;
 
   /* ==================== from here on: integrate particles ONCE ==================== */
@@ -4780,7 +4818,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     gstate.init_done = 1;
   if (!gstate.init_done)
   {
-    if (!gstate.multi_amr || CCTK_MyProc(cctkGH) == 0)
+    if (report_here)
       CCTK_VInfo(CCTK_THORNSTRING, "Kerr M:%.4g a:%.4g Particle total:%d", gstate.ksm, gstate.ksa, particle_n_total);
     if (CCTK_IsFunctionAliased("MultiPatch_GetMaps"))
       gstate.nmaps = MultiPatch_GetMaps(cctkGH);
@@ -4929,7 +4967,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
      directories are created as needed.
      ================================================================== */
   if (particle_dump_every > 0 && cctk_iteration == 0 &&
-      (!gstate.multi_amr || CCTK_MyProc(cctkGH) == 0))
+      report_here)
   {
     geodesic_mkdir_parents(particle_dump_file);
     gstate.dfp = fopen(particle_dump_file, "w");
@@ -5153,9 +5191,15 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     /* single pass: each particle integrated once to the step end
        (aei/carpet included: the pointwise AEI interpolation is
        thread-safe; the implicit OpenMP barrier precedes the post-loop
-       S2 sync) */
+       S2 sync).
+
+       Serial under metric_interp = carpetx: every interpolation call goes
+       through CarpetX_InterpGridArrays, which is an MPI collective
+       (AMReX Redistribute + Alltoall/Alltoallv), and MPI collectives must
+       not be issued concurrently from several threads.  This also covers
+       single-process carpetx runs, where the same hazard exists. */
 #ifndef CCTK_DEBUG
-#pragma omp parallel for schedule(dynamic,1) shared(gstate)
+#pragma omp parallel for schedule(dynamic,1) shared(gstate) if(!gstate.carpetx_mode)
 #endif
     for (mi = 0; mi < particle_n_total; mi++)
     {
@@ -5189,7 +5233,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
       particle_dump_every > 0 &&
       (cctk_iteration % particle_dump_every == 0) &&
       gstate.last_dump_iter != cctk_iteration &&
-      (!gstate.multi_amr || CCTK_MyProc(cctkGH) == 0))
+      report_here)
   {
     if (gstate.dfp == NULL)
     {
@@ -5262,19 +5306,19 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     }
     /* multi_amr: the flags are identical on all ranks after the S2 sync,
        so the summary lines are printed on rank 0 only */
-    if (n_renorm && (!gstate.multi_amr || CCTK_MyProc(cctkGH) == 0))
+    if (n_renorm && report_here)
       CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
                  "Geodesic: %d particle(s) could not be renormalized (u.u >= 0 or non-finite) and will be %s; first: %d %d %d %d %d",
                  n_renorm, loss_txt, first_renorm[0], first_renorm[1], first_renorm[2], first_renorm[3], first_renorm[4]);
-    if (n_normbad && (!gstate.multi_amr || CCTK_MyProc(cctkGH) == 0))
+    if (n_normbad && report_here)
       CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
                  "Geodesic: %d particle(s) had no future-directed u^0 solution (possibly superluminal spatial velocity) and will be %s",
                  n_normbad, loss_txt);
-    if (n_freeze && (!gstate.multi_amr || CCTK_MyProc(cctkGH) == 0))
+    if (n_freeze && report_here)
       CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
                  "Geodesic: %d particle(s) hit the tau-loop iteration cap and will be %s",
                  n_freeze, loss_txt);
-    if (n_outbd && (!gstate.multi_amr || CCTK_MyProc(cctkGH) == 0))
+    if (n_outbd && report_here)
       CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
                  "Geodesic: %d particle(s) left the safe region or failed the ODE step and will be %s",
                  n_outbd, loss_txt);
@@ -5282,7 +5326,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
        at the same level-0 POSTSTEP moments as the dump/integration.  This is
        independent of the AMR regrid schedule; rl_have is 1 only after a
        successful integration, so no line is printed without real data. */
-    if (gstate.srverbose && rl_have && (!gstate.multi_amr || CCTK_MyProc(cctkGH) == 0))
+    if (gstate.srverbose && rl_have && report_here)
       CCTK_VInfo(CCTK_THORNSTRING, "rl: min:%18.15G max:%18.15G", rl_min, rl_max);
   }
 

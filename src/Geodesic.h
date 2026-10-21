@@ -71,6 +71,16 @@
       ranks' views bit-identical.  At most 4 ranks (a 2x2 y,z
       decomposition with one patch per rank per level).  The level-0
       patch-symmetry check applies to single-process runs only.
+
+    * Multi-process CarpetX (gstate.multi_cx): no ownership at all.
+      CarpetX_InterpGridArrays redistributes the interpolation points with
+      MPI collectives (AMReX Redistribute + Alltoall/Alltoallv), so every
+      rank must issue the identical call sequence, and an adaptive ODE step
+      cannot be split between ranks.  Every rank therefore integrates every
+      particle from the identical replicated state; the interpolation result
+      is computed once on the rank owning the leaf and sent back, so all
+      ranks stay bit-identical without any state exchange.  Rank 0 writes
+      the dump and the warning summaries.
 */
 
 #include "cctk.h"
@@ -84,7 +94,7 @@
    and written into the header of every particle dump; bump it whenever
    behaviour changes.  Format: YYYY.MM.DD-<counter>. */
 #ifndef GEODESIC_REVISION
-#define GEODESIC_REVISION "2026.10.20-1"
+#define GEODESIC_REVISION "2026.10.21-1"
 #endif
 
 /* -------------------- Polynomial interpolation order (fixed) -------------------- */
@@ -391,6 +401,11 @@ typedef struct {
                              particles owned by its local patch (interior-box
                              ownership); the shared particle state is kept
                              consistent by MPI_Allgather (<= 4 ranks) */
+  bool multi_cx;          /* multi-process + metric_interp = carpetx: the
+                             integration is replicated on every rank (the
+                             CarpetX interpolator is an MPI collective), so
+                             no owner map and no state exchange are needed
+                             and only rank 0 reports */
   bool sgverbose;
   bool srverbose;
   bool check_velocity;    /* particle velocity check */
