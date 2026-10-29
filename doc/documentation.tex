@@ -149,6 +149,13 @@ renormalized: $u^0$ is solved from the quadratic equation
 (\ref{EinsteinAnalysis_Geodesic_norm}), and the future-directed root is
 selected.  Inside the ergosphere the quadratic has two positive roots;
 the thorn selects the one continuous with the previous step's value.
+(Only for \texttt{metric\_interp = l27} the convention differs: all four
+components are rescaled by $1/\sqrt{-g(u,u)}$ instead, which keeps the
+direction produced by the integrator but also scales the spatial
+components.  Both conventions enforce $g(u,u)=-1$ exactly; with
+\texttt{rverbose = "yes"} the run reports \texttt{|g(u,u)+1|} before
+renormalization for the current step and as a running maximum, which is
+the size of the correction being absorbed.)
 Particles that leave the domain, or for which no future-directed
 solution exists, are handled by the \texttt{particle\_loss\_policy}
 keyword: \texttt{drop} (the default) sets their state to NaN and stops

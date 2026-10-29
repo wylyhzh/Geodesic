@@ -146,7 +146,7 @@ BOOLEAN gverbose "Print verbose messages"
 {
 } "no"
 
-BOOLEAN rverbose "Print Runge-Kutta messages"
+BOOLEAN rverbose "Print Runge-Kutta messages and the norm diagnostics (u.u range after renormalization; |u.u+1| before renormalization for this step and for the run)"
 {
 } "no"
 

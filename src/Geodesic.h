@@ -146,7 +146,13 @@
    poly vs analytic assembly) than the single-process run and the
    trajectory would branch.  The cached fits themselves (pgd125, pcf2_125)
    are NOT sent -- the new owner refits from its own grid data, which is
-   identical once the halo is exchanged. */
+   identical once the halo is exchanged.
+
+   The norm_dev diagnostic is deliberately NOT part of the payload: every
+   rank resets it for all particles at the start of a step and only the
+   owner writes it, so each rank's local maximum covers exactly the
+   particles it integrated, and the reported maximum is obtained by an
+   MPI_MAX reduction over ranks. */
 #define GEODESIC_MPI_NPAY 19
 
 /* -------------------- Base data containers at grid points -------------------- */
@@ -273,6 +279,9 @@ typedef struct PARTICLEGEODESIC
   CCTK_INT  renorm_warn;   /* u.u could not be renormalized this step */
   CCTK_INT  freeze_warn;   /* tau-loop iteration cap hit */
   CCTK_REAL rl_last;       /* last computed u_mu u^mu (diagnostic) */
+  CCTK_REAL norm_dev;      /* |g(u,u)+1| of this step, measured before the
+                              renormalization below absorbs it; 0 when the
+                              particle was not integrated this step */
 
   /* persistent across steps (NOT reset by the per-step flag reset):
      set by the loss policy when the particle is dropped or flagged;
@@ -420,6 +429,12 @@ typedef struct {
   bool sgverbose;
   bool srverbose;
   bool check_velocity;    /* particle velocity check */
+  CCTK_REAL norm_dev_max; /* largest |g(u,u)+1| seen before renormalization
+                             over the whole run (diagnostic only: how much
+                             one ODE step in the interpolated metric
+                             violates the mass shell) */
+  CCTK_REAL norm_dev_step; /* same, but only for the current integration
+                             call; reset after each report */
   /* spatial metric sampler (par Geodesic::metric_interp):
      0 = l27 (simplest 27-point fit), 1 = aei (AEILocalInterp),
      2 = carpet, 3 = local27 (the self-contained 125-node fit),

@@ -3688,10 +3688,10 @@ static double geodesic_normalize_u_at_start(int mi, CCTK_REAL ys[8], CCTK_REAL *
   }
   else if (gstate.sinterp_mode == 0)
   {
-    /* local27: full 4-velocity renormalization: rescale all four
-       components by 1/sqrt(-rl) so that g(u,u) = -1 holds exactly in
-       this metric frame; the ODE-produced direction is kept as-is.
-       (This full rescale fixes the local27 norm drift.) */
+    /* l27 (metric_interp = "l27", sinterp_mode 0): full 4-velocity
+       renormalization: rescale all four components by 1/sqrt(-rl) so
+       that g(u,u) = -1 holds exactly in this metric frame; the
+       direction produced by the ODE is kept as-is. */
     const double inv_n = 1.0 / sqrt(-rl);
     u[0] *= inv_n; u[1] *= inv_n; u[2] *= inv_n; u[3] *= inv_n;
     if (!isfinite(u[0]) || u[0] <= 0.0)
@@ -3707,8 +3707,10 @@ static double geodesic_normalize_u_at_start(int mi, CCTK_REAL ys[8], CCTK_REAL *
   }
   else
   {
-    /* aei / carpet: keep the spatial velocity unchanged and re-solve
-       u^0 (legacy behavior).  A full rescale would amplify the spatial
+    /* local27 / aei / carpet / carpetx: keep the spatial velocity
+       unchanged and re-solve u^0 (legacy behavior).  Both branches end
+       with g(u,u) = -1; this one absorbs the correction in u^t instead
+       of scaling u^i as well.  A full rescale would amplify the spatial
        velocity when the IC norm deviates from -1 in this metric (the
        TP-ring IC has u.u well off -1), flinging particles deeper into
        the strong field than intended. */
@@ -4752,6 +4754,13 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
         double rl = 0.0;
         for (int mu=0; mu<4; ++mu)
           rl += u_cov[mu] * u[mu];
+
+        /* diagnostic: how far one ODE step in the interpolated metric took
+           the state off the mass shell, before either branch below absorbs
+           the correction (see the u.u report after the loop) */
+        if (isfinite(rl))
+          gstate.pgeodesic[mi].norm_dev = (CCTK_REAL)fabs(rl + 1.0);
+
         if (!isfinite(rl) || rl >= 0.0)
         {
           gstate.pgeodesic[mi].outbd = 1;
@@ -4761,9 +4770,10 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
         {
           if (gstate.sinterp_mode == 0)
           {
-            /* local27: full 4-velocity renormalization (same as step-start):
-               rescale all four components by 1/sqrt(-rl) so that g(u,u) = -1
-               holds exactly in this metric frame (rl = raw pre-renorm value) */
+            /* l27 (sinterp_mode 0): full 4-velocity renormalization (same as
+               step-start): rescale all four components by 1/sqrt(-rl) so that
+               g(u,u) = -1 holds exactly in this metric frame (rl = raw
+               pre-renorm value) */
             const double inv_n = 1.0 / sqrt(-rl);
             u[0] *= inv_n; u[1] *= inv_n; u[2] *= inv_n; u[3] *= inv_n;
             if (!isfinite(u[0]) || u[0] <= 0.0)
@@ -4778,8 +4788,8 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
           }
           else
           {
-            /* aei / carpet: u^i unchanged, re-solve u^0 (legacy behavior;
-               see the step-start branch for the rationale) */
+            /* local27 / aei / carpet / carpetx: u^i unchanged, re-solve u^0
+               (legacy behavior; see the step-start branch for the rationale) */
             const double u_spatial_step[3] = { ys[5], ys[6], ys[7] };
             const double u0_predictor = ys[4];    /* u^0 just produced by the ODE solver, before renormalization: continuity anchor */
             double u0_solved;
@@ -5819,6 +5829,7 @@ void geodesics_integrate (CCTK_ARGUMENTS)
     gstate.pgeodesic[mi].renorm_warn = 0;
     gstate.pgeodesic[mi].freeze_warn = 0;
     gstate.pgeodesic[mi].rl_last     = 0.0;
+    gstate.pgeodesic[mi].norm_dev    = 0.0;
     gstate.pgeodesic[mi].old_level_bad = 0;
   }
 
@@ -5940,9 +5951,10 @@ void geodesics_integrate (CCTK_ARGUMENTS)
       }
       else if (gstate.sinterp_mode == 0)
       {
-        /* local27: full 4-velocity renormalization -- rescale all four
-           components by 1/sqrt(-norm) so that g(u,u) = -1 holds exactly
-           (the parfile direction is kept; u^t must stay future-directed). */
+        /* l27 (sinterp_mode 0): full 4-velocity renormalization -- rescale
+           all four components by 1/sqrt(-norm) so that g(u,u) = -1 holds
+           exactly (the parfile direction is kept; u^t must stay
+           future-directed). */
         if (isfinite(norm) && norm < 0.0 && u[0] > 0.0)
         {
           const double inv_n = 1.0 / sqrt(-norm);
@@ -5965,8 +5977,8 @@ void geodesics_integrate (CCTK_ARGUMENTS)
       }
       else
       {
-        /* aei / carpet: re-solve u^0 with u^i fixed (legacy behavior; see
-           the step-start branch for the rationale). */
+        /* local27 / aei / carpet / carpetx: re-solve u^0 with u^i fixed
+           (legacy behavior; see the step-start branch for the rationale). */
         double u_spatial[3] = { u[1], u[2], u[3] };
         double u0_solved;
         if (solve_u0_future_directed(gdn_i, u_spatial, u[0], &u0_solved))
@@ -6367,7 +6379,27 @@ void geodesics_integrate (CCTK_ARGUMENTS)
           if (gstate.pgeodesic[mi].rl_last > rl_max) rl_max = gstate.pgeodesic[mi].rl_last;
         }
       }
+      /* per-particle mass-shell deviation, written by the thread that
+         integrated this particle (0 for particles skipped this step) */
+      if (gstate.pgeodesic[mi].norm_dev > gstate.norm_dev_step)
+        gstate.norm_dev_step = gstate.pgeodesic[mi].norm_dev;
     }
+    if (gstate.norm_dev_step > gstate.norm_dev_max)
+      gstate.norm_dev_max = gstate.norm_dev_step;
+    /* norm_dev_max is a rank-local maximum: in multi_amr each rank
+       integrates only its owned particles, so reduce it to the global
+       maximum before reporting.  This block is reached by every rank, so
+       the collective is safe. */
+#ifdef CCTK_MPI
+    if (gstate.multi_amr)
+    {
+      double loc[2] = { (double)gstate.norm_dev_max, (double)gstate.norm_dev_step };
+      double glob[2] = { 0.0, 0.0 };
+      MPI_Allreduce(loc, glob, 2, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+      gstate.norm_dev_max  = (CCTK_REAL)glob[0];
+      gstate.norm_dev_step = (CCTK_REAL)glob[1];
+    }
+#endif
     /* multi_amr: the flags are identical on all ranks after the S2 sync,
        so the summary lines are printed on rank 0 only */
     if (n_renorm && report_here)
@@ -6386,12 +6418,21 @@ void geodesics_integrate (CCTK_ARGUMENTS)
       CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
                  "Geodesic: %d particle(s) left the safe region or failed the ODE step and will be %s",
                  n_outbd, loss_txt);
-    /* rl (radial-light-signal / ray) range is reported once per coarse step,
-       at the same level-0 POSTSTEP moments as the dump/integration.  This is
-       independent of the AMR regrid schedule; rl_have is 1 only after a
-       successful integration, so no line is printed without real data. */
+    /* rl_last is u_mu u^mu of the last accepted step (see Geodesic.h): its
+       range is reported once per coarse step, at the same level-0 POSTSTEP
+       moments as the dump/integration.  This is independent of the AMR
+       regrid schedule; rl_have is 1 only after a successful integration, so
+       no line is printed without real data.  norm_dev_max is the largest
+       |g(u,u)+1| seen before renormalization over the whole run, i.e. how
+       much one step of the ODE plus the interpolated metric violates the
+       mass-shell constraint; it says how big the correction absorbed by the
+       renormalization is. */
     if (gstate.srverbose && rl_have && report_here)
-      CCTK_VInfo(CCTK_THORNSTRING, "rl: min:%18.15G max:%18.15G", rl_min, rl_max);
+      CCTK_VInfo(CCTK_THORNSTRING, "u.u: min:%18.15G max:%18.15G", rl_min, rl_max);
+    if (gstate.srverbose && report_here)
+      CCTK_VInfo(CCTK_THORNSTRING, "|u.u+1| before renormalization: this step %18.15G, run max %18.15G",
+                 gstate.norm_dev_step, gstate.norm_dev_max);
+    gstate.norm_dev_step = 0.0;   /* the next integration call is a new step */
   }
 
   /* ==================================================================

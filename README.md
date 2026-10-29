@@ -399,13 +399,18 @@ Equivalently, from the Cactus root:
 for every test live in `test/<testname>/geodesic_particles.txt`, the
 only file compared; run directories of instrumented builds may also
 contain `formaline-*` / timer artifacts, which the comparator ignores.
-Seventeen of the nineteen references predate the `cctk_time` column and
-still have nine columns (`tp_local27_025` and `tp_far_local27_025_t80`
-have ten); the comparator (`RunTestUtils.pl`) compares only the leading
-columns the two files share, so both forms pass -- but with a nine-column
-reference the `cctk_time` column is not checked at all.  `./run_tests.sh
--all` regenerates the whole set in one go (~30-45 min on an 88-core node)
-and would make them uniform.
+All nineteen references carry the `cctk_time` column (ten columns), so the
+comparator (`RunTestUtils.pl`) checks every column of every test.  Keep them
+that way: with a nine-column reference the comparator not only skips
+`cctk_time`, it also mis-aligns its NaN bookkeeping once the produced file
+carries the `# config:` header line -- `tp_aei_025` and `tp_carpet_025`
+reported "did not reproduce 442 NaNs / significant differences on 442 lines"
+while the nine shared columns were bit-identical.
+Note that `./run_tests.sh -all` does not restrict itself to this thorn: it
+unsets `CCTK_TESTSUITE_RUN_TESTS`, which makes `RunTest.pl` run every test in
+the arrangement.  To run selected tests outside the default set, list them:
+`PROMPT=no CCTK_TESTSUITE_RUN_TESTS="Geodesic/<test> ..." gmake sim-testsuite`
+(with `OMP_NUM_THREADS` and `CCTK_TESTSUITE_RUN_PROCESSORS` set as above).
 
 - `circ_orbit` integrates a prograde equatorial circular orbit
   (r = 11.989, M = 2, a = 0.5, `Exact = yes`) and compares the full
@@ -854,13 +859,42 @@ symptom -> cause -> fix -> what now guards it.
    dt, and it never came back: about 1e-4 in position over t = 1.
    *Fix*: the flag is non-sticky and describes the current refit only.
 
-4. **Secular norm drift of the integrated 4-velocity.**
-   An interpolated metric does not preserve `g(u,u) = -1`, and rescaling only
-   `u^t` leaves a drift.  *Fix*: in `local27` mode all four components are
-   rescaled by `1/sqrt(-g(u,u))` after each step, so the norm holds exactly in
-   the interpolated metric frame while the direction produced by the ODE is
-   untouched.  A non-finite or wrong-sign norm sets `norm_bad` and goes
-   through `particle_loss_policy`; both counters are aggregated and reported.
+4. **Which sampler gets the full 4-velocity rescale (documentation bug).**
+   An interpolated metric does not preserve `g(u,u) = -1`: one ODE step leaves
+   a violation, and the renormalization after the step absorbs it.  The code
+   has two conventions and `metric_interp` selects between them.  `l27`
+   (`sinterp_mode 0`) rescales all four components by `1/sqrt(-g(u,u))`, which
+   keeps the direction the ODE produced but also scales `u^i`; every other
+   sampler (`local27`, `aei`, `carpet`, `carpetx`) keeps `u^i` and re-solves
+   `u^0` from the quadratic.  Both end with `g(u,u) = -1` exactly -- the
+   difference is which components absorb the correction, not whether the
+   constraint holds.  The three full-rescale branches came in with `dfc095f`
+   (2026-10-15), the same commit that introduced the four-sampler table, and
+   their condition `sinterp_mode == 0` uses the *previous* numbering, in which
+   mode 0 was `local27` (the default sampler then).  In the new table 0 is
+   `l27`, so since that commit the branches have applied to `l27` while their
+   comments and this entry said `local27`.  Before `dfc095f` there was only one
+   convention -- keep `u^i`, re-solve `u^0` -- so no run of this thorn has ever
+   applied the full rescale to `local27`.  A non-finite or wrong-sign
+   norm sets `norm_bad` and goes through `particle_loss_policy`; both counters
+   are aggregated and reported.  *Diagnostic*: with `rverbose = "yes"` each
+   coarse step reports `u.u: min/max` (the norm after renormalization) and
+   `|u.u+1| before renormalization: this step ..., run max ...` -- how far one
+   step in the interpolated metric violates the mass shell, i.e. the size of
+   the correction the renormalization absorbs.  On a stationary Kerr grid
+   (`conv100_local27`, dx = 0.5, dt = 0.1, 200 steps) the run max is 1.0357e-6,
+   bit-identical for 1 and 4 ranks.  On the evolved GW150914 background at
+   dx = 1/4 (r = 8 equatorial ring of 100 particles, dt = 0.05, released at
+   t = 1.6) the per-step number is a maximum over the ensemble and diverges
+   with the trajectories: 1-rank and 4-rank runs agree in their statistics but
+   rarely step by step.  Over t = 1.65-4.50 its median is 6.6e-4 (`local27`)
+   and 1.6e-3 (`l27`), its 90th percentile 1.3e-3 and 2.7e-3, with single-step
+   spikes up to 2.0 in `l27`; over t = 4.55-5.85 the medians are 4.5e-3 and
+   2.1e-3.  So `l27` violates the mass shell a few times more than `local27`
+   here, not an order of magnitude.  Do not read the run max on an evolved
+   background: it is set by the last step of a particle being lost, where
+   `g(u,u)` turns positive (10.3 for `local27` at t = 6.0, 4.0 for `l27` at
+   t = 5.9).
 
 5. **The particle clock could lag silently (revision 2026.10.28-1).**
    The old guard was `if (max_iter > 100000) { outbd = 1; ... }`, but the tau
