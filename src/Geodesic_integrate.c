@@ -48,7 +48,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <errno.h>
-#include <stdlib.h>                    /* atoi (GEODESIC_ENGINE_N debug cap) */
+#include <unistd.h>                     /* ftruncate (dump rewind after recovery) */
+#include <stdlib.h>                    /* getenv/atof (GEODESIC_HALO_DEBUG, GEODESIC_OWNER_MARGIN) */
 #include <stdio.h>                     /* fopen/fprintf for the particle dump */
 #ifdef _OPENMP
 #include <omp.h>
@@ -116,6 +117,7 @@ extern CCTK_INT MultiPatch_LocalToGlobal (const CCTK_POINTER_TO_CONST cctkGH ,
 GeodesicState gstate = { .seed = 123456789u,
                          .l0_seen_iter = -1, .last_integ_iter = -1,
                          .last_dump_iter = -1,
+                         .last_dump_time = -HUGE_VAL,
                          .last_integ_time = 0.0,
                          .batch_iter = -1, .batch_maxlvl = -1,
                          .samr_levels = 1, .nlev_seen = 1,
@@ -815,6 +817,8 @@ static int local27_christoffel_analytic(int m, const double y[8], double cf2[4][
 /* 1D 3-node (order-2) time-Lagrange weights, defined further below */
 static inline double fourd_tw(int lvl, double s);
 static inline double fourd_tw_a(int lvl, double s);
+/* create the parent directories of a sidecar path, defined further below */
+static void geodesic_mkdir_parents(const char *path);
 
 /* ============================================================================================
    6th-order FD for metric derivatives (your original)
@@ -1818,9 +1822,9 @@ int cf2_fitting (int m, const double y[])
          A stored past time level that is not yet filled at this cell has
          the same effect, and that is what fires in practice: at the first
          refit of a run whose time levels are not yet filled, about half of
-         a 100-particle ring trips here.  The resulting local27_cf2_bad is
-         sticky (see Geodesic.h), so those particles keep the analytic
-         Christoffel assembly for the rest of the run.
+         a 100-particle ring trips here.  The flag is recomputed at every
+         refit, so those particles return to the nodal fast path as soon as
+         the past levels are filled.
          (Scanned only while cf2_fin, so a later level's un-filled cf2n
          is never read.) */
       if (cf2_fin)
@@ -1913,8 +1917,11 @@ int cf2_fitting (int m, const double y[])
         gstate.pgeodesic[m].local27_bad = 1;
       }
     }
-    if (!cf2_fin)
-      gstate.pgeodesic[m].local27_cf2_bad = 1;
+    /* Non-sticky: the flag describes THIS refit only.  Latching it for the
+       whole run was the ps0 accuracy bug -- the analytic assembly is first
+       order in dt (see local27_christoffel_analytic), so one early refit
+       with un-filled past time levels cost ~1e-4 in position over t = 1. */
+    gstate.pgeodesic[m].local27_cf2_bad = cf2_fin ? 0 : 1;
   }
   } /* end if (!gstate.sexact): Christoffel/metric fitting */
 
@@ -2612,11 +2619,16 @@ static void local27_time_weights(int m, double y0, double w[3], int *nlev)
 
 /* local27 (sinterp_mode 3) fallback: assemble the Christoffel symbols
    analytically from the 125-node METRIC fits (used when the nodal
-   Christoffel samples are NaN-poisoned).  Metric value and spatial
-   derivatives from the level-0 fit (p125_deriv); the time derivative from
-   the nlev-level time blend of the level fits (fourd_tw_a/dt for 3 levels,
-   (g0 - g1)/dt for 2, 0 for 1); then the 4x4 inverse + cf2_pointwise.
-   Mirrors cf2_metric_off on the 125-node polynomial. */
+   Christoffel samples are NaN-poisoned).  Metric value and its derivatives
+   are the nlev-level time-Lagrange blend of the level fits: value and
+   spatial derivatives use fourd_tw (w[]), the time derivative uses
+   fourd_tw_a/dt (wa[]); for nlev = 2 the blend is the two-point
+   (g0 - g1)/dt difference, for nlev = 1 the metric is taken stationary.
+   Then the 4x4 inverse + cf2_pointwise.  Mirrors cf2_metric_off on the
+   125-node polynomial.  The blend is what keeps this path third order in
+   dt: sampling the value from level 0 alone made it piecewise constant in
+   time, i.e. first order in dt, which is what the u18 dt ablation
+   (q = 0.95 for aei-vs-local27) measured. */
 static int local27_christoffel_analytic(int m, const double y[8], double cf2[4][4][4])
 {
   double gdn[4][4], dgd[4][4][4], gup[4][4];
@@ -2642,36 +2654,27 @@ static int local27_christoffel_analytic(int m, const double y[8], double cf2[4][
     else
       { wa[0] = wa[1] = wa[2] = 0.0; }
   }
-  (void)w;
   for (mu=0;mu<4;mu++)
     for (nu=0;nu<4;nu++)
     {
-      double g0 = 0.0, dx = 0.0, dy = 0.0, dz = 0.0;
-      p125_eval_deriv(gstate.pgeodesic[m].pgd125[0][mu][nu], tx,ty,tz, &g0,&dx,&dy,&dz);
-      gdn[mu][nu] = gdn[nu][mu] = g0;
-      dgd[1][mu][nu] = dgd[1][nu][mu] = dx/gview.delta_space[0];
-      dgd[2][mu][nu] = dgd[2][nu][mu] = dy/gview.delta_space[1];
-      dgd[3][mu][nu] = dgd[3][nu][mu] = dz/gview.delta_space[2];
-      dgd[0][mu][nu] = dgd[0][nu][mu] = wa[0]*g0;
+      double gv = 0.0, sx = 0.0, sy = 0.0, sz = 0.0, tv = 0.0;
+      for (int l = 0; l < nlev; l++)
+      {
+        double g0 = 0.0, dx = 0.0, dy = 0.0, dz = 0.0;
+        p125_eval_deriv(gstate.pgeodesic[m].pgd125[l][mu][nu], tx,ty,tz,
+                        &g0,&dx,&dy,&dz);
+        gv += w[l]*g0;
+        sx += w[l]*dx;
+        sy += w[l]*dy;
+        sz += w[l]*dz;
+        tv += wa[l]*g0;
+      }
+      gdn[mu][nu] = gdn[nu][mu] = gv;
+      dgd[1][mu][nu] = dgd[1][nu][mu] = sx/gview.delta_space[0];
+      dgd[2][mu][nu] = dgd[2][nu][mu] = sy/gview.delta_space[1];
+      dgd[3][mu][nu] = dgd[3][nu][mu] = sz/gview.delta_space[2];
+      dgd[0][mu][nu] = dgd[0][nu][mu] = tv;
     }
-  for (mu=0;mu<4;mu++)
-  for (nu=mu;nu<4;nu++)
-  {
-    if (nlev >= 2)
-    {
-      double g1 = 0.0;
-      p125_eval_deriv(gstate.pgeodesic[m].pgd125[1][mu][nu], tx,ty,tz, &g1,NULL,NULL,NULL);
-      dgd[0][mu][nu] += wa[1]*g1;
-      dgd[0][nu][mu] = dgd[0][mu][nu];
-    }
-    if (nlev >= 3)
-    {
-      double g2 = 0.0;
-      p125_eval_deriv(gstate.pgeodesic[m].pgd125[2][mu][nu], tx,ty,tz, &g2,NULL,NULL,NULL);
-      dgd[0][mu][nu] += wa[2]*g2;
-      dgd[0][nu][mu] = dgd[0][mu][nu];
-    }
-  }
   if (!build_gup_from_gdn(gdn, NULL, beta_up, gamma_dn, gamma_up, gup))
     return 0;
   cf2_pointwise(dgd, gup, cf2);
@@ -2918,6 +2921,331 @@ static int christoffel_at_point(int m, const double y[8], double bg, double cf2[
       dgd[0][j1][j2]=(3.0*gdn[j1][j2]-4.0*gnn1[j1][j2]+gnn2[j1][j2])*(0.5/gview.dt);
     cf2_pointwise(dgd,gup,cf2);
     return 1;
+  }
+}
+
+/* ============================================================================================
+   Interpolation-error probe (Geodesic::probe_file)
+
+   Diagnostic only.  It answers "which interpolated quantity carries the
+   largest error?" by comparing, at one geodesic right-hand-side evaluation,
+   what the selected sampler produced with the exact Kerr-Schild values at the
+   same event: the 10 independent g_{mu nu}, the 10 independent g^{mu nu} and
+   the 40 independent Gamma^mu_{alpha beta} (alpha <= beta), each alongside
+   the sub-cell offset of the sample point from its nearest grid node, so the
+   error can be studied as a function of where in the cell the particle sits.
+
+   Inert by default: gstate.probe_on is the one-shot parse of probe_file and
+   every entry point tests it first, so with probe_file = "" none of this code
+   runs and the integration path is bit-identical to a build without the
+   probe.
+
+   The probe never calls cf2_fitting -- it only reads the coefficients the
+   sampler has already committed for this particle, so it cannot clobber the
+   per-particle cache that func_ode is working from.  It also never sets
+   outbd / l27_bad / local27_bad: a probe failure skips the rows instead of
+   perturbing the trajectory.
+   ============================================================================================ */
+
+/* Interpolated 4-metric from the fits the sampler already committed for this
+   particle.  Mirrors only the post-cf2_fitting part of metric_at_point, which
+   must NOT be called here: it would refit the stencil and clobber that cache.
+   No flag is set on failure -- the caller just skips the rows.  Returns 0 when
+   the mode has no cached metric to read. */
+static int metric_value_from_cache(int m, const double y[8], double gdn[4][4])
+{
+  int mu, nu;
+
+  if (gstate.sinterp_mode == 0)
+  {
+    /* l27: the current-level 27-point metric fit (pgd) */
+    if (gstate.pgeodesic[m].l27_bad) return 0;
+    for (mu=0;mu<4;mu++) for (nu=mu;nu<4;nu++)
+      gdn[mu][nu] =
+        poly27_eval(y,m,gstate.pgeodesic[m].pgd[mu][nu],
+                    gstate.pgeodesic[m].pgdc[mu][nu]);
+    for (mu=1;mu<4;mu++) for (nu=0;nu<mu;nu++) gdn[mu][nu]=gdn[nu][mu];
+    return 1;
+  }
+
+  if (gstate.sinterp_mode == 3)
+  {
+    /* local27: nlev-level time blend of the 125-node quartic metric fits */
+    if (gstate.pgeodesic[m].local27_bad) return 0;
+    const double tx=(y[1]-gstate.pgeodesic[m].below[1])/gview.delta_space[0];
+    const double ty=(y[2]-gstate.pgeodesic[m].below[2])/gview.delta_space[1];
+    const double tz=(y[3]-gstate.pgeodesic[m].below[3])/gview.delta_space[2];
+    double w[3]; int nlev;
+    local27_time_weights(m, y[0], w, &nlev);
+    for (mu=0;mu<4;mu++)
+    for (nu=mu;nu<4;nu++)
+    {
+      double g=0.0;
+      for (int l=0;l<nlev;l++)
+      {
+        double cv;
+        p125_eval_deriv(gstate.pgeodesic[m].pgd125[l][mu][nu],tx,ty,tz,&cv,NULL,NULL,NULL);
+        g+=w[l]*cv;
+      }
+      gdn[mu][nu]=g;
+    }
+    for (mu=1;mu<4;mu++) for (nu=0;nu<mu;nu++) gdn[mu][nu]=gdn[nu][mu];
+    return 1;
+  }
+
+  if (gstate.sinterp_mode == 1)
+  {
+    /* aei: pointwise (cache-free) order-4 Lagrange of the 3+1 fields at the
+       two stored time levels, blended linearly in the particle's coordinate
+       time, then the 3+1 -> 4-metric composition */
+    double g31[10], dg31[10][3];
+    if (aei_interp_point(0,y[1],y[2],y[3],g31,dg31) != 0) return 0;
+    {
+      double g31a[10], dg31a[10][3];
+      const double theta = geodesic_time_theta(m, y[0]);
+      if (aei_interp_point(1,y[1],y[2],y[3],g31a,dg31a) != 0) return 0;
+      for (mu=0;mu<10;mu++)
+      {
+        g31[mu]=g31a[mu]+theta*(g31[mu]-g31a[mu]);
+        for (nu=0;nu<3;nu++) dg31[mu][nu]=dg31a[mu][nu]+theta*(dg31[mu][nu]-dg31a[mu][nu]);
+      }
+    }
+    compose_4metric(g31,dg31,gdn,NULL,NULL);
+    return 1;
+  }
+
+  if (gstate.sinterp_mode == 2)
+  {
+    /* carpet: the same pointwise spatial molecule, current time level only */
+    double g31[10], dg31[10][3];
+    if (aei_interp_point(0,y[1],y[2],y[3],g31,dg31) != 0) return 0;
+    compose_4metric(g31,dg31,gdn,NULL,NULL);
+    return 1;
+  }
+
+  /* sinterp_mode 4 (carpetx): CarpetX_InterpGridArrays is an MPI collective
+     and must not be re-entered from the probe. */
+  return 0;
+}
+
+/* Exact Kerr-Schild reference at (x,y,z): 4-metric, inverse 4-metric and
+   Christoffel symbols.  The Gamma assembly is copied verbatim from the sexact
+   branch of func_ode so that the reference is exactly what the samplers are
+   meant to reproduce. */
+static void probe_exact_reference(double x, double y, double z,
+                                  double gdn[4][4], double gup[4][4],
+                                  double cf2[4][4][4])
+{
+  double tdgd[4][4][4], tcf1[4][4][4];
+  double beta_up[3], gamma_dn[3][3], gamma_up[3][3];
+  int j1, j2, j3, j4;
+
+  for(j1=0; j1<4; j1++)
+    for(j2=j1; j2<4; j2++)
+      gdn[j1][j2] = tg4dn(0, x, y, z, j1, j2);
+
+  for(j1=1; j1<4; j1++)
+    for(j2=0; j2<j1; j2++)
+      gdn[j1][j2] = gdn[j2][j1];
+
+  if (!build_gup_from_gdn(gdn, NULL, beta_up, gamma_dn, gamma_up, gup))
+    for (j1=0; j1<4; j1++)
+      for (j2=0; j2<4; j2++)
+        gup[j1][j2] = 0.0;
+
+  for(j1=0; j1<4; j1++)
+    for(j2=0; j2<4; j2++)
+      for(j3=j2; j3<4; j3++)
+        tdgd[j1][j2][j3] = gdn_derivatives(j1, x, y, z, j2, j3);
+
+  for(j1=0; j1<4; j1++)
+    for(j2=1; j2<4; j2++)
+      for(j3=0; j3<j2; j3++)
+        tdgd[j1][j2][j3] = tdgd[j1][j3][j2];
+
+  for (j1=0; j1<4; j1++)
+    for (j2=0; j2<4; j2++)
+      for (j3=0; j3<4; j3++)
+      {
+        tcf1[j1][j2][j3] = 0.0;
+        cf2[j1][j2][j3] = 0.0;
+      }
+
+  for (j1=0; j1<4; j1++)
+    for (j2=0; j2<4; j2++)
+      for (j3=j2; j3<4; j3++)
+        tcf1[j1][j2][j3] += 0.5*(tdgd[j3][j2][j1] + tdgd[j2][j1][j3] - tdgd[j1][j2][j3]);
+
+  for (j1=0; j1<4; j1++)
+    for (j2=0; j2<4; j2++)
+      for (j3=0; j3<j2; j3++)
+        tcf1[j1][j2][j3] = tcf1[j1][j3][j2];
+
+  for (j1=0; j1<4; j1++)
+    for (j2=0; j2<4; j2++)
+      for (j3=j2; j3<4; j3++)
+        for (j4=0; j4<4; j4++)
+          cf2[j1][j2][j3] += gup[j1][j4] * tcf1[j4][j2][j3];
+}
+
+/* Offset of the sample point from its NEAREST grid node, in units of h, so
+   every component lies in [-0.5,+0.5].  For the stencil samplers this is the
+   fractional coordinate the interpolant itself uses ('below' is the nearest
+   node: cf2_fitting centres the stencil on tpoint = nearest node); the
+   pointwise samplers commit no 'below', so the nearest node is derived from
+   the level's origin and spacing instead. */
+static void probe_subcell_offset(int m, const double y[8], double s[3])
+{
+  if (gstate.sinterp_mode == 0 || gstate.sinterp_mode == 3)
+  {
+    for (int d=0; d<3; d++)
+      s[d] = (y[d+1] - gstate.pgeodesic[m].below[d+1]) / gview.delta_space[d];
+  }
+  else
+  {
+    for (int d=0; d<3; d++)
+    {
+      const double q = (y[d+1] - gview.origin_space[d]) / gview.delta_space[d];
+      s[d] = q - floor(q + 0.5);
+    }
+  }
+}
+
+/* One probe row.  Index slots that do not apply to the kind are written as -1
+   so a reader can filter on them unambiguously.  The probe_max_rows cap is
+   applied by geodesic_probe_tick at block granularity, never here: cutting a
+   block after some of its 60 rows would leave a reader with a half evaluation
+   to explain.  probe_rows is only touched from inside the probe's critical
+   section, so the count can overshoot the cap by at most one block. */
+static void probe_row(FILE *fp, const char *kind, int idx, int mu, int al, int be,
+                      double interp, double exact, const double s[3],
+                      double r, const double y[8], const char *path)
+{
+  __atomic_fetch_add(&gstate.probe_rows, 1, __ATOMIC_RELAXED);
+  fprintf(fp, "%s %d %d %d %d %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %s\n",
+          kind, idx, mu, al, be,
+          interp, exact, interp - exact,
+          s[0], s[1], s[2], r, y[1], y[2], y[3], y[0], path);
+}
+
+/* Open the probe sidecar (lazily, once).  With more than one MPI rank the
+   particles are integrated by several ranks at once (multi_amr) or by every
+   rank (multi_cx), so each rank writes its own <probe_file>.proc<N>; with one
+   rank the name is used as given.  Parent directories are created as for the
+   particle dump. */
+static void geodesic_probe_open(cGH *gh, int m)
+{
+  DECLARE_CCTK_PARAMETERS
+
+  char path[4096];
+  if (CCTK_nProcs(gh) > 1)
+    snprintf(path, sizeof path, "%s.proc%d", probe_file, (int)CCTK_MyProc(gh));
+  else
+    snprintf(path, sizeof path, "%s", probe_file);
+
+  geodesic_mkdir_parents(path);
+  gstate.pfp = fopen(path, "w");
+  if (gstate.pfp == NULL)
+  {
+    /* give up quietly but say so once; the probe is off for this integration
+       call (the parse block in geodesics_integrate re-arms probe_on on the
+       next one, so a directory that appears later is picked up) */
+    gstate.probe_on = 0;
+    static int open_warned = 0;
+    if (!open_warned)
+    {
+      open_warned = 1;
+      CCTK_VInfo(CCTK_THORNSTRING,
+                 "Geodesic: cannot open the probe file %s for writing; probe disabled",
+                 path);
+    }
+    return;
+  }
+
+  fprintf(gstate.pfp, "# Geodesic probe: interpolated vs exact Kerr-Schild at the same event\n");
+  fprintf(gstate.pfp, "# config: metric_interp=%s probe_stride=%d probe_max_rows=%d Exact=%s level=%d dx=%.17g %.17g %.17g\n",
+          metric_interp, (int)gstate.probe_stride, (int)gstate.probe_max_rows,
+          gstate.sexact ? "yes" : "no", (int)gstate.pgeodesic[m].level,
+          (double)gview.delta_space[0], (double)gview.delta_space[1], (double)gview.delta_space[2]);
+  fprintf(gstate.pfp, "# columns: kind idx mu alpha beta interp exact err s_x s_y s_z r x y z t path\n");
+  fprintf(gstate.pfp, "# idx = running count of geodesic RHS evaluations; a block is written every probe_stride-th one\n");
+  fprintf(gstate.pfp, "# kind: g = g_{mu nu}, gu = inverse of the interpolated g_{mu nu}, cf = Gamma^mu_{alpha beta}\n");
+  fprintf(gstate.pfp, "# err = interp - exact; index slots that do not apply are -1; r = sqrt(x^2+y^2+z^2)\n");
+  fprintf(gstate.pfp, "# s_x s_y s_z = offset of the sample point from its nearest grid node, in units of h\n");
+  fprintf(gstate.pfp, "# path: local27 Christoffel route (fit = blend of the nodal 125-node Christoffel fits,\n");
+  fprintf(gstate.pfp, "#       analytic = assembled from the metric fits); - for every other sampler\n");
+}
+
+/* Write one probe evaluation: 10 g_{mu nu} + 10 g^{mu nu} + 40
+   Gamma^mu_{alpha beta} rows.  The interpolated Christoffel is the one
+   func_ode is actually using, passed in as cf2: re-deriving it would either
+   refit the stencil (cf2_fitting, forbidden here) or read coefficient pools
+   the mode never fills (pcf2, which cf2_func reads, is allocated only for
+   metric_interp = l27).  The interpolated g^{mu nu} is the inverse of the
+   interpolated g_{mu nu} -- no sampler keeps an inverse 4-metric of its own. */
+static void geodesic_probe_write(int m, const double y[8], const double cf2[4][4][4],
+                                 cGH *gh, int idx)
+{
+  double gI[4][4], gE[4][4], guI[4][4], guE[4][4], cfE[4][4][4];
+  double beta_up[3], gamma_dn[3][3], gamma_up[3][3];
+  double s[3];
+  int mu, nu, be;
+
+  if (gstate.pfp == NULL)
+  {
+    geodesic_probe_open(gh, m);
+    if (gstate.pfp == NULL) return;
+  }
+
+  if (!metric_value_from_cache(m, y, gI)) return;
+  if (!build_gup_from_gdn(gI, NULL, beta_up, gamma_dn, gamma_up, guI))
+    for (mu=0;mu<4;mu++) for (nu=0;nu<4;nu++) guI[mu][nu] = 0.0;
+  probe_exact_reference(y[1], y[2], y[3], gE, guE, cfE);
+
+  probe_subcell_offset(m, y, s);
+  const double r = sqrt(y[1]*y[1] + y[2]*y[2] + y[3]*y[3]);
+  const char *path =
+    (gstate.sinterp_mode == 3)
+      ? (gstate.pgeodesic[m].local27_cf2_bad ? "analytic" : "fit")
+      : "-";
+
+  for (mu=0;mu<4;mu++)
+    for (nu=mu;nu<4;nu++)
+      probe_row(gstate.pfp, "g", idx, -1, mu, nu,
+                gI[mu][nu], gE[mu][nu], s, r, y, path);
+
+  for (mu=0;mu<4;mu++)
+    for (nu=mu;nu<4;nu++)
+      probe_row(gstate.pfp, "gu", idx, -1, mu, nu,
+                guI[mu][nu], guE[mu][nu], s, r, y, path);
+
+  for (mu=0;mu<4;mu++)
+    for (nu=0;nu<4;nu++)
+      for (be=nu;be<4;be++)
+        probe_row(gstate.pfp, "cf", idx, mu, nu, be,
+                  cf2[mu][nu][be], cfE[mu][nu][be], s, r, y, path);
+
+  fflush(gstate.pfp);
+}
+
+/* Count one geodesic RHS evaluation and emit every probe_stride-th one.  The
+   counter is atomic so the OpenMP particle loop is not serialised by it; only
+   the file write takes the critical section.  Several ranks integrate
+   particles concurrently in multi_amr, which is why each rank gets its own
+   sidecar rather than sharing one handle. */
+static void geodesic_probe_tick(int m, const double y[8], const double cf2[4][4][4],
+                                cGH *gh)
+{
+  const int idx = __atomic_fetch_add(&gstate.probe_idx, 1, __ATOMIC_RELAXED);
+  if (gstate.probe_stride > 1 && idx % gstate.probe_stride != 0)
+    return;
+  if (gstate.probe_max_rows > 0 &&
+      __atomic_load_n(&gstate.probe_rows, __ATOMIC_RELAXED) >= gstate.probe_max_rows)
+    return;
+
+#pragma omp critical (geodesic_probe)
+  {
+    geodesic_probe_write(m, y, cf2, gh, idx);
   }
 }
 
@@ -3276,6 +3604,14 @@ int func_ode (double t, const double y[], double f[], void *params)
       for (j3=0; j3<j2; j3++)
         cf2[j1][j2][j3] = cf2[j1][j3][j2];
 
+  /* interpolation-error probe: compare the sampler's output with the exact
+     Kerr-Schild values at this same event.  Inert unless Geodesic::probe_file
+     is set (probe_on is parsed once per integration call, not per RHS
+     evaluation).  Skipped for Exact = yes, where nothing is interpolated, and
+     for metric_interp = carpetx, whose interpolator is an MPI collective. */
+  if (gstate.probe_on && !gstate.sexact && gstate.sinterp_mode != 4)
+    geodesic_probe_tick(m, y, cf2, odedata->cctkGH);
+
   /* ---------------- dy/dtau for positions ---------------- */
   f[0] = y[4];
   f[1] = y[5];
@@ -3510,7 +3846,533 @@ static void geodesic_dump_header(FILE *fp)
           (double)excised_radius, (double)initial_radius,
           Exact ? "yes" : "no", metric_interp, particle_loss_policy,
           (int)particle_n_total);
-  fprintf(fp, "# t x y z ut ux uy uz tau\n");
+  /* The t column is the particle's own integrated coordinate time (the ODE
+     state y[0], dy[0]/dtau = u^t), not the grid time: the particle clock is
+     anchored to cctk_time once at release and from then on advanced by
+     sstep, so it only tracks the grid.  cctk_time is written next to it so a
+     reader can see the accumulated lag (cctk_time - t) instead of having to
+     assume the two agree. */
+  fprintf(fp, "# t x y z ut ux uy uz tau cctk_time\n");
+}
+
+/* Open the particle dump file.  After a restart the dump must continue the
+   existing file, so the file is opened in append mode and the header is written
+   only for an empty file; a fresh run starts it clean.  "auto" (the default)
+   appends only when this process really recovered a state (gstate.recovered,
+   set by geodesics_dump_recover) AND a checkpointing IO thorn is in the run --
+   otherwise a fresh run in a directory that still holds an old dump would
+   append to it.  particle_dump_mode overrides that choice. */
+static FILE *geodesic_dump_open(const char *path)
+{
+  DECLARE_CCTK_PARAMETERS
+
+  int append_mode;
+  if (CCTK_EQUALS(particle_dump_mode, "append"))
+    append_mode = 1;
+  else if (CCTK_EQUALS(particle_dump_mode, "truncate"))
+    append_mode = 0;
+  else
+    append_mode = gstate.recovered &&
+                  (CCTK_IsThornActive ("CarpetIOHDF5") ||
+                   CCTK_IsThornActive ("CarpetIOF5"));
+
+  long prior = 0;
+  if (append_mode)
+  {
+    FILE *probe = fopen(path, "r");
+    if (probe)
+    {
+      fseek(probe, 0, SEEK_END);
+      prior = ftell(probe);
+      fclose(probe);
+    }
+  }
+  geodesic_mkdir_parents(path);
+  FILE *fp = fopen(path, append_mode ? "a" : "w");
+  if (fp && (!append_mode || prior == 0))
+    geodesic_dump_header(fp);
+  return fp;
+}
+
+/* Sidecar that records where the particle dump file stands at a checkpoint. */
+static void geodesic_dump_sidecar_path(char *side, size_t n, const char *path)
+{
+  snprintf(side, n, "%s.ckpt", path);
+}
+
+/* Time stamp the block that is about to be written: the largest finite particle
+   time in it.  Dropped particles hold NaN and runaway ones +-Inf, so they
+   neither set nor disturb the block's time.  -HUGE_VAL means the block cannot
+   be dated at all (every particle is already gone). */
+static double geodesic_dump_frame_time (const CCTK_REAL *tt, int n)
+{
+  double best = -HUGE_VAL;
+  int i;
+  for (i = 0; i < n; i++)
+  {
+    const double v = (double)tt[i];
+    if (isfinite (v) && v > best)
+      best = v;
+  }
+  return best;
+}
+
+/* What the dump scan found; also used for the log line at recovery. */
+typedef struct
+{
+  long cut;          /* byte offset to truncate the dump to */
+  int frames;        /* complete frames in the file */
+  int kept;          /* frames the cut keeps */
+  int unknown;       /* frames with no finite time stamp (all particles dropped) */
+  double spacing;    /* frame-to-frame time step, from the frames that do have one */
+  double last_t;     /* time stamp of the last kept frame */
+} geodesic_dump_scan_t;
+
+/* Walk the particle dump file and work out the byte offset it should be cut
+   back to when the run restarts at simulation time time_now.  The first dump
+   column is each particle's coordinate time, which tracks cctk_time, so the
+   file is self-describing: frames newer than the recovered state are found by
+   their own time stamps and no sidecar is needed to locate the boundary.  A
+   record the crash left half-written is dropped along with them because only
+   complete blocks of n_total rows count as a frame.
+
+   NaN handling: a dropped particle is written as a row of NaNs and keeps that
+   shape for the rest of the run, so a frame's time is the largest *finite*
+   first-column value among its rows -- isfinite() also rejects the +-Inf a
+   runaway particle can leave behind, which would otherwise look like a time far
+   in the future and cut every later frame.  A frame whose rows are all
+   non-finite has no time of its own (every particle in it was already dropped):
+   it cannot be dated, so it and everything after it are dropped and counted in
+   `unknown`.  Keeping a frame that cannot be dated risks keeping frames newer
+   than the recovered state -- the duplicate tail this rewind exists to remove --
+   while dropping it costs nothing because an all-NaN frame carries no
+   information.
+
+   Frames are in increasing time order, so the first frame past time_now stops
+   the scan: everything after it is dropped even if a later frame carries a
+   stale-but-small time stamp from a dead particle.  The tolerance is half the
+   observed spacing, which absorbs the round-off between particle time and
+   cctk_time without ever accepting the next frame. */
+static long geodesic_dump_scan_cut (const char *path, double time_now,
+                                    int n_total, geodesic_dump_scan_t *out)
+{
+  FILE *fp = fopen (path, "r");
+  memset (out, 0, sizeof *out);
+  out->cut = -1;
+  out->last_t = 0.0;
+  if (fp == NULL)
+    return -1;
+  if (n_total <= 0)
+  {
+    fclose (fp);
+    return -1;
+  }
+
+  int cap = 256;
+  int nfr = 0;
+  double *ft = (double *)malloc (cap * sizeof *ft);
+  char *fk = (char *)malloc (cap * sizeof *fk);   /* 1 = frame has a real time */
+  long *fo = (long *)malloc (cap * sizeof *fo);
+  if (ft == NULL || fk == NULL || fo == NULL)
+  {
+    free (ft); free (fk); free (fo);
+    fclose (fp);
+    return -1;
+  }
+
+  char line[4096];
+  long first_data = -1;                 /* where the first data row starts */
+  long rows_in_frame = 0;
+  double frame_max = 0.0;
+  int frame_any = 0;
+
+  for (;;)
+  {
+    const long start = ftell (fp);
+    if (fgets (line, sizeof line, fp) == NULL)
+      break;
+    if (line[0] == '#' || line[0] == '\n' || line[0] == '\r')
+      continue;
+
+    double v[10];
+    int i;
+    for (i = 0; i < 10; i++)
+      v[i] = 0.0;
+    /* 9 columns up to revision 2026.10.21-1, 10 from 2026.10.28-1 (cctk_time
+       appended); the frame time stamp is still column 0 so old and new files
+       scan identically.  Anything under 9 fields is a half-written record. */
+    if (sscanf (line, "%lg %lg %lg %lg %lg %lg %lg %lg %lg %lg",
+                &v[0], &v[1], &v[2], &v[3], &v[4],
+                &v[5], &v[6], &v[7], &v[8], &v[9]) < 9)
+      break;                            /* half-written record: stop here */
+    if (first_data < 0)
+      first_data = start;
+
+    if (rows_in_frame == 0)
+    {
+      frame_max = 0.0;
+      frame_any = 0;
+    }
+    if (isfinite (v[0]))                /* NaN (dropped) and +-Inf are skipped */
+    {
+      if (!frame_any || v[0] > frame_max)
+        frame_max = v[0];
+      frame_any = 1;
+    }
+    rows_in_frame++;
+
+    if (rows_in_frame == n_total)
+    {
+      rows_in_frame = 0;
+      if (nfr == cap)
+      {
+        cap *= 2;
+        int ok = 1;
+        double *nt = (double *)realloc (ft, cap * sizeof *ft);
+        if (nt) ft = nt; else ok = 0;
+        char *nk = (char *)realloc (fk, cap * sizeof *fk);
+        if (nk) fk = nk; else ok = 0;
+        long *no = (long *)realloc (fo, cap * sizeof *fo);
+        if (no) fo = no; else ok = 0;
+        if (!ok)                        /* each pointer already names its live block */
+        {
+          free (ft); free (fk); free (fo);
+          fclose (fp);
+          return -1;
+        }
+      }
+      ft[nfr] = frame_any ? frame_max : 0.0;
+      fk[nfr] = (char)frame_any;
+      fo[nfr] = ftell (fp);             /* offset just past this frame */
+      nfr++;
+    }
+  }
+  fclose (fp);
+
+  /* spacing from the frames that do carry a time */
+  double spacing = 0.0;
+  {
+    int i, prev = -1;
+    double sum = 0.0;
+    int n = 0;
+    for (i = 0; i < nfr; i++)
+      if (fk[i])
+      {
+        if (prev >= 0)
+        {
+          const double d = ft[i] - ft[prev];
+          if (d > 0.0) { sum += d; n++; }
+        }
+        prev = i;
+      }
+    if (n > 0)
+      spacing = sum / (double)n;
+  }
+  const double tol = spacing > 0.0 ? 0.5 * spacing : 1e-6 * (1.0 + fabs (time_now));
+
+  long cut = first_data >= 0 ? first_data : 0;   /* keep the header only */
+  int kept = 0, unknown = 0, keep = 1;
+  double last_t = 0.0;
+  int i;
+  for (i = 0; i < nfr; i++)
+  {
+    if (fk[i])
+    {
+      if (ft[i] > time_now + tol)
+        keep = 0;                       /* frames only get newer from here on */
+      else
+        last_t = ft[i];
+    }
+    else
+    {
+      /* No row in this frame has a finite time: every particle in it was
+         already dropped, so the frame cannot be placed in time.  Stop here
+         rather than carry the previous decision forward -- keeping a frame we
+         cannot date risks keeping frames newer than the recovered state, which
+         is exactly the duplicate tail this rewind exists to remove, while
+         dropping it costs nothing because the frame holds no information. */
+      unknown++;
+      keep = 0;
+    }
+    if (keep)
+    {
+      cut = fo[i];
+      kept = i + 1;
+    }
+  }
+
+  out->frames = nfr;
+  out->kept = kept;
+  out->unknown = unknown;
+  out->spacing = spacing;
+  out->last_t = last_t;
+  out->cut = cut;
+  free (ft); free (fk); free (fo);
+  return cut;
+}
+
+/* CCTK_CHECKPOINT bin: append "iteration time byte_offset" to the sidecar log.
+   The bin is traversed on every main-loop iteration (CactusDefaultEvolve.c)
+   while the IO thorn decides for itself whether a checkpoint is due, so the
+   log keeps one entry per iteration and the recovery side picks out the entry
+   that belongs to the checkpoint actually being restarted from.  The dump for
+   the iteration is already in the file because CHECKPOINT runs after POSTSTEP. */
+void geodesics_dump_markpoint (CCTK_ARGUMENTS)
+{
+  DECLARE_CCTK_ARGUMENTS
+  DECLARE_CCTK_PARAMETERS
+
+  char side[1024];
+
+  if (particle_dump_every <= 0 || gstate.dfp == NULL)
+    return;
+  if (CCTK_MyProc (cctkGH) != 0)
+    return;
+
+  fflush (gstate.dfp);
+  const long off = ftell (gstate.dfp);
+  if (off < 0)
+    return;
+
+  geodesic_dump_sidecar_path (side, sizeof side, particle_dump_file);
+  geodesic_mkdir_parents (side);
+  FILE *fp = fopen (side, "a");
+  if (fp)
+  {
+    fprintf (fp, "%d %g %ld\n", (int)cctk_iteration, (double)cctk_time, off);
+    fclose (fp);
+  }
+
+  /* The checkpoint stores the particle grid functions exactly as they are at
+     THIS schedule point, while the dump frames are written at CCTK_POSTSTEP.
+     Under multi-level runs Carpet traverses POSTSTEP/CHECKPOINT per reflevel,
+     so the state that lands in the checkpoint is not necessarily the state the
+     newest dump frame was written from; geodesics_dump_recover measures that
+     offset when the run comes back.  This bin is OPTIONS: meta, so the particle
+     arrays are NOT resolved here (particle_tt is always NULL) and only the
+     thorn's own bookkeeping can be logged.  The bin also runs on every
+     main-loop iteration, so the line is DEBUG-level: it is there for
+     `--warnlevel 4` and would otherwise bury the real warnings. */
+  CCTK_VWarn (CCTK_WARN_DEBUG, __LINE__, __FILE__, CCTK_THORNSTRING,
+              "Geodesic: checkpoint at iteration %d grid t=%.10g: newest dump"
+              " iter %d t=%.10g, dump offset %ld bytes",
+              (int)cctk_iteration, (double)cctk_time,
+              (int)gstate.last_dump_iter, (double)gstate.last_dump_time, off);
+}
+
+/* CCTK_POST_RECOVER_VARIABLES: cut the particle dump file back to the state
+   being recovered from.  Without this, frames the crashed run wrote after the
+   checkpoint stay in the file as a stale tail, and the restarted run appends a
+   second copy of every frame it re-integrates.
+
+   Two independent ways of finding that boundary, cross-checked against each
+   other:
+     * the sidecar log (iteration -> byte offset), exact and immune to NaN time
+       stamps, but only usable when the crashed run wrote an entry for exactly
+       the checkpoint iteration being restarted from;
+     * the dump file's own time stamps (geodesic_dump_scan_cut), which work even
+       when the sidecar is missing, stale or written by an older binary.
+   The exact sidecar entry wins when present; otherwise the time stamps decide,
+   and any disagreement is reported rather than silently resolved. */
+void geodesics_dump_recover (CCTK_ARGUMENTS)
+{
+  DECLARE_CCTK_ARGUMENTS
+  DECLARE_CCTK_PARAMETERS
+
+  char side[1024];
+  char tmp[1104];
+
+  if (particle_dump_every <= 0)
+    return;
+  if (CCTK_MyProc (cctkGH) != 0)
+    return;
+
+  geodesic_dump_sidecar_path (side, sizeof side, particle_dump_file);
+
+  /* Measured, not assumed: Carpet traverses CCTK_POST_RECOVER_VARIABLES once
+     per reflevel in level mode (Carpet/Carpet/src/Initialise.cc,
+     CallPostRecoverVariables), and the particle arrays are per-reflevel copies
+     that Geodesic only ever integrates on the finest one (see the AMR acquire
+     phase in geodesics_integrate).  Every pass sees the same particle state, so
+     one pass is enough and the pass is not what decides the cut. */
+  if (cctk_iteration > 0)
+    gstate.recovered = 1;
+
+  if (cctk_iteration <= 0)
+  {
+    /* fresh run: the dump opens clean, so the log must start over as well */
+    geodesic_mkdir_parents (side);
+    FILE *fresh = fopen (side, "w");
+    if (fresh)
+      fclose (fresh);
+    return;
+  }
+
+  /* --- what the dump file itself says --- */
+  geodesic_dump_scan_t scan;
+  const long cut_t = geodesic_dump_scan_cut (particle_dump_file,
+                                             (double)cctk_time,
+                                             particle_n_total, &scan);
+
+  /* --- what the sidecar log says --- */
+  long off_exact = -1, off_best = -1;
+  int best_it = -1;
+  FILE *sp = fopen (side, "r");
+  if (sp != NULL)
+  {
+    int i;
+    double t;
+    long o;
+    while (fscanf (sp, "%d %lg %ld", &i, &t, &o) == 3)
+    {
+      if (o < 0 || i > (int)cctk_iteration)
+        continue;
+      if (i > best_it)
+      {
+        best_it = i;
+        off_best = o;
+      }
+      if (i == (int)cctk_iteration)
+        off_exact = o;
+    }
+    fclose (sp);
+  }
+
+  long cut;
+  const char *how;
+  if (off_exact >= 0)
+  {
+    cut = off_exact;
+    how = "sidecar";
+  }
+  else if (cut_t >= 0)
+  {
+    cut = cut_t;
+    how = "time stamps";
+    if (off_best >= 0)
+      CCTK_VWarn (CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+                  "Geodesic: %s has no entry for iteration %d (newest is %d),"
+                  " aligning %s from its own time stamps instead",
+                  side, (int)cctk_iteration, best_it, particle_dump_file);
+  }
+  else
+    return;                             /* no dump file: nothing to align */
+
+  if (off_exact >= 0 && cut_t >= 0 && cut_t != off_exact)
+    CCTK_VWarn (CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+                "Geodesic: dump alignment disagrees: sidecar says %ld bytes,"
+                " the file's time stamps say %ld (%d frames, %d kept, %d without a"
+                " finite time, spacing %g, last kept t=%g, recovering at t=%g)."
+                " Using the sidecar.",
+                off_exact, cut_t, scan.frames, scan.kept, scan.unknown,
+                scan.spacing, scan.last_t, (double)cctk_time);
+  if (how[0] == 's' && scan.cut >= 0 && scan.spacing > 0.0 &&
+      fabs (scan.last_t - (double)cctk_time) > scan.spacing)
+    CCTK_VWarn (CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+                "Geodesic: rewinding %s to the sidecar offset leaves last frame"
+                " t=%g but the recovered time is t=%g",
+                particle_dump_file, scan.last_t, (double)cctk_time);
+
+  /* Under multi-level runs the particle state the checkpoint restores is not
+     necessarily at cctk_time.  Carpet traverses POSTSTEP and CHECKPOINT once
+     per reflevel, and only for the reflevels whose substep is due that
+     iteration (Carpet/Carpet/src/Evolve.cc); Geodesic integrates once per
+     batch, on the batch's finest-level POSTSTEP call.  A checkpoint taken at a
+     coarser level's CHECKPOINT traversal therefore saves the state left by the
+     PREVIOUS batch -- one finest-level dt behind the grid time.  The dump
+     frames are written at that same finest-level call, so the newest frame can
+     be newer than the state being restored.  Continuing from it puts the two on
+     different trajectories, and the junction in the dump shows a position kick
+     of |v| times that offset.  Cut back to the newest frame the restored state
+     actually corresponds to; the frames in between are re-covered by the
+     restarted run, so the cost is at most one dump frame. */
+  /* The timestamp fallback above cuts at the checkpoint's *grid* time, but the
+     particle state the checkpoint restores is one coarse dt behind that (see
+     the probe).  Re-cut at the state's own time so the last kept frame really is
+     the frame that state was written from; the restarted run re-covers the
+     dropped frame, so the cost is at most one dump frame.  When the sidecar
+     already decided, cut_pt == cut and nothing changes. */
+  if (particle_tt != NULL)
+  {
+    double pt = -HUGE_VAL;
+    for (int mi = 0; mi < particle_n_total; mi++)
+      if (isfinite ((double) particle_tt[mi])) { pt = (double) particle_tt[mi]; break; }
+    if (isfinite (pt) && pt + 1e-12 < (double)cctk_time)
+    {
+      geodesic_dump_scan_t sc;
+      const long cut_pt = geodesic_dump_scan_cut (particle_dump_file, pt,
+                                                  particle_n_total, &sc);
+      if (cut_pt >= 0 && cut_pt < cut)
+      {
+        CCTK_VWarn (CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+                    "Geodesic: the checkpoint's grid time is t=%.10g but the"
+                    " particle state it restores is at t=%.10g (offset %.3e)."
+                    " Cutting %s back from %ld to %ld bytes (%d -> %d frames)"
+                    " so the restart continues from the state the last kept"
+                    " frame was written from.",
+                    (double)cctk_time, pt, pt - (double)cctk_time,
+                    particle_dump_file, cut, cut_pt, scan.kept, sc.kept);
+        cut = cut_pt;
+        scan = sc;
+      }
+    }
+  }
+
+  FILE *fp = fopen (particle_dump_file, "r+");
+  if (fp == NULL)
+    return;
+  fseek (fp, 0, SEEK_END);
+  const long now = ftell (fp);
+  if (cut == now)
+    CCTK_VInfo (CCTK_THORNSTRING,
+                "Geodesic: particle dump %s already aligned with the checkpoint"
+                " at iteration %d (%d frames, t=%g)",
+                particle_dump_file, (int)cctk_iteration, scan.kept, scan.last_t);
+  else if (ftruncate (fileno (fp), (off_t)cut) != 0)
+    CCTK_VWarn (CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+                "Geodesic: cannot rewind %s from %ld to %ld bytes",
+                particle_dump_file, now, cut);
+  else
+    CCTK_VInfo (CCTK_THORNSTRING,
+                "Geodesic: rewound particle dump %s from %ld to %ld bytes by %s"
+                " (recovered at iteration %d, t=%g; kept %d of %d frames,"
+                " last kept t=%g, %d frames had no finite time stamp)",
+                particle_dump_file, now, cut, how, (int)cctk_iteration,
+                (double)cctk_time, scan.kept, scan.frames, scan.last_t,
+                scan.unknown);
+  fclose (fp);
+
+  /* drop log entries newer than the checkpoint we restarted from */
+  snprintf (tmp, sizeof tmp, "%s.tmp", side);
+  sp = fopen (side, "r");
+  FILE *tp = fopen (tmp, "w");
+  if (sp && tp)
+  {
+    int i;
+    double t;
+    long o;
+    while (fscanf (sp, "%d %lg %ld", &i, &t, &o) == 3)
+      if (i <= (int)cctk_iteration)
+        fprintf (tp, "%d %g %ld\n", i, t, o);
+    fclose (sp);
+    sp = NULL;
+    fclose (tp);
+    tp = NULL;
+    if (rename (tmp, side) != 0)
+      CCTK_VWarn (CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+                  "Geodesic: cannot rewrite %s", side);
+  }
+  else
+  {
+    if (sp) fclose (sp);
+    if (tp) fclose (tp);
+  }
+
+  /* the frame belonging to the recovered iteration is the last one kept, and
+     its time stamp is what the next block the restarted run writes has to
+     beat, otherwise the recovered state would be written a second time */
+  gstate.last_dump_iter = cctk_iteration;
+  gstate.last_dump_time = scan.kept > 0 ? scan.last_t : -HUGE_VAL;
 }
 
 #ifdef CCTK_MPI
@@ -3951,11 +4813,19 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
       if (fabs(ys[0] - t_target) < 1e-13 * fmax(1.0, fabs(t_target)))
         break;
     }
-    if (max_iter > 100000)
-    {
-      gstate.pgeodesic[mi].outbd = 1;
+    /* The tau loop is capped at max_iter_cap, so the old "max_iter > 100000"
+       test could never fire and a particle that ran out of tau-steps before
+       reaching t_target was left behind in silence.  Falling short is the only
+       way this loop can exit with ys[0] < t_target (every outbd / ODE-failure
+       path sets ys[0] = t_target first), and it matters: the ensemble target is
+       the min over live particles' coordinate times, so one short particle
+       drags every other particle's clock and the whole dump drifts off
+       cctk_time.  Report it; the particle is deliberately kept alive, since
+       dropping it here would change the survival statistics of runs that
+       previously only had a silent lag.  The dump's cctk_time column shows the
+       accumulated lag (cctk_time - t). */
+    if (ys[0] < t_target - 1e-13 * fmax(1.0, fabs(t_target)))
       gstate.pgeodesic[mi].freeze_warn = 1;   /* aggregated after the loop */
-    }
 
     /* write back particle state */
     particle_ttw[mi] = ts;
@@ -4176,6 +5046,18 @@ void geodesics_integrate (CCTK_ARGUMENTS)
       else                                            sinterp_mode_cached = 0;
     }
     gstate.sinterp_mode = sinterp_mode_cached;
+  }
+
+  /* probe_file is a run-fixed keyword too, so the "is the probe on?" test is
+     done once here rather than on every geodesic RHS evaluation.  With
+     probe_file empty, probe_on stays 0 and no probe code runs at all. */
+  {
+    static int probe_on_cached = -1;
+    if (probe_on_cached < 0)
+      probe_on_cached = (probe_file != NULL && probe_file[0] != '\0') ? 1 : 0;
+    gstate.probe_on       = probe_on_cached;
+    gstate.probe_stride   = (probe_stride   > 0) ? (int)probe_stride   : 1;
+    gstate.probe_max_rows = (probe_max_rows > 0) ? (int)probe_max_rows : 0;
   }
 
   /* ================================================================================
@@ -5134,19 +6016,18 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   if (particle_dump_every > 0 && cctk_iteration == 0 &&
       !hold_active && report_here)
   {
-    geodesic_mkdir_parents(particle_dump_file);
-    gstate.dfp = fopen(particle_dump_file, "w");
+    gstate.dfp = geodesic_dump_open(particle_dump_file);
     if (gstate.dfp)
     {
-      geodesic_dump_header(gstate.dfp);
       for (mi = 0; mi < particle_n_total; mi++)
-        fprintf(gstate.dfp, "%.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g\n",
+        fprintf(gstate.dfp, "%.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g\n",
                 (double)particle_tt[mi], (double)particle_tx[mi],
                 (double)particle_ty[mi], (double)particle_tz[mi],
                 (double)particle_ttv[mi], (double)particle_txv[mi],
                 (double)particle_tyv[mi], (double)particle_tzv[mi],
-                (double)particle_ttw[mi]);
+                (double)particle_ttw[mi], (double)cctk_time);
       fflush(gstate.dfp);
+      gstate.last_dump_time = geodesic_dump_frame_time (particle_tt, particle_n_total);
     }
     else
       CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
@@ -5390,12 +6271,14 @@ void geodesics_integrate (CCTK_ARGUMENTS)
   /* ---------------- particle-state dump (post-integration) ----------------
      Fires on the finest-level call for which the trigger fired this
      iteration (last_integ_iter == cctk_iteration), i.e. the single
-     call per iteration that integrates.  At iteration 0 the one-shot t=0
-     seed (above) already wrote a block and set last_dump_iter, so the
-     post-integration check (last_dump_iter != cctk_iteration) skips the
-     double-write; the first post-integration block is the first real
-     integration that is a multiple of particle_dump_every.  After the S2
-     sync all ranks see the identical final state, so the rank-0-only dump
+     call per iteration that integrates.  The one-shot t=0 seed has already
+     written the first block, and iteration 0 returns before this point, so
+     the first block here is the first real integration that is a multiple of
+     particle_dump_every.  A block is skipped when its own time stamp is not
+     newer than the previous block's: the first step after a restart can
+     re-emit the recovered state unchanged, which would otherwise put a
+     duplicate block next to the identical block the rewind kept.  After the
+     S2 sync all ranks see the identical final state, so the rank-0-only dump
      writes the coherent post-integration block. */
   if (lvl == gstate.nlev_seen - 1 &&
       gstate.last_integ_iter == cctk_iteration &&
@@ -5405,23 +6288,34 @@ void geodesics_integrate (CCTK_ARGUMENTS)
       gstate.last_dump_iter != cctk_iteration &&
       report_here)
   {
+    const double frame_t = geodesic_dump_frame_time (particle_tt, particle_n_total);
+    const int datable = frame_t > -HUGE_VAL / 2.0;
     if (gstate.dfp == NULL)
-    {
-      geodesic_mkdir_parents(particle_dump_file);
-      gstate.dfp = fopen(particle_dump_file, "w");
-      if (gstate.dfp)
-        geodesic_dump_header(gstate.dfp);
-    }
-    if (gstate.dfp)
+      gstate.dfp = geodesic_dump_open(particle_dump_file);
+    if (gstate.dfp && (!datable || frame_t > gstate.last_dump_time))
     {
       for (mi = 0; mi < particle_n_total; mi++)
-        fprintf(gstate.dfp, "%.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g\n",
+        fprintf(gstate.dfp, "%.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g\n",
                 (double)particle_tt[mi], (double)particle_tx[mi],
                 (double)particle_ty[mi], (double)particle_tz[mi],
                 (double)particle_ttv[mi], (double)particle_txv[mi],
                 (double)particle_tyv[mi], (double)particle_tzv[mi],
-                (double)particle_ttw[mi]);
+                (double)particle_ttw[mi], (double)cctk_time);
       fflush(gstate.dfp);
+      gstate.last_dump_time = frame_t;
+    }
+    else if (gstate.dfp)
+    {
+      static int dup_reported = 0;
+      if (!dup_reported)
+      {
+        dup_reported = 1;
+        CCTK_VInfo(CCTK_THORNSTRING,
+                   "Geodesic: skipping the particle block at iteration %d:"
+                   " its time %g is not newer than the last block written (%g)"
+                   " -- this happens on the first step after a restart",
+                   (int)cctk_iteration, frame_t, gstate.last_dump_time);
+      }
     }
     gstate.last_dump_iter = cctk_iteration;
   }
@@ -5486,8 +6380,8 @@ void geodesics_integrate (CCTK_ARGUMENTS)
                  n_normbad, loss_txt);
     if (n_freeze && report_here)
       CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                 "Geodesic: %d particle(s) hit the tau-loop iteration cap and will be %s",
-                 n_freeze, loss_txt);
+                 "Geodesic: %d particle(s) ran out of tau-steps (max_iter_cap=%d) before the step end and are behind cctk_time; they are kept, but the whole particle clock is dragged back with them",
+                 n_freeze, (int)max_iter_cap);
     if (n_outbd && report_here)
       CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
                  "Geodesic: %d particle(s) left the safe region or failed the ODE step and will be %s",
@@ -5603,6 +6497,25 @@ void geodesics_integrate_carpetx (CCTK_ARGUMENTS)
   cx_global_call = 1;
   geodesics_integrate (cctkGH);
   cx_global_call = 0;
+}
+
+/* CCTK_TERMINATE: close the interpolation-error probe sidecar.  The particle
+   dump handle (gstate.dfp) is deliberately left alone -- its checkpoint offset
+   bookkeeping (geodesics_dump_markpoint / geodesics_dump_recover) assumes the
+   handle stays as it was, and stdio flushes it at process exit anyway.  The
+   probe file has no such bookkeeping, so it is closed explicitly.  No-op when
+   the probe was never opened. */
+void Geodesics_finalise (CCTK_ARGUMENTS)
+{
+  DECLARE_CCTK_ARGUMENTS
+  (void) cctkGH;
+
+  if (gstate.pfp)
+  {
+    fflush (gstate.pfp);
+    fclose (gstate.pfp);
+    gstate.pfp = NULL;
+  }
 }
 
 

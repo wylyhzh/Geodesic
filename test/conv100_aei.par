@@ -185,6 +185,9 @@ Geodesic::rverbose               = "no"
 Geodesic::metric_interp          = "aei"
 Geodesic::particle_dump_every   = 20
 Geodesic::particle_dump_file     = "conv100_aei/geodesic_particles.txt"
+# CarpetIOHDF5 is active here but checkpointing is off, so dump_mode "auto"
+# would append to the reference instead of replacing it.
+Geodesic::particle_dump_mode     = "truncate"
 Geodesic::step                   = 0.0
 Geodesic::particle_n_total       = 1
 Geodesic::particle_n             = 1

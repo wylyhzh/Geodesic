@@ -1388,7 +1388,15 @@ static CCTK_REAL g4dn(CCTK_INT tl, CCTK_INT j1, CCTK_INT j2, CCTK_INT ix, CCTK_I
     return NAN;
   }
 
-  index = CCTK_GFINDEX3D(gview.GH, ix-1, iy-1, iz-1);
+  /* Same strides the rest of the thorn uses (gview.rsh is the storage extent
+     of whatever gview.gxx[...] points at: the padded halo buffer when the
+     multi-process halo is active, the patch itself otherwise).  Going
+     through CCTK_GFINDEX3D(gview.GH, ...) would address the same element --
+     the ghost cGH carries cctk_ash = gview.rsh -- but its CCTK_DEBUG index
+     check tests against cctk_lsh, which does NOT include the halo band, so a
+     legitimate halo read (index in [-GEODESIC_HALO_W, -1] or >= lsh) aborts a
+     debug build.  The halo_lo/halo_hi test above is the real bounds check. */
+  index = (ix-1) + gview.rsh[0] * ((iy-1) + gview.rsh[1] * (iz-1));
   if (j1 > j2)
   {
     i1 = j2;

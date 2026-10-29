@@ -3,7 +3,7 @@
 # Geodesic thorn testsuite launcher (official Einstein Toolkit mechanism).
 #
 # Usage:
-#   ./run_tests.sh         default set: the 8 regression tests that cover
+#   ./run_tests.sh         default set: the 9 regression tests that cover
 #                          all four metric-sampling back-ends and both
 #                          metric families (stationary Kerr grid,
 #                          non-stationary TwoPunctures merger):
@@ -11,13 +11,14 @@
 #                            Geodesic/conv100
 #                            Geodesic/conv100_l27
 #                            Geodesic/conv100_local27
+#                            Geodesic/conv100_local27_1p
 #                            Geodesic/conv100_aei
 #                            Geodesic/conv100_carpet
 #                            Geodesic/circ_orbit
 #                            Geodesic/tp_local27_025
 #                            Geodesic/tp_far_local27_025_t80
 #
-#   ./run_tests.sh -all    every test listed in test/test.ccl (18 tests,
+#   ./run_tests.sh -all    every test listed in test/test.ccl (19 tests,
 #                          including the AMR / MPI variants and the aei /
 #                          carpet TwoPunctures probes).
 #

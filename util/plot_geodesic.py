@@ -73,9 +73,9 @@ def load_rows(path):
     d = np.genfromtxt(path, comments="#")
     if d.ndim == 1:
         d = d.reshape(1, -1)
-    if d.shape[1] != 9:
-        raise ValueError("expected 9 columns (t x y z ut ux uy uz tau), "
-                         "got %d" % d.shape[1])
+    if d.shape[1] not in (9, 10):
+        raise ValueError("expected 9 columns (t x y z ut ux uy uz tau) or 10 "
+                         "with the cctk_time column appended, got %d" % d.shape[1])
     return d
 
 

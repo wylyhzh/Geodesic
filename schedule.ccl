@@ -87,3 +87,32 @@ if (particle_n_total)
 {
   STORAGE:particle_arrays
 }
+
+# Checkpoint bookkeeping for the particle dump: record the dump-file offset
+# that belongs to each checkpoint, and rewind the dump to that offset when
+# recovering, so frames written by a crashed run after the checkpoint are
+# discarded instead of lingering as a stale tail.  Only needed when a
+# checkpointing IO thorn is actually in the run.
+if (CCTK_IsThornActive("CarpetIOHDF5") || CCTK_IsThornActive("CarpetIOF5"))
+{
+  schedule geodesics_dump_markpoint at CCTK_CHECKPOINT
+  {
+    LANG: C
+    OPTIONS: meta
+  } "Record the particle dump file offset at each checkpoint"
+}
+
+# Not meta: the alignment decision needs the recovered particle state, which a
+# meta function never receives (all grid-function arguments are NULL there).
+schedule geodesics_dump_recover at CCTK_POST_RECOVER_VARIABLES
+{
+  LANG: C
+} "Rewind the particle dump file to the recovered checkpoint"
+
+# Close the interpolation-error probe sidecar (Geodesic::probe_file).  The
+# particle dump handle is not touched here -- see Geodesics_finalise.  No-op
+# when the probe is off, which is the default.
+schedule Geodesics_finalise at CCTK_TERMINATE
+{
+  LANG: C
+} "Close the Geodesic interpolation-error probe sidecar"

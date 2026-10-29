@@ -1,6 +1,6 @@
 # Geodesic thorn testsuite configuration.
 #
-# Eighteen tests.  The first four integrate one particle on a prograde
+# Nineteen tests.  The first four integrate one particle on a prograde
 # equatorial circular orbit (r = 11.989, M = 2, a = 0.5, 32 Cactus
 # steps of 100 coordinate-time units; Exact = yes except
 # circ_orbit_grid); the next two are 100-particle rings on the same
@@ -9,7 +9,7 @@
 # equatorial elliptic orbit under 3-level AMR:
 #
 #   circ_orbit           compares the full particle state dump
-#                        (t x y z u^t u^x u^y u^z tau) against the
+#                        (t x y z u^t u^x u^y u^z tau cctk_time) against the
 #                        reference data row by row; any change of the
 #                        trajectory fails the test.
 #
@@ -92,7 +92,7 @@
 #                        grid-metric path itself is covered by
 #                        circ_orbit_grid / circ_orbit_amr.
 #
-# The remaining eleven tests cover the grid-sampling back-ends
+# The remaining twelve tests cover the grid-sampling back-ends
 # (metric_interp = l27 / local27 / aei / carpet) and the
 # two-puncture binary black hole background (TwoPunctures initial
 # data with GW150914 parameters, solved once at t = 0):
@@ -152,6 +152,9 @@
 # test/conv100/geodesic_particles.txt,
 # test/conv100_l27/geodesic_particles.txt,
 # test/conv100_local27/geodesic_particles.txt,
+# test/conv100_local27_1p/geodesic_particles.txt (a copy of the
+#   four-process conv100_local27 dump, so this test's PASS is a
+#   1-vs-4-rank identity check),
 # test/conv100_aei/geodesic_particles.txt,
 # test/conv100_carpet/geodesic_particles.txt,
 # test/tp_local27_025/geodesic_particles.txt,

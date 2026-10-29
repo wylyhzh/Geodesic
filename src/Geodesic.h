@@ -94,7 +94,7 @@
    and written into the header of every particle dump; bump it whenever
    behaviour changes.  Format: YYYY.MM.DD-<counter>. */
 #ifndef GEODESIC_REVISION
-#define GEODESIC_REVISION "2026.10.21-1"
+#define GEODESIC_REVISION "2026.10.29-1"
 #endif
 
 /* -------------------- Polynomial interpolation order (fixed) -------------------- */
@@ -139,13 +139,14 @@
    boundary.
 
    The four local27 fit-history flags (local27_cf2_bad, old_level_bad,
-   local27_lvl2_bad, local27_bad) travel too.  They are sticky per-particle
-   history, not per-rank cache: a rank that has never integrated a particle
-   has them all zero, so when ownership moves, the new owner would pick a
-   different Christoffel path (fitted poly vs analytic assembly) than the
-   single-process run and the trajectory would branch.  The cached fits
-   themselves (pgd125, pcf2_125) are NOT sent -- the new owner refits from
-   its own grid data, which is identical once the halo is exchanged. */
+   local27_lvl2_bad, local27_bad) travel too.  They describe the state of
+   the last refit, which the receiving rank has not performed: a rank that
+   has never integrated a particle has them all zero, so when ownership
+   moves, the new owner would pick a different Christoffel path (fitted
+   poly vs analytic assembly) than the single-process run and the
+   trajectory would branch.  The cached fits themselves (pgd125, pcf2_125)
+   are NOT sent -- the new owner refits from its own grid data, which is
+   identical once the halo is exchanged. */
 #define GEODESIC_MPI_NPAY 19
 
 /* -------------------- Base data containers at grid points -------------------- */
@@ -235,19 +236,24 @@ typedef struct PARTICLEGEODESIC
      christoffel_at_point assembles the Christoffel analytically from
      the pgd125 metric fits instead.
 
-     Sticky: once set for a particle it is not cleared again, so that
-     particle keeps the analytic assembly for the rest of the run.  Two
+     Recomputed at every refit (non-sticky): a particle uses the nodal
+     fast path whenever that level's Christoffel samples are finite.  Two
      conditions can set it: the 6th-order FD window of a stencil node
      reaching the central singularity / excised region, and (by far the
      commonest) a stored past time level not yet filled at the
-     particle's cell, which happens at the first refit of a run that
-     starts from un-filled time levels.  The stickiness is deliberate:
-     switching between the two assemblies mid-integration would switch
-     the effective discretisation under a running trajectory.  It costs
-     nothing -- on tp_far_local27_025_t80 the analytic assembly is
-     slightly cheaper than the nodal blend (forcing the nodal fast path
-     makes the run 11% slower), and the two agree with each other and
-     with the aei sampler to ~1e-3 in position over t = 80. */
+     particle's cell, which happens at the first refits of a run that
+     starts from un-filled time levels.
+
+     It used to be sticky, which was a real accuracy bug rather than a
+     cost question: the analytic assembly samples the metric VALUE from
+     level 0 only, so it is piecewise constant in time and first order in
+     dt, while the fast path blends three levels.  On the u18 BBH grid the
+     aei-vs-local27 trajectory difference scaled like dt (q = 0.95) purely
+     because a start_time = 0 refit latched the flag for the whole run.
+     The flag now clears as soon as the samples are good; switching paths
+     mid-integration is harmless now that both paths blend in time.
+     Cost: the nodal fast path is ~11% slower than the analytic assembly
+     (measured on tp_far_local27_025_t80). */
   CCTK_INT  local27_cf2_bad;
 
   /* local27 (sinterp_mode 3): 1 = the level-2 (t - 2dt) metric samples are
@@ -443,6 +449,15 @@ typedef struct {
   CCTK_INT step_cap_warned, pastlevels_warned;
   CCTK_INT  ld_generation, samr_levels, l0_seen_iter, last_integ_iter,
            nlev_seen, last_dump_iter;
+  /* time stamp of the last block written to the particle dump file; a block
+     whose own time is not newer than this is a repeat (e.g. the first step of
+     a restarted run re-emitting the recovered state) and is skipped */
+  CCTK_REAL last_dump_time;
+  /* 1 once CCTK_POST_RECOVER_VARIABLES has reported a real restart
+     (cctk_iteration > 0).  Only then may the dump continue an existing file:
+     a fresh run in a directory that still holds an old dump must start a new
+     one, even when a checkpointing IO thorn is active. */
+  CCTK_INT recovered;
   /* subcycling call-batch tracking (Carpet calls POSTSTEP per level per
      substep; one "batch" = all calls sharing a cctk_iteration):
      batch_iter = iteration of the current batch, batch_maxlvl = highest
@@ -470,6 +485,19 @@ typedef struct {
   CCTK_REAL *mmpi_buf;    /* multi_amr: scratch for the particle-state Allgather */
   CCTK_INT mmpi_cap;
   FILE *dfp;
+  /* Interpolation-error probe (Geodesic::probe_file).  probe_on is the
+     one-shot parse of the (run-fixed) keyword: 0 = the probe is entirely
+     inert and none of its code runs.  pfp is the sidecar, opened lazily at
+     the first probe row and kept open for the whole run (closed by
+     Geodesics_finalise).  probe_idx / probe_rows are the only gstate fields
+     written from inside the OpenMP particle loop; both are touched through
+     atomics or inside the probe's critical section. */
+  FILE *pfp;
+  CCTK_INT probe_on;
+  CCTK_INT probe_stride;
+  CCTK_INT probe_max_rows;
+  CCTK_INT probe_idx;
+  CCTK_INT probe_rows;
   /* Number of MultiPatch blocks.  Set in the one-shot init from
      MultiPatch_GetMaps.  The multi-block crossing logic in func_ode is
      only valid when there is more than one block; a single-block run

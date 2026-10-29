@@ -4,7 +4,7 @@
   Reads a particle state dump (the file written by the Geodesic
   thorn's particle_dump_file option, columns:
 
-      t x y z u^t u^x u^y u^z tau
+      t x y z u^t u^x u^y u^z tau [cctk_time]
 
   one row per particle per dump) and prints, for every data row, the
   two constants of motion of the Kerr metric evaluated with the exact
@@ -57,7 +57,7 @@ int main(int argc, char **argv)
 
   while (fgets(line, sizeof(line), fp))
   {
-    double t, x, y, z, ut, ux, uy, uz, tau;
+    double t, x, y, z, ut, ux, uy, uz, tau, cctk;
     double a = A_KS, Mk = M_KS;
     double r1, r, r2, a2, a2z2, r4, a2r2, den, gtt, gtx, gty, gtz;
     double gxx, gxy, gyy, gxz, gyz;
@@ -66,8 +66,10 @@ int main(int argc, char **argv)
     if (line[0] == '#' || line[0] == '\n' || line[0] == '"')
       continue;
 
-    if (sscanf(line, "%lf %lf %lf %lf %lf %lf %lf %lf %lf",
-               &t, &x, &y, &z, &ut, &ux, &uy, &uz, &tau) != 9)
+    /* 9 columns up to revision 2026.10.21-1, 10 from 2026.10.28-1 (cctk_time
+       appended, not used here); anything under 9 fields is a truncated row. */
+    if (sscanf(line, "%lf %lf %lf %lf %lf %lf %lf %lf %lf %lf",
+               &t, &x, &y, &z, &ut, &ux, &uy, &uz, &tau, &cctk) < 9)
     {
       fprintf(stderr, "check_conserved: bad line: %s", line);
       return 1;

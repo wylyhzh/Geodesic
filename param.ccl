@@ -173,6 +173,13 @@ STRING particle_dump_file "File name for the particle state dump (parent directo
   ".+" :: "A valid file name"
 } "geodesic_particles.txt"
 
+KEYWORD particle_dump_mode "How to open the particle dump file at the first dump"
+{
+  "auto"     :: "append when a checkpointing IO thorn (CarpetIOHDF5/CarpetIOF5) is active, otherwise start clean"
+  "truncate" :: "always start the file clean"
+  "append"   :: "always continue an existing file"
+} "auto"
+
 
 # Policy for particles that leave the domain or fail the 4-velocity
 # renormalization:
@@ -235,7 +242,7 @@ CCTK_REAL initial_radius "Initial radius for particle"
   0.0:* :: "non-negative"
 } 6.0
 
-CCTK_REAL excised_radius "Euclidean excision radius for particle respawn"
+CCTK_REAL excised_radius "Euclidean radius around the origin: a particle that enters it is handed to the loss policy, and random particle placement starts outside it (0 disables both)"
 {
   0.0:* :: "non-negative"
 } 3.0
@@ -301,3 +308,33 @@ KEYWORD metric_interp "Spatial metric/Christoffel sampler: l27, local27, aei, ca
   "carpet"   :: "AEI order-4 spatial molecule + carpet-style time derivative (no per-particle cache; needs AEILocalInterp)"
   "carpetx"  :: "CarpetX point-wise interpolation of ADMBaseX (order = CarpetX::interpolation_order; no per-particle cache; static metric; needs the CarpetX thorn)"
 } "local27"
+
+# ------------------ interpolation-error probe (diagnostic) ------------------
+# Opt-in diagnostic that answers "which interpolated quantity carries the
+# largest error?".  When probe_file is non-empty, every probe_stride-th
+# geodesic right-hand-side evaluation writes a block of rows comparing what
+# the selected sampler produced with the exact Kerr-Schild values at the same
+# event: the 10 independent g_{mu nu}, the 10 independent g^{mu nu} and the
+# 40 independent Gamma^mu_{alpha beta} (alpha <= beta), each with the
+# sub-cell offset of the sample point from its nearest grid node.  Written to
+# a sidecar text file, never to particle_dump_file.
+# Empty (the default) makes the probe entirely inert: no extra evaluations,
+# no extra output, and the integration path is bit-identical to a build
+# without the probe.  With more than one MPI rank integrating particles each
+# rank writes its own <probe_file>.proc<N>.  Skipped for Exact = yes (nothing
+# is interpolated there) and for metric_interp = carpetx (its interpolator is
+# an MPI collective and cannot be re-entered from the probe).
+STRING probe_file "File name for the interpolation-error probe sidecar (empty = probe off)"
+{
+  ".*" :: "A file name, or the empty string to switch the probe off"
+} ""
+
+INT probe_stride "Evaluate the probe once every N geodesic RHS evaluations"
+{
+  1:* :: "Must be >= 1"
+} 1
+
+INT probe_max_rows "Cap on probe rows written (0 = unlimited; applied per block, so the count can overshoot by up to 60 rows)"
+{
+  0:* :: "0 disables the cap"
+} 200000

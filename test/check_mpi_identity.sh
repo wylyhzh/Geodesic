@@ -98,7 +98,7 @@ else
     for n in 2 4; do
         echo "--- 1 vs $n rank(s) ---" >&2
         diff "${dumps[1]}" "${dumps[$n]}" | head -4 >&2
-        echo "    columns: t x y z ut ux uy uz tau" >&2
+        echo "    columns: t x y z ut ux uy uz tau [cctk_time]" >&2
         maxcoldiff "${dumps[1]}" "${dumps[$n]}" >&2
     done
     exit 1

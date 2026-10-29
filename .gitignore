@@ -28,5 +28,5 @@ doc/*.log
 doc/*.out
 doc/documentation.pdf
 
-# pre-halo regression reference backups
-*.bak-prehalo
+# regression reference backups taken before re-running a test
+*.bak-*
