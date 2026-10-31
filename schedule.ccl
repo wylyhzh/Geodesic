@@ -52,7 +52,7 @@ schedule Geodesics_init at CCTK_INITIAL
 # group is REAL and CONSTANT, while ADMBase declares INT SCALAR groups such
 # as shift_state.  If you run with presync_mode != "off", add the ADMBase
 # READS back for the grid samplers (l27, local27, aei, carpet).
-schedule geodesics_integrate at CCTK_POSTSTEP
+schedule Geodesics_integrate at CCTK_POSTSTEP
 {
   LANG: C
 } "Integrate particle geodesic motion (u^mu renormalization, loss policy)"
@@ -75,7 +75,7 @@ schedule Geodesics_init_carpetx at CCTK_INITIAL
   OPTIONS: GLOBAL
 } "Initialize particle tracker (CarpetX global-mode entry)"
 
-schedule geodesics_integrate_carpetx at CCTK_POSTSTEP
+schedule Geodesics_integrate_carpetx at CCTK_POSTSTEP
 {
   LANG: C
   OPTIONS: GLOBAL
@@ -95,7 +95,7 @@ if (particle_n_total)
 # checkpointing IO thorn is actually in the run.
 if (CCTK_IsThornActive("CarpetIOHDF5") || CCTK_IsThornActive("CarpetIOF5"))
 {
-  schedule geodesics_dump_markpoint at CCTK_CHECKPOINT
+  schedule Geodesics_dump_markpoint at CCTK_CHECKPOINT
   {
     LANG: C
     OPTIONS: meta
@@ -104,7 +104,7 @@ if (CCTK_IsThornActive("CarpetIOHDF5") || CCTK_IsThornActive("CarpetIOF5"))
 
 # Not meta: the alignment decision needs the recovered particle state, which a
 # meta function never receives (all grid-function arguments are NULL there).
-schedule geodesics_dump_recover at CCTK_POST_RECOVER_VARIABLES
+schedule Geodesics_dump_recover at CCTK_POST_RECOVER_VARIABLES
 {
   LANG: C
 } "Rewind the particle dump file to the recovered checkpoint"

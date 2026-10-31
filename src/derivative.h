@@ -22,10 +22,10 @@
   derivative.h -- metric/Christoffel helpers for the Geodesic thorn:
     - MtxA: 27x27 coefficient matrix of the 27-point Lagrange interpolant
     - gdn_derivatives / tg4dn: exact Kerr-Schild metric and derivatives
-      (metric parameters come from the global thorn state gstate)
+      (metric parameters come from the global thorn state Geodesic_gstate)
     - g4dn: grid metric access at a given time level, through the
       per-thread level view gview
-  Included only by Geodesic_integrate.c; it references the gstate and
+  Included only by Geodesic_integrate.c; it references the Geodesic_gstate and
   gview objects defined there.
 */
 
@@ -36,7 +36,7 @@ static CCTK_REAL g4dn(CCTK_INT tl, CCTK_INT j1, CCTK_INT j2, CCTK_INT ix, CCTK_I
 /* MtxA: 27x27 coefficient matrix of the 27-point Lagrange interpolant.
    Nodes {-1,0,1} per axis (centered stencil; middle node = center cell center,
    matching the cell-center sample positions). row = monomial index (same order
-   as cf2_func/poly27_eval), col = iz*9+iy*3+ix (x fastest). */
+   as Geodesic_cf2_func/poly27_eval), col = iz*9+iy*3+ix (x fastest). */
 static const CCTK_REAL MtxA[27][27] = {{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
                          0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
                          {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0/2.0, 0.0,
@@ -112,7 +112,7 @@ static CCTK_REAL gdn_derivatives(CCTK_INT d, CCTK_REAL x, CCTK_REAL y, CCTK_REAL
   CCTK_REAL ret, a;
   CCTK_INT k1, k2;
   ret = 0.0;
-  a = gstate.ksa;
+  a = Geodesic_gstate.ksa;
   if (j1 > j2)
   {
     k1 = j2;
@@ -136,13 +136,13 @@ static CCTK_REAL gdn_derivatives(CCTK_INT d, CCTK_REAL x, CCTK_REAL y, CCTK_REAL
               z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y -
               z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y -
               z*z))))*(-1.0*(a*a - x*x - y*y - z*z)*x/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 
-              1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
-              z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))) + 3.0*sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-1.0*(a*a - x*x - y*y - z*z)*x/sqrt(4.0*a*a*z*z + 
-              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*x)*gstate.ksm/(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm/(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))));
       }else if (d == 2)
@@ -151,29 +151,29 @@ static CCTK_REAL gdn_derivatives(CCTK_INT d, CCTK_REAL x, CCTK_REAL y, CCTK_REAL
               z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y -
               z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y -
               z*z))))*(-1.0*(a*a - x*x - y*y - z*z)*y/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 
-              1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
-              z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))) + 3.0*sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-1.0*(a*a - x*x - y*y - z*z)*y/sqrt(4.0*a*a*z*z + 
-              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm/(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm/(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))));
       }else if (d == 3)
       {
-        ret = -4.0*(gstate.ksa*gstate.ksa*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
+        ret = -4.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
               x*x - y*y - z*z)))*(1.0*z + 0.25*(8.0*a*a*z - 4*(a*a - x*x - y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - 
               y*y - z*z)*(a*a - x*x - y*y - z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
-              x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 
+              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 
               0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 
               0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))) + 3.0*sqrt(-0.50*a*a + 
-              0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*gstate.ksm*(1.0*z + 
+              0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*Geodesic_gstate.ksm*(1.0*z + 
               0.25*(8.0*a*a*z - 4*(a*a - x*x - y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
-              z*z)))/(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              z*z)))/(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z))));
       }
@@ -184,109 +184,109 @@ static CCTK_REAL gdn_derivatives(CCTK_INT d, CCTK_REAL x, CCTK_REAL y, CCTK_REAL
         ret = -4.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
               z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y -
               z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - 
-              y*y - z*z))))*(gstate.ksa*y + sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              y*y - z*z))))*(Geodesic_gstate.ksa*y + sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*x)*(-1.0*(a*a - x*x - y*y - z*z)*x/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - 
-              y*y - z*z)) + 1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
+              y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
               x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
-              x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
+              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
               0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) + 3.0*sqrt(-0.50*a*a + 0.50*x*x + 
-              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(gstate.ksa*y + sqrt(-0.50*a*a + 
+              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*y + sqrt(-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*x)*(-1.0*(a*a - 
-              x*x - y*y - z*z)*x/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + 
+              x*x - y*y - z*z)*x/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
               (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
               z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y -
-              z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
+              z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
               x*x - y*y - z*z)))) - 2.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - 
-              y*y - z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*y + sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              y*y - z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*y + sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*x)*(-1.0*(a*a - x*x - y*y - z*z)*x/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
-              z*z)*(a*a - x*x - y*y - z*z)) + 1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              z*z)*(a*a - x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-              0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 
+              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+              0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
               0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) + 1.0*(-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*sqrt((-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*((-1.0*(a*a - 
               x*x - y*y - z*z)*x/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*x)*x/sqrt(-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))) + 
               2*sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
-              z*z))))*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              z*z))))*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
-              z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
+              z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
               x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))));
       }else if (d == 2)
       {
         ret = -4.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
               z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y -
               z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - 
-              y*y - z*z))))*(gstate.ksa*y + sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              y*y - z*z))))*(Geodesic_gstate.ksa*y + sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*x)*(-1.0*(a*a - x*x - y*y - z*z)*y/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
-              x*x - y*y - z*z)) + 1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
-              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
+              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
               0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) + 1.0*(-0.50*a*a + 0.50*x*x + 
               0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*sqrt((-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
               z*z))))*((-1.0*(a*a - x*x - y*y - z*z)*y/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 
               1.0*y)*x/sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
-              x*x - y*y - z*z))) + 2*gstate.ksa)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              x*x - y*y - z*z))) + 2*Geodesic_gstate.ksa)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
-              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) + 3.0*sqrt(-0.50*a*a + 0.50*x*x + 
-              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(gstate.ksa*y + sqrt(-0.50*a*a + 
+              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*y + sqrt(-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*x)*(-1.0*(a*a - 
-              x*x - y*y - z*z)*y/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + 
+              x*x - y*y - z*z)*y/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
               (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
               z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - 
-              y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))) - 2.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
               x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
-              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*y + sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*y + sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*x)*(-1.0*(a*a - x*x - y*y - 
-              z*z)*y/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 
+              z*z)*y/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + 
-              gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
-              z*z)))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
+              Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
+              z*z)))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
               x*x - y*y - z*z))));
       }else if (d == 3)
       {
         ret = 1.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - 
-              y*y - z*z)))*gstate.ksm*x*(1.0*z + 0.25*(8.0*a*a*z - 4*(a*a - x*x - y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
-              z*z)*(a*a - x*x - y*y - z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              y*y - z*z)))*Geodesic_gstate.ksm*x*(1.0*z + 0.25*(8.0*a*a*z - 4*(a*a - x*x - y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              z*z)*(a*a - x*x - y*y - z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
-              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) - 4.0*(gstate.ksa*gstate.ksa*z + (-0.50*a*a + 
+              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) - 4.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z + (-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(1.0*z + 
               0.25*(8.0*a*a*z - 4*(a*a - x*x - y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
               z*z))))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - 
               y*y - z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
-              x*x - y*y - z*z))))*(gstate.ksa*y + sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - 
-              y*y - z*z)*(a*a - x*x - y*y - z*z)))*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              x*x - y*y - z*z))))*(Geodesic_gstate.ksa*y + sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - 
+              y*y - z*z)*(a*a - x*x - y*y - z*z)))*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 
-              0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 
+              0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + 
-              gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) +
+              Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) +
               3.0*sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
-              z*z)))*(gstate.ksa*y + sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
-              x*x - y*y - z*z)))*x)*gstate.ksm*(1.0*z + 0.25*(8.0*a*a*z - 4*(a*a - x*x - y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
-              z*z)*(a*a - x*x - y*y - z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              z*z)))*(Geodesic_gstate.ksa*y + sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
+              x*x - y*y - z*z)))*x)*Geodesic_gstate.ksm*(1.0*z + 0.25*(8.0*a*a*z - 4*(a*a - x*x - y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              z*z)*(a*a - x*x - y*y - z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
-              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) - 2.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 
               0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 
-              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*y + sqrt(-0.50*a*a + 
-              0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*x)*gstate.ksm*(1.0*z +
+              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*y + sqrt(-0.50*a*a + 
+              0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*x)*Geodesic_gstate.ksm*(1.0*z +
               0.25*(8.0*a*a*z - 4*(a*a - x*x - y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
-              z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - 
-              y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
-              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))));
       }
     } else if (k2 == 2)
@@ -296,109 +296,109 @@ static CCTK_REAL gdn_derivatives(CCTK_INT d, CCTK_REAL x, CCTK_REAL y, CCTK_REAL
         ret = 4.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
               z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y -
               z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - 
-              y*y - z*z))))*(gstate.ksa*x - sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              y*y - z*z))))*(Geodesic_gstate.ksa*x - sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*y)*(-1.0*(a*a - x*x - y*y - z*z)*x/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - 
-              y*y - z*z)) + 1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
+              y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
               x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
-              x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 
-              0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 
+              0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) - 
               3.0*sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - 
-              y*y - z*z)))*(gstate.ksa*x - sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              y*y - z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*y)*(-1.0*(a*a - x*x - y*y - z*z)*x/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
-              x*x - y*y - z*z)) + 1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
-              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) + 2.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 
               0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 
-              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*x - 
+              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - 
               sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y -
               z*z)))*y)*(-1.0*(a*a - x*x - y*y - z*z)*x/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 
-              1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - 
-              y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
-              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) + 1.0*(-0.50*a*a + 0.50*x*x + 
               0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*sqrt((-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*((-1.0*(a*a - 
               x*x - y*y - z*z)*x/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*x)*y/sqrt(-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))) - 
-              2*gstate.ksa)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - 
+              2*Geodesic_gstate.ksa)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - 
               y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
-              x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))));
        }else if (d == 2)
       {
         ret = 4.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
               z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y -
               z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - 
-              y*y - z*z))))*(gstate.ksa*x - sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              y*y - z*z))))*(Geodesic_gstate.ksa*x - sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*y)*(-1.0*(a*a - x*x - y*y - z*z)*y/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
-              x*x - y*y - z*z)) + 1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
-              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
+              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
               0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) - 3.0*sqrt(-0.50*a*a + 0.50*x*x + 
-              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(gstate.ksa*x - sqrt(-0.50*a*a + 
+              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*y)*(-1.0*(a*a - 
-              x*x - y*y - z*z)*y/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + 
+              x*x - y*y - z*z)*y/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
               (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
               z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y -
-              z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
+              z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
               x*x - y*y - z*z)))) + 2.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - 
-              y*y - z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*x - sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              y*y - z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*y)*(-1.0*(a*a - x*x - y*y - z*z)*y/sqrt(4.0*a*a*z*z + (a*a - x*x - 
-              y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 
-              0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 
-              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + gstate.ksa*gstate.ksa + 
+              0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) + 
               1.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y -
               z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - 
               y*y - z*z))))*((-1.0*(a*a - x*x - y*y - z*z)*y/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 
               1.0*y)*y/sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - 
               y*y - z*z))) + 2*sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
-              x*x - y*y - z*z))))*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
+              x*x - y*y - z*z))))*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
               x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
-              x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))));
       }else if (d == 3)
       {
         ret = 1.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y -
-              z*z)))*gstate.ksm*y*(1.0*z + 0.25*(8.0*a*a*z - 4*(a*a - x*x - y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
-              x*x - y*y - z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - 
+              z*z)))*Geodesic_gstate.ksm*y*(1.0*z + 0.25*(8.0*a*a*z - 4*(a*a - x*x - y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
+              x*x - y*y - z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - 
               y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - 
-              y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
-              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) + 4.0*(gstate.ksa*gstate.ksa*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+              y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) + 4.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(1.0*z + 0.25*(8.0*a*a*z - 4*(a*a - x*x - 
               y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 
               0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 
-              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*x - 
+              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - 
               sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
-              z*z)))*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              z*z)))*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
-              z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
-              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) - 3.0*sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 
-              0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(gstate.ksa*x - sqrt(-0.50*a*a + 0.50*x*x + 
-              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*y)*gstate.ksm*(1.0*z + 
+              0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*a*a + 0.50*x*x + 
+              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*y)*Geodesic_gstate.ksm*(1.0*z + 
               0.25*(8.0*a*a*z - 4*(a*a - x*x - y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
-              z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
-              z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
+              z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - 
               x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))) + 2.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*sqrt((-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
-              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*x - sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*y)*gstate.ksm*(1.0*z + 0.25*(8.0*a*a*z - 4*(a*a - 
-              x*x - y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 
+              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - sqrt(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*y)*Geodesic_gstate.ksm*(1.0*z + 0.25*(8.0*a*a*z - 4*(a*a - 
+              x*x - y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 
               0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + 
-              gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
-              z*z)))*(-0.50*a*a + gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
+              Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
+              z*z)))*(-0.50*a*a + Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
               x*x - y*y - z*z))));
       }
     } else if (k2 == 3)
@@ -408,12 +408,12 @@ static CCTK_REAL gdn_derivatives(CCTK_INT d, CCTK_REAL x, CCTK_REAL y, CCTK_REAL
         ret = -4.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
               z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y -
               z*z)))*(-1.0*(a*a - x*x - y*y - z*z)*x/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 
-              1.0*x)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              1.0*x)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
-              z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))) + 2.0*(-1.0*(a*a - x*x - y*y - z*z)*x/sqrt(4.0*a*a*z*z + (a*a - x*x - 
-              y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*x)*gstate.ksm*z/(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm*z/(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))));
       }else if (d == 2)
@@ -421,29 +421,29 @@ static CCTK_REAL gdn_derivatives(CCTK_INT d, CCTK_REAL x, CCTK_REAL y, CCTK_REAL
         ret = -4.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
               z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y -
               z*z)))*(-1.0*(a*a - x*x - y*y - z*z)*y/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 
-              1.0*y)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              1.0*y)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
-              z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
+              z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
               (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))) + 2.0*(-1.0*(a*a - x*x - y*y - z*z)*y/sqrt(4.0*a*a*z*z + (a*a - 
-              x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm*z/(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+              x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm*z/(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))));
       }else if (d == 3)
       {
-        ret = -4.0*(gstate.ksa*gstate.ksa*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
+        ret = -4.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - 
               x*x - y*y - z*z)))*(1.0*z + 0.25*(8.0*a*a*z - 4*(a*a - x*x - y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z))))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - 
-              y*y - z*z)*(a*a - x*x - y*y - z*z)))*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+              y*y - z*z)*(a*a - x*x - y*y - z*z)))*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 
+              0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 
               0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 
-              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))) + 2.0*gstate.ksm*(1.0*z + 
+              0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))))) + 2.0*Geodesic_gstate.ksm*(1.0*z + 
               0.25*(8.0*a*a*z - 4*(a*a - x*x - y*y - z*z)*z)/sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - 
-              z*z)))*z/(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
+              z*z)))*z/(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - 
               z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - 
               y*y - z*z)*(a*a - x*x - y*y - z*z)))) + 2.0*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + 
-              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*gstate.ksm/(gstate.ksa*gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+              (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*Geodesic_gstate.ksm/(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*a*a + 0.50*x*x + 0.50*y*y + 0.50*z*z +
               0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z)))*(-0.50*a*a + 0.50*x*x + 0.50*y*y + 
               0.50*z*z + 0.50*sqrt(4.0*a*a*z*z + (a*a - x*x - y*y - z*z)*(a*a - x*x - y*y - z*z))));
       }
@@ -454,449 +454,449 @@ static CCTK_REAL gdn_derivatives(CCTK_INT d, CCTK_REAL x, CCTK_REAL y, CCTK_REAL
     {
       if (d == 1)
       {
-        ret = -4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*
-            (gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*
-            sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + 
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 3.0*sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + 
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 
-            4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(gstate.ksa*y + 
-            sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 2.0*(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*((-1.0*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*
-            x/sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))) + 2*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = -4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*
+            (Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*
+            sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 3.0*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 
+            4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(Geodesic_gstate.ksa*y + 
+            sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 2.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*((-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*
+            x/sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))) + 2*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       } else if (d == 2)
       {
-        ret = -4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)) + 1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))) + 2.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*((-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*x/sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))) + 
-            2*gstate.ksa)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 
-            3.0*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + 
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*y + 
-            sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*x)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
+        ret = -4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)) + 1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))) + 2.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*((-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*x/sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))) + 
+            2*Geodesic_gstate.ksa)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 
+            3.0*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*y + 
+            sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*x)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
             x*x - y*y - z*z))));
       } else if (d == 3)
       {
-        ret = 2.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*gstate.ksm*x*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 4.0*(gstate.ksa*gstate.ksa*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 
-            4*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z))))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 3.0*sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(gstate.ksa*y +
-            sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)))*x)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*gstate.ksm*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*y + 
-            sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*x)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*gstate.ksm*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = 2.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*Geodesic_gstate.ksm*x*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 4.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 
+            4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z))))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 3.0*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*y +
+            sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)))*x)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*Geodesic_gstate.ksm*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*y + 
+            sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*x)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*Geodesic_gstate.ksm*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       }
     }else if (k2 == 2)
     {
       if (d == 1)
       {
-        ret = 4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*y)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z +
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 3.0*sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + 
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 4.0*(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y -
-            z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)) + 1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))) - 1.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y -
-            z*z)))*y)*((-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)) + 1.0*x)*x/sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))) + 2*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + 
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 1.0*(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y -
-            z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*((-1.0*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*y/sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z))) - 2*gstate.ksa)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = 4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*y)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z +
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 3.0*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y -
+            z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))) - 1.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y -
+            z*z)))*y)*((-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)) + 1.0*x)*x/sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))) + 2*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 1.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y -
+            z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*((-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*y/sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z))) - 2*Geodesic_gstate.ksa)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       } else if (d == 2)
       {
-        ret = 4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)) + 1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) -
-            1.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y -
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*((-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*x/sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))) + 
-            2*gstate.ksa)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 
-            3.0*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + 
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - 
-            sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*y)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 1.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*y + 
-            sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*x)*((-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)) + 1.0*y)*y/sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))) + 2*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = 4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)) + 1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) -
+            1.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y -
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*((-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*x/sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))) + 
+            2*Geodesic_gstate.ksa)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 
+            3.0*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - 
+            sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 1.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*y + 
+            sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*x)*((-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)) + 1.0*y)*y/sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))) + 2*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       } else if (d == 3)
       {
-        ret = -1.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*gstate.ksm*x*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 1.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*x)*gstate.ksm*y*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 
-            4.0*(gstate.ksa*gstate.ksa*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - 
-            sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*y)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + 
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 3.0*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*y)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*gstate.ksm*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - 
-            sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*y)*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*gstate.ksm*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = -1.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*Geodesic_gstate.ksm*x*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 1.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*x)*Geodesic_gstate.ksm*y*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 
+            4.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - 
+            sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 3.0*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*y)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*Geodesic_gstate.ksm*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - 
+            sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*Geodesic_gstate.ksm*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       }
     } else if (k2 == 3)
     {
       if (d == 1)
       {
-        ret = -4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 2.0*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)) + 1.0*x)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 2.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(gstate.ksa*y + 
-            sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)) + 1.0*x)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 
-            1.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*((-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)) + 1.0*x)*x/sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))) + 2*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + 
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = -4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 2.0*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)) + 1.0*x)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 2.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*y + 
+            sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 
+            1.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*((-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)) + 1.0*x)*x/sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))) + 2*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       } else if (d == 2)
       {
-        ret = -4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 1.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*((-1.0*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 
-            1.0*y)*x/sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))) + 2*gstate.ksa)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 2.0*(gstate.ksa*y +
-            sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)) + 1.0*y)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 2.0*(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = -4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 1.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*((-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 
+            1.0*y)*x/sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))) + 2*Geodesic_gstate.ksa)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 2.0*(Geodesic_gstate.ksa*y +
+            sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 2.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       } else if (d == 3)
       {
-        ret = 1.0*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*gstate.ksm*x*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 4.0*(gstate.ksa*gstate.ksa*z +
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)))*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 2.0*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*x)*gstate.ksm*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y -
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 
-            2.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*x)*gstate.ksm*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 2.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(gstate.ksa*y + sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = 1.0*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*Geodesic_gstate.ksm*x*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 4.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z +
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)))*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 2.0*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*x)*Geodesic_gstate.ksm*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y -
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 
+            2.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*x)*Geodesic_gstate.ksm*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 2.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*y + sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       }
     }
   } else if (k1 == 2)
@@ -905,261 +905,261 @@ static CCTK_REAL gdn_derivatives(CCTK_INT d, CCTK_REAL x, CCTK_REAL y, CCTK_REAL
     {
       if (d == 1)
       {
-        ret = -4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*y)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)) + 1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) +
-            3.0*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + 
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - 
-            sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*y)*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))) - 2.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*((-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*y/sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))) - 
-            2*gstate.ksa)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = -4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*y)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)) + 1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) +
+            3.0*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - 
+            sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))) - 2.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*((-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*y/sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))) - 
+            2*Geodesic_gstate.ksa)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       } else if (d == 2)
       {
-        ret = -4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*y)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)) + 1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) +
-            3.0*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + 
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - 
-            sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*y)*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 2.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y -
-            z*z)))*y)*((-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)) + 1.0*y)*y/sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))) + 2*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
+        ret = -4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*y)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)) + 1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) +
+            3.0*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - 
+            sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 2.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y -
+            z*z)))*y)*((-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)) + 1.0*y)*y/sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))) + 2*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
             x*x - y*y - z*z))));
       } else if (d == 3)
       {
-        ret = -2.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*gstate.ksm*y*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 4.0*(gstate.ksa*gstate.ksa*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 
-            4*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z))))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y -
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 3.0*sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*gstate.ksm*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 
-            4*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 4.0*(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y -
-            z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*gstate.ksm*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 
-            4*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = -2.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*Geodesic_gstate.ksm*y*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 4.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 
+            4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z))))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y -
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 3.0*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*Geodesic_gstate.ksm*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 
+            4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y -
+            z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*Geodesic_gstate.ksm*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 
+            4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       }
     } else if (k2 == 3)
     {
       if (d == 1)
       {
-        ret = 4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 2.0*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*y)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)) + 1.0*x)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 2.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(gstate.ksa*x - 
-            sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*y)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)) + 1.0*x)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 
-            1.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*((-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)) + 1.0*x)*y/sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))) - 2*gstate.ksa)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = 4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 2.0*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*y)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)) + 1.0*x)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 2.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*x - 
+            sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*y)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 
+            1.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*((-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)) + 1.0*x)*y/sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))) - 2*Geodesic_gstate.ksa)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       } else if (d == 2)
       {
-        ret = 4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z +
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 2.0*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + 
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 2.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 
-            1.0*y)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 1.0*(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*((-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)) + 1.0*y)*y/sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))) + 2*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = 4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z +
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 2.0*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 2.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 
+            1.0*y)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 1.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*((-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)) + 1.0*y)*y/sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))) + 2*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       } else if (d == 3)
       {
-        ret = 1.0*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*gstate.ksm*y*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 4.0*(gstate.ksa*gstate.ksa*z +
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)))*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*gstate.ksm*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 2.0*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*y)*gstate.ksm*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y -
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 
-            2.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*y)*gstate.ksm*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) - 2.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(gstate.ksa*x - sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*y)*gstate.ksm/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = 1.0*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*Geodesic_gstate.ksm*y*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 4.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z +
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)))*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*Geodesic_gstate.ksm*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 2.0*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*y)*Geodesic_gstate.ksm*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y -
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 
+            2.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*y)*Geodesic_gstate.ksm*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) - 2.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(Geodesic_gstate.ksa*x - sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*y)*Geodesic_gstate.ksm/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       }
     }
   } else if (k1 == 3)
@@ -1168,53 +1168,53 @@ static CCTK_REAL gdn_derivatives(CCTK_INT d, CCTK_REAL x, CCTK_REAL y, CCTK_REAL
     {
       if (d == 1)
       {
-        ret = -4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y -
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*gstate.ksm*z*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + 
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))) + 1.0*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y -
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*gstate.ksm*z*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = -4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y -
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm*z*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))) + 1.0*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*x/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y -
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*x)*Geodesic_gstate.ksm*z*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       } else if (d == 2)
       {
-        ret = -4.0*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)))*sqrt((-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y -
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm*z*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + 
-            (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))) + 1.0*(-1.0*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - 
-            y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*gstate.ksm*z*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*sqrt(-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = -4.0*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)))*sqrt((-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y -
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm*z*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))) + 1.0*(-1.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*y/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - 
+            y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)) + 1.0*y)*Geodesic_gstate.ksm*z*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       } else if (d == 3)
       {
-        ret = -4.0*(gstate.ksa*gstate.ksa*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
-            0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*gstate.ksm*z*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z))))*(gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))))) + 1.0*gstate.ksm*(1.0*z + 0.25*(8.0*gstate.ksa*gstate.ksa*z - 4*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)*z)/sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*z*z/((gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 
-            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - 
-            z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - 
-            x*x - y*y - z*z))))*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y -
-            z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))) + 4.0*sqrt(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + 
-            (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*gstate.ksm*z/(gstate.ksa*gstate.ksa*z*z + (-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 0.50*y*y + 
-            0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z)))*(-0.50*gstate.ksa*gstate.ksa + 0.50*x*x + 
-            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*gstate.ksa*gstate.ksa*z*z + (gstate.ksa*gstate.ksa - x*x - y*y - z*z)*(gstate.ksa*gstate.ksa - x*x - y*y - z*z))));
+        ret = -4.0*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z +
+            0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*Geodesic_gstate.ksm*z*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z))))*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))))) + 1.0*Geodesic_gstate.ksm*(1.0*z + 0.25*(8.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z - 4*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)*z)/sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*z*z/((Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 
+            0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - 
+            z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - 
+            x*x - y*y - z*z))))*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y -
+            z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))) + 4.0*sqrt(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + 
+            (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*Geodesic_gstate.ksm*z/(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 0.50*y*y + 
+            0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)))*(-0.50*Geodesic_gstate.ksa*Geodesic_gstate.ksa + 0.50*x*x + 
+            0.50*y*y + 0.50*z*z + 0.50*sqrt(4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z + (Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa - x*x - y*y - z*z))));
       }
     }
   }
@@ -1224,81 +1224,81 @@ static CCTK_REAL gdn_derivatives(CCTK_INT d, CCTK_REAL x, CCTK_REAL y, CCTK_REAL
 static CCTK_REAL tsgtt(CCTK_REAL t, CCTK_REAL x, CCTK_REAL y, CCTK_REAL z)
 {
   CCTK_REAL r1, r;
-  r1 = x*x+y*y+z*z-gstate.ksa*gstate.ksa;
-  r = sqrt((sqrt(r1*r1+4.0*gstate.ksa*gstate.ksa*z*z)+r1)/2.0);
-  return (2.0*gstate.ksm*r*r*r/(gstate.ksa*gstate.ksa*z*z+r*r*r*r)-1.0);
+  r1 = x*x+y*y+z*z-Geodesic_gstate.ksa*Geodesic_gstate.ksa;
+  r = sqrt((sqrt(r1*r1+4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z)+r1)/2.0);
+  return (2.0*Geodesic_gstate.ksm*r*r*r/(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z+r*r*r*r)-1.0);
 }
 
 static CCTK_REAL tsgtx(CCTK_REAL t, CCTK_REAL x, CCTK_REAL y, CCTK_REAL z)
 {
   CCTK_REAL r1, r;
-  r1 = x*x+y*y+z*z-gstate.ksa*gstate.ksa;
-  r = sqrt((sqrt(r1*r1+4.0*gstate.ksa*gstate.ksa*z*z)+r1)/2.0);
-  return (2.0*gstate.ksm*r*r*r*(gstate.ksa*y+r*x)/((gstate.ksa*gstate.ksa+r*r)*(gstate.ksa*gstate.ksa*z*z+r*r*r*r)));
+  r1 = x*x+y*y+z*z-Geodesic_gstate.ksa*Geodesic_gstate.ksa;
+  r = sqrt((sqrt(r1*r1+4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z)+r1)/2.0);
+  return (2.0*Geodesic_gstate.ksm*r*r*r*(Geodesic_gstate.ksa*y+r*x)/((Geodesic_gstate.ksa*Geodesic_gstate.ksa+r*r)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z+r*r*r*r)));
 }
 
 static CCTK_REAL tsgty(CCTK_REAL t, CCTK_REAL x, CCTK_REAL y, CCTK_REAL z)
 {
   CCTK_REAL r1, r;
-  r1 = x*x+y*y+z*z-gstate.ksa*gstate.ksa;
-  r = sqrt((sqrt(r1*r1+4.0*gstate.ksa*gstate.ksa*z*z)+r1)/2.0);
-  return (2.0*gstate.ksm*r*r*r*(r*y-gstate.ksa*x)/((gstate.ksa*gstate.ksa+r*r)*(gstate.ksa*gstate.ksa*z*z+r*r*r*r)));
+  r1 = x*x+y*y+z*z-Geodesic_gstate.ksa*Geodesic_gstate.ksa;
+  r = sqrt((sqrt(r1*r1+4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z)+r1)/2.0);
+  return (2.0*Geodesic_gstate.ksm*r*r*r*(r*y-Geodesic_gstate.ksa*x)/((Geodesic_gstate.ksa*Geodesic_gstate.ksa+r*r)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z+r*r*r*r)));
 }
 
 static CCTK_REAL tsgtz(CCTK_REAL t, CCTK_REAL x, CCTK_REAL y, CCTK_REAL z)
 {
   CCTK_REAL r1, r;
-  r1 = x*x+y*y+z*z-gstate.ksa*gstate.ksa;
-  r = sqrt((sqrt(r1*r1+4.0*gstate.ksa*gstate.ksa*z*z)+r1)/2.0);
-  return (2.0*gstate.ksm*r*r*z/(gstate.ksa*gstate.ksa*z*z+r*r*r*r));
+  r1 = x*x+y*y+z*z-Geodesic_gstate.ksa*Geodesic_gstate.ksa;
+  r = sqrt((sqrt(r1*r1+4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z)+r1)/2.0);
+  return (2.0*Geodesic_gstate.ksm*r*r*z/(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z+r*r*r*r));
 }
 
 static CCTK_REAL tsgxx(CCTK_REAL t, CCTK_REAL x, CCTK_REAL y, CCTK_REAL z)
 {
   CCTK_REAL r1, r;
-  r1 = x*x+y*y+z*z-gstate.ksa*gstate.ksa;
-  r = sqrt((sqrt(r1*r1+4.0*gstate.ksa*gstate.ksa*z*z)+r1)/2.0);
-  return (2.0*gstate.ksm*r*r*r*(gstate.ksa*y+r*x)*(gstate.ksa*y+r*x)/((gstate.ksa*gstate.ksa+r*r)*(gstate.ksa*gstate.ksa+r*r)*(gstate.ksa*gstate.ksa*z*z+r*r*r*r))+1.0);
+  r1 = x*x+y*y+z*z-Geodesic_gstate.ksa*Geodesic_gstate.ksa;
+  r = sqrt((sqrt(r1*r1+4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z)+r1)/2.0);
+  return (2.0*Geodesic_gstate.ksm*r*r*r*(Geodesic_gstate.ksa*y+r*x)*(Geodesic_gstate.ksa*y+r*x)/((Geodesic_gstate.ksa*Geodesic_gstate.ksa+r*r)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa+r*r)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z+r*r*r*r))+1.0);
 }
 
 static CCTK_REAL tsgyy(CCTK_REAL t, CCTK_REAL x, CCTK_REAL y, CCTK_REAL z)
 {
   CCTK_REAL r1, r;
-  r1 = x*x+y*y+z*z-gstate.ksa*gstate.ksa;
-  r = sqrt((sqrt(r1*r1+4.0*gstate.ksa*gstate.ksa*z*z)+r1)/2.0);
-  return (2.0*gstate.ksm*r*r*r*(r*y-gstate.ksa*x)*(r*y-gstate.ksa*x)/((gstate.ksa*gstate.ksa+r*r)*(gstate.ksa*gstate.ksa+r*r)*(gstate.ksa*gstate.ksa*z*z+r*r*r*r))+1.0);
+  r1 = x*x+y*y+z*z-Geodesic_gstate.ksa*Geodesic_gstate.ksa;
+  r = sqrt((sqrt(r1*r1+4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z)+r1)/2.0);
+  return (2.0*Geodesic_gstate.ksm*r*r*r*(r*y-Geodesic_gstate.ksa*x)*(r*y-Geodesic_gstate.ksa*x)/((Geodesic_gstate.ksa*Geodesic_gstate.ksa+r*r)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa+r*r)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z+r*r*r*r))+1.0);
 }
 
 static CCTK_REAL tsgzz(CCTK_REAL t, CCTK_REAL x, CCTK_REAL y, CCTK_REAL z)
 {
   CCTK_REAL r1, r;
-  r1 = x*x+y*y+z*z-gstate.ksa*gstate.ksa;
-  r = sqrt((sqrt(r1*r1+4.0*gstate.ksa*gstate.ksa*z*z)+r1)/2.0);
-  return (2.0*gstate.ksm*r*z*z/(gstate.ksa*gstate.ksa*z*z+r*r*r*r)+1.0);
+  r1 = x*x+y*y+z*z-Geodesic_gstate.ksa*Geodesic_gstate.ksa;
+  r = sqrt((sqrt(r1*r1+4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z)+r1)/2.0);
+  return (2.0*Geodesic_gstate.ksm*r*z*z/(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z+r*r*r*r)+1.0);
 }
 
 static CCTK_REAL tsgxy(CCTK_REAL t, CCTK_REAL x, CCTK_REAL y, CCTK_REAL z)
 {
   CCTK_REAL r1, r;
-  r1 = x*x+y*y+z*z-gstate.ksa*gstate.ksa;
-  r = sqrt((sqrt(r1*r1+4.0*gstate.ksa*gstate.ksa*z*z)+r1)/2.0);
-  return 2.0*gstate.ksm*r*r*r*(gstate.ksa*y+r*x)*(r*y-gstate.ksa*x)/((gstate.ksa*gstate.ksa+r*r)*(gstate.ksa*gstate.ksa+r*r)*(gstate.ksa*gstate.ksa*z*z+r*r*r*r));
+  r1 = x*x+y*y+z*z-Geodesic_gstate.ksa*Geodesic_gstate.ksa;
+  r = sqrt((sqrt(r1*r1+4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z)+r1)/2.0);
+  return 2.0*Geodesic_gstate.ksm*r*r*r*(Geodesic_gstate.ksa*y+r*x)*(r*y-Geodesic_gstate.ksa*x)/((Geodesic_gstate.ksa*Geodesic_gstate.ksa+r*r)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa+r*r)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z+r*r*r*r));
 }
 
 static CCTK_REAL tsgxz(CCTK_REAL t, CCTK_REAL x, CCTK_REAL y, CCTK_REAL z)
 {
   CCTK_REAL r1, r;
-  r1 = x*x+y*y+z*z-gstate.ksa*gstate.ksa;
-  r = sqrt((sqrt(r1*r1+4.0*gstate.ksa*gstate.ksa*z*z)+r1)/2.0);
-  return 2.0*gstate.ksm*r*r*z*(gstate.ksa*y+r*x)/((gstate.ksa*gstate.ksa+r*r)*(gstate.ksa*gstate.ksa*z*z+r*r*r*r));
+  r1 = x*x+y*y+z*z-Geodesic_gstate.ksa*Geodesic_gstate.ksa;
+  r = sqrt((sqrt(r1*r1+4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z)+r1)/2.0);
+  return 2.0*Geodesic_gstate.ksm*r*r*z*(Geodesic_gstate.ksa*y+r*x)/((Geodesic_gstate.ksa*Geodesic_gstate.ksa+r*r)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z+r*r*r*r));
 }
 
 static CCTK_REAL tsgyz(CCTK_REAL t, CCTK_REAL x, CCTK_REAL y, CCTK_REAL z)
 {
   CCTK_REAL r1, r;
-  r1 = x*x+y*y+z*z-gstate.ksa*gstate.ksa;
-  r = sqrt((sqrt(r1*r1+4.0*gstate.ksa*gstate.ksa*z*z)+r1)/2.0);
-  return 2.0*gstate.ksm*r*r*z*(r*y-gstate.ksa*x)/((gstate.ksa*gstate.ksa+r*r)*(gstate.ksa*gstate.ksa*z*z+r*r*r*r));
+  r1 = x*x+y*y+z*z-Geodesic_gstate.ksa*Geodesic_gstate.ksa;
+  r = sqrt((sqrt(r1*r1+4.0*Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z)+r1)/2.0);
+  return 2.0*Geodesic_gstate.ksm*r*r*z*(r*y-Geodesic_gstate.ksa*x)/((Geodesic_gstate.ksa*Geodesic_gstate.ksa+r*r)*(Geodesic_gstate.ksa*Geodesic_gstate.ksa*z*z+r*r*r*r));
 }
 
 static CCTK_REAL tg4dn(CCTK_REAL t, CCTK_REAL x, CCTK_REAL y, CCTK_REAL z, CCTK_INT j1, CCTK_INT j2)
@@ -1379,7 +1379,7 @@ static CCTK_REAL g4dn(CCTK_INT tl, CCTK_INT j1, CCTK_INT j2, CCTK_INT ix, CCTK_I
        the patch edge).  With the multi-process halo active the bounds are
        the halo extent, so a centred stencil across a rank face reads the
        exchanged neighbour values instead of getting NaN.  Return NaN, not
-       a finite filler: every caller (ndg4dn_tl via cf2_grid, and
+       a finite filler: every caller (Geodesic_ndg4dn_tl via Geodesic_cf2_grid, and
        pointwise_cf2_tl) feeds a Christoffel stencil that is immediately
        scanned with isfinite(), which then discards the fit for this
        particle.  A silent 0.0 would pass that scan and corrupt the

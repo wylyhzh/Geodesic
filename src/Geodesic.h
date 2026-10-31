@@ -35,9 +35,9 @@
     * CCTK_POSTSTEP is traversed by Carpet in level mode, i.e. the
       scheduled routine is called once per refinement level (per
       component).  With a single process and one centered patch per
-      level, geodesics_integrate is called once per level per
+      level, Geodesics_integrate is called once per level per
       iteration.  On each call it only stores the level's grid-function
-      data POINTERS and grid geometry into gstate.LD[map][level] (no copy).
+      data POINTERS and grid geometry into Geodesic_gstate.LD[map][level] (no copy).
       Carpet does not move grid data during one schedule traversal, and
       the particle integration happens inside the finest-level call of
       the same traversal, so the cached pointers are always valid when
@@ -60,7 +60,7 @@
       derivative.h, resolves through this view (CCTK_GFINDEX3D
       against the per-level ghost cGH stored in it).
 
-    * Multi-process AMR (gstate.multi_amr): the level-mode call pattern
+    * Multi-process AMR (Geodesic_gstate.multi_amr): the level-mode call pattern
       is unchanged (every rank is called once per level it owns) and each
       rank caches the pointers of its OWN local patch per level.  Particle
       ownership is by interior boxes: at the trigger, all ranks Allgather
@@ -72,7 +72,7 @@
       decomposition with one patch per rank per level).  The level-0
       patch-symmetry check applies to single-process runs only.
 
-    * Multi-process CarpetX (gstate.multi_cx): no ownership at all.
+    * Multi-process CarpetX (Geodesic_gstate.multi_cx): no ownership at all.
       CarpetX_InterpGridArrays redistributes the interpolation points with
       MPI collectives (AMReX Redistribute + Alltoall/Alltoallv), so every
       rank must issue the identical call sequence, and an adaptive ODE step
@@ -208,7 +208,7 @@ typedef struct PARTICLEGEODESIC
   cf2_data   (*cf2g)[3][3]; /* Christoffel symbols (2nd kind) at grid points */
   gd_data    (*gd)[3][3];   /* 4-metric g_{mu nu} at grid points */
 
-  /* ---- polynomial coefficients (27-term) for fast evaluation in func_ode ---- */
+  /* ---- polynomial coefficients (27-term) for fast evaluation in Geodesic_func_ode ---- */
   CCTK_REAL (*pcf2)[4][4][POLY27]; /* Christoffel polynomial interpolation coeffs */
   CCTK_INT  (*pcf2c)[4][4];        /* Christoffel is constant? */
 
@@ -275,7 +275,7 @@ typedef struct PARTICLEGEODESIC
 
   /* ---- per-step diagnostics: written inside the OpenMP particle loop
      (each particle by exactly one thread), aggregated single-threaded
-     after the loop in geodesics_integrate ---- */
+     after the loop in Geodesics_integrate ---- */
   CCTK_INT  renorm_warn;   /* u.u could not be renormalized this step */
   CCTK_INT  freeze_warn;   /* tau-loop iteration cap hit */
   CCTK_REAL rl_last;       /* last computed u_mu u^mu (diagnostic) */
@@ -288,7 +288,7 @@ typedef struct PARTICLEGEODESIC
      a dead particle is skipped by the integration loop forever */
   CCTK_INT  dead;
 
-  /* per-particle, set by cf2_fitting: 1 = the l27 (27-point) fit at the
+  /* per-particle, set by Geodesic_cf2_fitting: 1 = the l27 (27-point) fit at the
      current position was degenerate / invalid (all-zero or non-finite
      4-metric, or NaN-poisoned Christoffel stencil samples), so the
      official pgd/pcf2 coefficients were NOT committed (the last good fit
@@ -302,12 +302,12 @@ typedef struct PARTICLEGEODESIC
 
   /* current owning map (block).  0 = center Cartesian block for all
      particles initially.  Updated on a cross-block event; grid data is
-     read from gstate.LD[cur_map][level], and the particle's y[] in
-     func_ode is in this map's LOCAL coordinates. */
+     read from Geodesic_gstate.LD[cur_map][level], and the particle's y[] in
+     Geodesic_func_ode is in this map's LOCAL coordinates. */
   CCTK_INT  cur_map;
 
   /* Phase B (multipath): transient crossing bookkeeping.  Set inside
-     func_ode when a block boundary is crossed during this rank's
+     Geodesic_func_ode when a block boundary is crossed during this rank's
      integration of the particle; the integrator (geodesic_integrate_
      particle) reads crossed_y[] and restarts the ODE from it.  Both are
      per-particle-per-step, owned by exactly one thread, and are NOT
@@ -504,7 +504,7 @@ typedef struct {
      one-shot parse of the (run-fixed) keyword: 0 = the probe is entirely
      inert and none of its code runs.  pfp is the sidecar, opened lazily at
      the first probe row and kept open for the whole run (closed by
-     Geodesics_finalise).  probe_idx / probe_rows are the only gstate fields
+     Geodesics_finalise).  probe_idx / probe_rows are the only Geodesic_gstate fields
      written from inside the OpenMP particle loop; both are touched through
      atomics or inside the probe's critical section. */
   FILE *pfp;
@@ -514,23 +514,23 @@ typedef struct {
   CCTK_INT probe_idx;
   CCTK_INT probe_rows;
   /* Number of MultiPatch blocks.  Set in the one-shot init from
-     MultiPatch_GetMaps.  The multi-block crossing logic in func_ode is
+     MultiPatch_GetMaps.  The multi-block crossing logic in Geodesic_func_ode is
      only valid when there is more than one block; a single-block run
      (per-hole AMR, plain unigrid) has nmaps == 1 and must never enter
      locate_and_cross().  Zero until init. */
   CCTK_INT nmaps;
 } GeodesicState;
-extern GeodesicState gstate;
+extern GeodesicState Geodesic_gstate;
 
 /* CarpetX grid parameters (see carpetx_fill_geometry in
    Geodesic_integrate.c); returns -1 for an invalid domain. */
-int geodesic_carpetx_domain (double lo[3], double hi[3], int nc[3], int *ngz);
+int Geodesic_carpetx_domain (double lo[3], double hi[3], int nc[3], int *ngz);
 
-/* -------------------- Per-step ODE parameters for func_ode -------------------- */
+/* -------------------- Per-step ODE parameters for Geodesic_func_ode -------------------- */
 typedef struct ODE_DATA {
   CCTK_INT m;          /* particle index */
   CCTK_REAL bg;        /* coordinate time at the start of this Cactus step */
-  CCTK_REAL a;         /* du^t/dtau, tracked by func_ode for the tau_end prediction */
+  CCTK_REAL a;         /* du^t/dtau, tracked by Geodesic_func_ode for the tau_end prediction */
   GeodesicState *st;   /* thorn state (ODE callback boundary) */
   cGH *cctkGH;         /* Phase B: current geometry for multipatch transforms */
 } ode_data;

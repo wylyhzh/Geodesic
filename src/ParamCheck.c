@@ -63,6 +63,6 @@ void Geodesic_ParamCheck(CCTK_ARGUMENTS)
      CCTK_PARAMWARN("particle_n is larger then particle_n_total.");
   }
 
-   gstate.check_velocity = true;
+   Geodesic_gstate.check_velocity = true;
 }
 
