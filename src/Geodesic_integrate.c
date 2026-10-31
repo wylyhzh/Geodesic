@@ -6387,12 +6387,11 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
      level-0 cells per step -- far beyond the 4-cell halo -- so a
      single-pass integration would run the 6th-order stencil out of
      the owner rank's local arrays.  The step is therefore split into
-     chunks.  Within a chunk every live particle stays strictly
-     inside its owner's interior box (the chunk is at most a quarter
-     of the distance-to-edge over the chunk-start speed, so the
-     particle cannot reach the edge even if its speed grows a few
-     times), which keeps the 3x3x3 stencil plus the 6th-order FD
-     padding in bounds on the owner's arrays.  At each chunk
+     chunks.  Within a chunk every live particle stays inside its
+     owner's claim box widened by the claim margin (the chunk is the
+     distance-to-that-face over the chunk-start speed), and the
+     chunk-boundary re-owning moves it to the next owner; the halo
+     exchange covers the margin band.  At each chunk
      boundary the full state is exchanged (S2-style sync) and the
      owner map is recomputed from the synced positions (the interior
      boxes are fixed during the step, so the Phase 1 gathered boxes
@@ -6416,7 +6415,17 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
       const int npr = CCTK_nProcs(cctkGH);
       const int me  = CCTK_MyProc(cctkGH);
       const int nlev = geodesic_amr_levels;
-      const double margin = 0.25;    /* chunk = margin x distance-to-edge / speed */
+      /* chunk = chunk_lookahead x (distance to the owner's box face / speed).
+         This must NOT be well below 1: with 0.25 the chunk ends a quarter of
+         the way to the face, so the remaining distance shrinks by 25% per
+         chunk and a single face approach costs ~20 chunks (measured: 480
+         chunks per Cactus step on the three-level AMR ellipse setup, 8x the
+         single-rank wall clock).  At 1.0 the particle reaches the face at the
+         chunk end and the boundary re-owning hands it on, i.e. one chunk per
+         crossing.  Landing on the face is safe: the claim box for l>=1 is
+         already the safe region (r_lbnd/r_ubnd), and the halo exchange widens
+         the reachable window beyond it by halo_cov cells. */
+      const double chunk_lookahead = 1.0;
 
       /* all live particles share the same coordinate time at the
          step start (step-boundary invariant); t0 is that value */
@@ -6502,7 +6511,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
                     me, mi, r, l, bo[0],bo[3], bo[1],bo[4], bo[2],bo[5], px,py,pz, vx,vy,vz, t_hit);
           if (t_hit < 1.0e299)
           {
-            const double tc = t_now + margin * t_hit;
+            const double tc = t_now + chunk_lookahead * t_hit;
             if (tc - t_now >= 1e-11 * fmax(1.0, fabs(t_target - t_now)) && tc < t_chunk)
               t_chunk = tc;
           }
