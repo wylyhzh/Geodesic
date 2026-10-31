@@ -68,13 +68,14 @@ MPI ranks and requires the dumps to agree within a 1e-6 tolerance
   bit-identical, but the chunked multi-rank integration hands a
   particle to the next owning rank at a point along its path that
   depends on the decomposition.  The deviation is bounded and
-  oscillates with the orbit rather than growing: at most 5.2e-2 in y
-  for test/circ_orbit_grid.par run at 1 vs 2 ranks over its 32 steps
-  (t <= 3200 M), and exactly 0 on extra/conv100_local27 at 1, 2 and 4
-  ranks.  On the three-level AMR setup it reaches RANKX in x and
-  RANKTAU in tau at t = 3200 M with 4 ranks.  Exact = yes is
-  rank-count independent.  Quote results at fixed rank count.  See
-  doc/documentation.tex.
+  oscillates with the orbit rather than growing: at most 7.0e-2 in y
+  (4.6e-2 in x) for test/circ_orbit_grid.par run at 1 vs 2 ranks over
+  its 32 steps (t <= 3200 M), and exactly 0 on extra/conv100_local27 at
+  1, 2 and 4 ranks.  On the three-level AMR setup a 1-vs-4-rank run
+  differs by 0.20 in x and 0.10 in tau at t = 3200 M, growing from
+  7.9e-6 after one step; the t = 0 rows of all 100 particles are
+  bit-identical there.  Exact = yes is rank-count independent.  Quote
+  results at fixed rank count.  See doc/documentation.tex.
 
 5. Contact
 
