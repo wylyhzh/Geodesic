@@ -1,0 +1,62 @@
+Cactus Code Thorn Geodesic
+Author(s)    : Yuhua Li <liyhts@yeah.net>
+Maintainer(s): Yuhua Li <liyhts@yeah.net>
+Licence      : GPLv2+.  See the COPYING file for full license terms and
+               conditions.
+--------------------------------------------------------------------------
+
+1. Purpose
+
+This thorn integrates time-like geodesics for test particles through a
+spacetime carried on the Cactus grid.  The metric is sampled from the
+grid at the particle position, the geodesic equation is integrated with
+GSL Runge-Kutta in that sampled metric, and the mass-shell constraint
+g(u,u) = -1 is re-imposed after every step.  Because the metric comes
+from the grid, the thorn works on any numerical spacetime, not only on
+analytic backgrounds.
+
+Four interchangeable metric samplers are selected by
+Geodesic::metric_interp: "l27" and "local27" (local polynomial fits to
+the grid metric, with 6th-order finite-difference Christoffel symbols),
+"aei" (AEILocalInterp pointwise Lagrange interpolation) and "carpet" /
+"carpetx" (grid-carried interpolation).  "Exact" evaluates the analytic
+Kerr-Schild metric instead, which provides a reference run independent
+of the grid.
+
+The thorn supports Carpet, CarpetX and CarpetRegrid2 multi-level AMR,
+CarpetX multi-patch grids, MPI (owner-computes particle distribution
+with collective re-owning at chunk boundaries) and OpenMP, restart from
+checkpoints, and writes a per-particle ASCII dump
+
+    t x y z ut ux uy uz tau cctk_time
+
+2. Documentation
+
+doc/documentation.tex is the ThornGuide document; README.md is the
+detailed user guide, including the numerical pitfalls found during
+development; doc/par/ holds the parameter files that reproduce every
+number in the accompanying paper.  par/example.par is a complete,
+tested example that runs on a stock Einstein Toolkit checkout.
+
+3. Tests
+
+test/ contains regression tests declared in test/test.ccl.  They are
+regression tests (bit-comparison of the particle dump against reference
+data), not convergence or physics tests.  test/check_mpi_identity.sh
+additionally checks that the particle dump is bit-identical at 1, 2 and
+4 MPI ranks.
+
+4. Known limitations
+
+- Particle state is stored in DISTRIB=CONSTANT replicated grid arrays,
+  which is appropriate for the hundreds to tens of thousands of
+  particles this thorn is designed for, not for arbitrarily large
+  ensembles.
+- In AMR setups with more than one MPI rank, a residual dependence of
+  the sampled metric on the owning rank remains under investigation;
+  unigrid runs are bit-identical across rank counts (see README.md).
+
+5. Contact
+
+Questions, bug reports and review comments to the maintainer at
+liyhts@yeah.net.
