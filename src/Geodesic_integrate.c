@@ -311,6 +311,10 @@ static void geodesic_halo_update(cGH *cctkGH, int map, int level)
   LevelData *L = &Geodesic_gstate.LD[map][level];
   const int HW = GEODESIC_HALO_W;
 
+  /* no halo on this level -> the safe region must not be widened at all */
+  for (int d = 0; d < 3; d++)
+    L->halo_cov[d][0] = L->halo_cov[d][1] = 0;
+
   if (npr <= 1 || Geodesic_gstate.sexact ||
       (Geodesic_gstate.sinterp_mode != 0 && Geodesic_gstate.sinterp_mode != 3))
     return;
@@ -424,6 +428,11 @@ static void geodesic_halo_update(cGH *cctkGH, int map, int level)
   }
 
 
+  /* halo cells actually filled just outside the raw range, per direction
+     and side; in_level_dir() widens the safe region by this much */
+  int cov[3][2];
+  cov[0][0] = cov[0][1] = cov[1][0] = cov[1][1] = cov[2][0] = cov[2][1] = 0;
+
   for (int d = 0; d < 3; d++)
   for (int s = 0; s < 2; s++)
   for (int r = 0; r < npr; r++)
@@ -489,6 +498,28 @@ static void geodesic_halo_update(cGH *cctkGH, int map, int level)
       if (o0[e] > o1[e]) { ok = 0; break; }
     }
     if (!ok) continue;
+
+    /* record how far this supplier actually reaches past our raw edge;
+       several suppliers may cover the same face, so keep the maximum */
+    if (rx_hi >= rx_lo)
+    {
+      if (s)
+      {
+        if (rx_lo <= (int)L->ubnd[d] + 1)
+        {
+          const int n = rx_hi - (int)L->ubnd[d];
+          if (n > cov[d][1]) cov[d][1] = n;
+        }
+      }
+      else
+      {
+        if (rx_hi >= (int)L->lbnd[d] - 1)
+        {
+          const int n = (int)L->lbnd[d] - rx_lo;
+          if (n > cov[d][0]) cov[d][0] = n;
+        }
+      }
+    }
 
     /* transverse overlap in our local frame (the neighbour computes the
        same global extents in its own frame; extents and counts match) */
@@ -558,6 +589,12 @@ static void geodesic_halo_update(cGH *cctkGH, int map, int level)
     }
   }
   free(sbuf); free(rbuf); free(bb);
+
+  for (int d = 0; d < 3; d++)
+  {
+    L->halo_cov[d][0] = cov[d][0];
+    L->halo_cov[d][1] = cov[d][1];
+  }
 #endif
 
   /* NaN census of the padded copies, after the face exchange has filled
@@ -620,8 +657,19 @@ static int safe_margin_cells(void)
 static int in_level_dir(const double y[], const LevelData *L, int d)
 {
   const int margin = safe_margin_cells();
-  double lo = L->origin[d] + (CCTK_REAL)margin * L->dx[d];
-  double hi = L->origin[d] + (CCTK_REAL)(L->lsh[d]-1-margin) * L->dx[d];
+  /* The read window may also use the halo band, but only as far as the MPI
+     exchange actually filled it (halo_cov, 0 single-process and on a face
+     with no same-level neighbour).  Without this, a particle sitting on a
+     rank face -- an equatorial particle on z = 0 under a 2x2 y/z
+     decomposition -- is rejected by every level whose patch ends at that
+     face whenever the stencil margin exceeds the ghost-zone depth, and is
+     pushed to a coarser level.  That rank-dependent level choice is what
+     made the initial u^t normalization (and with it the whole trajectory)
+     disagree between scalar and MPI runs. */
+  const int lo_i = margin - (int)L->halo_cov[d][0];
+  const int hi_i = (int)L->lsh[d] - 1 + (int)L->halo_cov[d][1] - margin;
+  double lo = L->origin[d] + (CCTK_REAL)lo_i * L->dx[d];
+  double hi = L->origin[d] + (CCTK_REAL)hi_i * L->dx[d];
   if (lo > hi) { lo = L->i_lbnd[d]; hi = L->i_ubnd[d]; }
   return (y[d+1] >= lo && y[d+1] <= hi);
 }
@@ -4580,8 +4628,51 @@ static void geodesic_mmpi_sync(cGH *cctkGH, const int npr, const int me, const i
    and is freed after the chunk loop, so it is valid for the whole
    integration. */
 #ifdef CCTK_MPI
+/* doubles gathered per (rank, level) for the owner map:
+     0..5   claim box (safe region for l>=1, interior box for l==0)
+     6      L->valid
+     7      L->metric_static
+     8..10  dx[0..2]
+     11..13 in_level_dir() lower bound of this rank's patch (safe margin,
+           widened by the halo the MPI exchange actually filled)
+     14..16 the same upper bound
+   Those bounds let the owner map rebuild the level's GLOBAL extent so the
+   LEVEL it picks is the level pick_level() would pick on one rank.  Slots
+   0..5 (the per-rank claim box) cannot do that: they are shrunk by the safe
+   margin, leaving holes at internal rank faces, so a particle on a rank face
+   looked closer to a coarse level than to the fine one and got the wrong
+   level. */
+#endif
+#define GEODESIC_OWNER_REC 17
+#ifdef CCTK_MPI
 static double *s_owner_bd = NULL;
 static double  s_owner_margin = 4.0;
+
+/* Chunk length (in coordinate time units, before dividing by the speed) for
+   one face of the owner's claim box.  d_raw is the POSITIVE distance from the
+   particle to that face measured along the direction of travel: d_raw > 0
+   means the particle is still inside the box.
+   - Inside: the face itself is the boundary, so ownership is re-evaluated as
+     soon as the particle reaches it.  A rider sitting on the face with a
+     noise-level normal velocity gets the 1e-6 floor, which over ~1e-10 gives
+     a huge t_hit and therefore no constraint at all.
+   - Outside (d_raw <= 0): the owner map claims particles up to marg cells
+     outside the box -- that is how the inter-rank and inter-level gap band is
+     covered -- so the raw face is already behind the particle and re-owning
+     will not change anything until the claim expires.  The boundary is then
+     the margin-expanded face, floored at a quarter cell so the chunk stays
+     sane.  Without this, a particle in the band had its negative distance
+     clamped to 1e-6 and produced chunks of ~1e-6 in t that never resolved
+     (measured: 7561 chunks to advance t by 0.005, particles 49 and 99 riding
+     the y = +-1.75 gap band of a level-1 rank split). */
+static double chunk_face_dist(double d_raw, double dx, double marg)
+{
+  if (d_raw > 0.0)
+    return (d_raw < 1.0e-6) ? 1.0e-6 : d_raw;
+  const double d = d_raw + marg * dx;
+  const double floor_d = 0.25 * dx;
+  return (d < floor_d) ? floor_d : d;
+}
 #endif
 static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double t_end, const double t_step0)
 {
@@ -4667,8 +4758,8 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
       if (owner >= 0 && ol >= 0 && s_owner_bd != NULL)
       {
         const int nlev = geodesic_amr_levels;
-        const double *bo = s_owner_bd + (size_t)owner * (size_t)nlev * 11
-                                 + (size_t)ol * 11;
+        const double *bo = s_owner_bd + (size_t)owner * (size_t)nlev * GEODESIC_OWNER_REC
+                                 + (size_t)ol * GEODESIC_OWNER_REC;
         const double px = particle_tx[mi], py = particle_ty[mi], pz = particle_tz[mi];
         double gx = (px < bo[0]) ? (bo[0] - px) : ((px >= bo[3]) ? (px - bo[3]) : 0.0);
         double gy = (py < bo[1]) ? (bo[1] - py) : ((py >= bo[4]) ? (py - bo[4]) : 0.0);
@@ -4970,7 +5061,20 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
    the pointwise robust path read valid cells -- matching the 0-NaN
    single-process run.  Every rank computes the identical map.  Called
    at the step start (Phase 1) and at every chunk boundary (re-owning);
-   the boxes are fixed during the step, so the Phase 1 buffer is reused. */
+   the boxes are fixed during the step, so the Phase 1 buffer is reused.
+
+   LEVEL AND RANK ARE CHOSEN IN SEPARATE STEPS.  Choosing the (rank,level)
+   pair with one gap criterion made the level depend on the decomposition:
+   each rank publishes its own patch's safe region, which is 7 cells inside
+   its patch edge, so a particle sitting on a rank face (an equatorial
+   particle on z = 0 under a 2x2 y/z decomposition) has gap 0 to the
+   coarsest level -- whose interior box tiles the domain and ends exactly at
+   that face -- but gap ~3 cells to the fine level, and the coarse level
+   won.  A scalar run's pick_level() gives that particle the fine level.
+   The level is therefore now taken from the level's GLOBAL extent (the
+   union of the ranks' patch corners, shrunk by the same 7-cell margin a
+   single rank's safe region has), which reproduces pick_level() exactly;
+   the rank is then chosen within that level. */
 static void geodesic_recompute_owner_map(cGH *cctkGH, const double *bd, const int npr, const int nlev)
 {
   DECLARE_CCTK_ARGUMENTS
@@ -4987,6 +5091,35 @@ static void geodesic_recompute_owner_map(cGH *cctkGH, const double *bd, const in
 #ifdef CCTK_MPI
   s_owner_margin = env_margin;
 #endif
+  /* per-level global extent: the union over ranks of each rank's
+     in_level_dir() bounds (slots 11..16).  A particle inside this union is
+     served by that level on SOME rank, which is the same question
+     pick_level() answers on a single rank. */
+  double *gb = (double *)calloc((size_t)nlev * 8, sizeof(double));
+  if (!gb) CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: owner-map scratch allocation failed.");
+  for (int l = 0; l < nlev; l++)
+  {
+    double *g = gb + (size_t)l * 8;   /* [0..2] lo, [3..5] hi, [6] dxmax, [7] present */
+    for (int i = 0; i < 3; i++) { g[i] = 1e300; g[3+i] = -1e300; }
+    double dxm = 0.0;
+    for (int r = 0; r < npr; r++)
+    {
+      const double *b = bd + (size_t)r * nlev * GEODESIC_OWNER_REC + (size_t)l * GEODESIC_OWNER_REC;
+      if (b[6] == 0.0) continue;
+      g[7] = 1.0;
+      for (int i = 0; i < 3; i++)
+      {
+        const double lo = b[11+i];
+        const double hi = b[14+i];
+        if (lo < g[i])   g[i]   = lo;
+        if (hi > g[3+i]) g[3+i] = hi;
+      }
+      for (int i = 0; i < 3; i++)
+        if (b[8+i] > dxm) dxm = b[8+i];
+    }
+    g[6] = dxm;
+  }
+
   int mi;
   for (mi = 0; mi < particle_n_total; mi++)
   {
@@ -4997,32 +5130,93 @@ static void geodesic_recompute_owner_map(cGH *cctkGH, const double *bd, const in
     if (!Geodesic_gstate.pgeodesic[mi].dead)
     {
       const double px = particle_tx[mi], py = particle_ty[mi], pz = particle_tz[mi];
-      /* iterate all (level,rank); finest level first so a tie in gap is
-         broken toward the finer level.  Strict "<" keeps the first
-         (finer) block on equal gaps. */
+      /* 1) LEVEL: the finest global extent that contains the particle --
+         exactly what pick_level() does on one rank.  If no level contains
+         it, take the smallest global gap (still within the claim margin)
+         so a particle just outside every refinement region falls through
+         to a coarse level, as before. */
+      int g_l = -1; double g_gap = 1e100;
       for (int l = nlev - 1; l >= 0; l--)
+      {
+        const double *g = gb + (size_t)l * 8;
+        if (g[7] == 0.0) continue;
+        double gx = (px < g[0]) ? (g[0] - px) : ((px >= g[3]) ? (px - g[3]) : 0.0);
+        double gy = (py < g[1]) ? (g[1] - py) : ((py >= g[4]) ? (py - g[4]) : 0.0);
+        double gz = (pz < g[2]) ? (g[2] - pz) : ((pz >= g[5]) ? (pz - g[5]) : 0.0);
+        const double gap = fmax(gx, fmax(gy, gz));
+        if (gap == 0.0) { g_l = l; g_gap = 0.0; break; }
+        if (gap < g_gap) { g_gap = gap; g_l = l; }
+      }
+      if (g_l >= 0)
+      {
+        const double *g = gb + (size_t)g_l * 8;
+        if (g_gap == 0.0 || (g[6] > 0.0 && g_gap / g[6] <= env_margin))
+          olvl = g_l;
+      }
+      /* 2) RANK: within that level, prefer a rank whose own claim box
+         already contains the particle, else the nearest one (the margin
+         band is covered by the halo exchange). */
+      if (olvl >= 0)
+      {
+        double bg = 1e100; int br = -1;
         for (int r = 0; r < npr; r++)
         {
-          const double *b = bd + (size_t)r * nlev * 11 + (size_t)l * 11;
+          const double *b = bd + (size_t)r * nlev * GEODESIC_OWNER_REC + (size_t)olvl * GEODESIC_OWNER_REC;
           if (b[6] == 0.0) continue;
           double gx = (px < b[0]) ? (b[0] - px) : ((px >= b[3]) ? (px - b[3]) : 0.0);
           double gy = (py < b[1]) ? (b[1] - py) : ((py >= b[4]) ? (py - b[4]) : 0.0);
           double gz = (pz < b[2]) ? (b[2] - pz) : ((pz >= b[5]) ? (pz - b[5]) : 0.0);
-          double gap = fmax(gx, fmax(gy, gz));
-          if (gap < best_gap)
-          {
-            best_gap = gap;
-            best_r = r; best_l = l;
-            best_dx0 = b[8]; best_dx1 = b[9]; best_dx2 = b[10];
-          }
+          const double gap = fmax(gx, fmax(gy, gz));
+          if (gap == 0.0) { br = r; break; }
+          if (gap < bg) { bg = gap; br = r; }
         }
-      if (best_r >= 0)
-      {
-        double dxmax = fmax(best_dx0, fmax(best_dx1, best_dx2));
-        double gap_cells = (dxmax > 0.0) ? (best_gap / dxmax) : 1e100;
-        if (gap_cells <= env_margin)
+        if (br >= 0)
         {
-          owner = best_r; olvl = best_l; claimable = 1;
+          const double *b = bd + (size_t)br * nlev * GEODESIC_OWNER_REC + (size_t)olvl * GEODESIC_OWNER_REC;
+          double dxm = 0.0;
+          for (int i = 0; i < 3; i++) if (b[8+i] > dxm) dxm = b[8+i];
+          if (bg == 0.0 || (dxm > 0.0 && bg / dxm <= env_margin))
+          {
+            owner = br;
+            claimable = 1;
+          }
+          else
+            olvl = -1;   /* no rank at this level can serve it */
+        }
+        else
+        {
+          olvl = -1;
+        }
+      }
+      /* 3) nothing claimed yet: keep the original all-(level,rank) nearest
+         rule so a particle outside every level still gets the coarse box
+         closest to it. */
+      if (owner < 0)
+      {
+        for (int l = nlev - 1; l >= 0; l--)
+          for (int r = 0; r < npr; r++)
+          {
+            const double *b = bd + (size_t)r * nlev * GEODESIC_OWNER_REC + (size_t)l * GEODESIC_OWNER_REC;
+            if (b[6] == 0.0) continue;
+            double gx = (px < b[0]) ? (b[0] - px) : ((px >= b[3]) ? (px - b[3]) : 0.0);
+            double gy = (py < b[1]) ? (b[1] - py) : ((py >= b[4]) ? (py - b[4]) : 0.0);
+            double gz = (pz < b[2]) ? (b[2] - pz) : ((pz >= b[5]) ? (pz - b[5]) : 0.0);
+            double gap = fmax(gx, fmax(gy, gz));
+            if (gap < best_gap)
+            {
+              best_gap = gap;
+              best_r = r; best_l = l;
+              best_dx0 = b[8]; best_dx1 = b[9]; best_dx2 = b[10];
+            }
+          }
+        if (best_r >= 0)
+        {
+          double dxmax = fmax(best_dx0, fmax(best_dx1, best_dx2));
+          double gap_cells = (dxmax > 0.0) ? (best_gap / dxmax) : 1e100;
+          if (gap_cells <= env_margin)
+          {
+            owner = best_r; olvl = best_l; claimable = 1;
+          }
         }
       }
     }
@@ -5037,6 +5231,7 @@ static void geodesic_recompute_owner_map(cGH *cctkGH, const double *bd, const in
     Geodesic_gstate.owner_of[mi]  = owner;
     Geodesic_gstate.owner_lvl[mi] = olvl;
   }
+  free(gb);
 }
 #endif
 
@@ -5603,8 +5798,8 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
     }
 
     /* Phase 1a: Allgather of per-rank per-level boxes
-       (nlev * 11 doubles/rank: box_lbnd[3], box_ubnd[3], valid,
-        metric_static, dx[0..2]).
+       (nlev * GEODESIC_OWNER_REC doubles/rank: claim box[6], valid,
+        metric_static, dx[3], patch lower corner[3], patch upper corner[3]).
        The owner map must use the 7-cell safe region, NOT the interior box,
        for the FINE levels: the interior box extends into the ghost region
        (where the fine GF has no data) and beyond the safe margin, so a
@@ -5627,19 +5822,19 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
     /* assign the function-scope bd (kept until the chunk loop frees it);
        a block-local declaration here would shadow it, leaving the chunk
        loop's re-owning to dereference NULL */
-    /* 11 doubles per (rank,level): box_lbnd[3], box_ubnd[3], valid,
-       metric_static, dx[0..2].  dx is gathered so the claim margin can be
+    /* GEODESIC_OWNER_REC doubles per (rank,level): claim box[6], valid,
+       metric_static, dx[0..2], patch corners[6].  dx is gathered so the claim margin can be
        expressed in cells (inter-rank interior-box gaps are ~2*ngz*dx and
        must be covered so a particle in the gap is still claimable). */
-    bd = (double *) malloc((size_t)npr * nlev * 11 * sizeof(double));
+    bd = (double *) malloc((size_t)npr * nlev * GEODESIC_OWNER_REC * sizeof(double));
     if (!bd)
       CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: box Allgather buffer allocation failed.");
     {
-      double *s0 = bd + (size_t)me * nlev * 11;
+      double *s0 = bd + (size_t)me * nlev * GEODESIC_OWNER_REC;
       for (int l = 0; l < nlev; l++)
       {
         LevelData *L = &Geodesic_gstate.LD[0][l];
-        double *s = s0 + (size_t)l * 11;
+        double *s = s0 + (size_t)l * GEODESIC_OWNER_REC;
         /* fall back to the interior box if the safe region is degenerate
            (a patch too thin in any direction has r_lbnd > r_ubnd and the
            stencil cannot fit anywhere in it anyway). */
@@ -5664,9 +5859,29 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
         s[6] = L->valid ? 1.0 : 0.0;
         s[7] = L->metric_static;
         s[8] = L->dx[0]; s[9] = L->dx[1]; s[10] = L->dx[2];
+        /* slots 11..16: the SAME bounds in_level_dir()/pick_level() would
+           compute for this rank's patch (safe margin, widened by the halo
+           the MPI exchange actually filled).  The owner map unions these to
+           rebuild the level's GLOBAL extent, so the level it picks is the
+           level a single rank would pick.  The per-rank claim box in slots
+           0..5 is deliberately narrower (r_lbnd/r_ubnd for l>=1); using it
+           for the level test made the level choice depend on the rank
+           decomposition. */
+        {
+          const int mgn = safe_margin_cells();
+          for (int i = 0; i < 3; i++) {
+            const int lo_i = mgn - (int)L->halo_cov[i][0];
+            const int hi_i = (int)L->lsh[i] - 1 + (int)L->halo_cov[i][1] - mgn;
+            double lo = L->origin[i] + (CCTK_REAL)lo_i * L->dx[i];
+            double hi = L->origin[i] + (CCTK_REAL)hi_i * L->dx[i];
+            if (lo > hi) { lo = L->i_lbnd[i]; hi = L->i_ubnd[i]; }
+            s[11+i] = lo;
+            s[14+i] = hi;
+          }
+        }
       }
-      MPI_Allgather(s0, nlev*11, MPI_DOUBLE, bd, nlev*11, MPI_DOUBLE,
-                    MPI_COMM_WORLD);
+      MPI_Allgather(s0, nlev*GEODESIC_OWNER_REC, MPI_DOUBLE, bd, nlev*GEODESIC_OWNER_REC,
+                    MPI_DOUBLE, MPI_COMM_WORLD);
     }
     /* publish the gathered boxes to the per-particle consistency check
        (geodesic_integrate_particle); they are fixed for the whole step. */
@@ -6240,7 +6455,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
              (Phase 1a), not this rank's local view of the level -- a
              non-owner rank's box for the same level differs, which
              desynced the chunk count and broke the collective pairing */
-          const double *bo = bd + (size_t)r * nlev * 11 + (size_t)l * 11;
+          const double *bo = bd + (size_t)r * nlev * GEODESIC_OWNER_REC + (size_t)l * GEODESIC_OWNER_REC;
           const double ut = particle_ttv[mi];
           if (!(ut > 0.0) || !isfinite(ut))
           {
@@ -6267,25 +6482,24 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
              crossing).  A particle moving away from a face is not
              constrained by that face at all. */
           double t_hit = 1.0e300;
-          /* d_eff = max(distance-to-face, FACE_EPS): a particle that sits
-             ON the face it moves toward still gets a bounded chunk
-             (FACE_EPS over the speed), so the chunk-boundary re-owning
-             hands it to the neighbour after one short chunk instead of
-             letting it fly across the neighbour's whole box and be killed
-             by the mid-step reachability test.  A rider whose normal
-             velocity is numerical noise (~1e-10) gets a huge t_hit from
-             the same formula and is unaffected, which is what the old
-             "skip the face when d < FACE_EPS" guard was protecting. */
-          const double FACE_EPS = 1.0e-6;
-          if (vx > 0.0)    { double d = bo[3] - px; if (d < FACE_EPS) d = FACE_EPS; const double th = d / vx;  if (th < t_hit) t_hit = th; }
-          else if (vx < 0.0) { double d = px - bo[0]; if (d < FACE_EPS) d = FACE_EPS; const double th = d / -vx; if (th < t_hit) t_hit = th; }
-          if (vy > 0.0)    { double d = bo[4] - py; if (d < FACE_EPS) d = FACE_EPS; const double th = d / vy;  if (th < t_hit) t_hit = th; }
-          else if (vy < 0.0) { double d = py - bo[1]; if (d < FACE_EPS) d = FACE_EPS; const double th = d / -vy; if (th < t_hit) t_hit = th; }
-          if (vz > 0.0)    { double d = bo[5] - pz; if (d < FACE_EPS) d = FACE_EPS; const double th = d / vz;  if (th < t_hit) t_hit = th; }
-          else if (vz < 0.0) { double d = pz - bo[2]; if (d < FACE_EPS) d = FACE_EPS; const double th = d / -vz; if (th < t_hit) t_hit = th; }
-          if (getenv("GEODESIC_CHUNK_DEBUG") && mi == 0)
-            fprintf(stderr, "CHUNKCALC rank=%d r=%d l=%d box=[%.4f,%.4f]x[%.4f,%.4f]x[%.4f,%.4f] pos=(%.4f,%.4f,%.4f) v=(%.4f,%.4f,%.4f) t_hit=%.4f\n",
-                    me, r, l, bo[0],bo[3], bo[1],bo[4], bo[2],bo[5], px,py,pz, vx,vy,vz, t_hit);
+          /* signed distance to the face the particle moves TOWARD, turned into
+             a chunk length by chunk_face_dist().  The min-distance form
+             (distance to the NEAREST face over vmax) broke for particles
+             riding a shared box face: the equatorial shell sits on the z=0
+             rank boundary, so dm_z ~ 1e-6 with v_z ~ 1e-7 produced
+             infinitesimal chunks forever (dm shrinks 25%/chunk, never
+             crossing).  A particle moving away from a face is not constrained
+             by that face at all. */
+          const double marg = (s_owner_margin > 0.0) ? s_owner_margin : 4.0;
+          if (vx > 0.0)    { const double th = chunk_face_dist(bo[3] - px, bo[8], marg) / vx;  if (th < t_hit) t_hit = th; }
+          else if (vx < 0.0) { const double th = chunk_face_dist(px - bo[0], bo[8], marg) / -vx; if (th < t_hit) t_hit = th; }
+          if (vy > 0.0)    { const double th = chunk_face_dist(bo[4] - py, bo[9], marg) / vy;  if (th < t_hit) t_hit = th; }
+          else if (vy < 0.0) { const double th = chunk_face_dist(py - bo[1], bo[9], marg) / -vy; if (th < t_hit) t_hit = th; }
+          if (vz > 0.0)    { const double th = chunk_face_dist(bo[5] - pz, bo[10], marg) / vz;  if (th < t_hit) t_hit = th; }
+          else if (vz < 0.0) { const double th = chunk_face_dist(pz - bo[2], bo[10], marg) / -vz; if (th < t_hit) t_hit = th; }
+          if (getenv("GEODESIC_CHUNK_DEBUG") && t_hit < 1.0e-3)
+            fprintf(stderr, "CHUNKCALC rank=%d mi=%d r=%d l=%d box=[%.4f,%.4f]x[%.4f,%.4f]x[%.4f,%.4f] pos=(%.6f,%.6f,%.6f) v=(%.6f,%.6f,%.6f) t_hit=%.6g\n",
+                    me, mi, r, l, bo[0],bo[3], bo[1],bo[4], bo[2],bo[5], px,py,pz, vx,vy,vz, t_hit);
           if (t_hit < 1.0e299)
           {
             const double tc = t_now + margin * t_hit;

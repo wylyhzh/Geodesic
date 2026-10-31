@@ -385,6 +385,15 @@ typedef struct {
   /* halo extent per direction (valid read indices into the padded
      arrays, local frame): [-HALO_W, lsh-1+HALO_W] */
   CCTK_INT   halo_lo[3], halo_hi[3];
+  /* How many halo cells are actually filled just outside the raw range on
+     each side of each direction: halo_cov[d][1] counts cells ubnd+1 ..
+     ubnd+halo_cov[d][1], halo_cov[d][0] counts lbnd-halo_cov[d][0] ..
+     lbnd-1.  A face with no same-level neighbour (the outer edge of a
+     refined level, the physical domain boundary) stays 0 and its halo
+     cells keep the NaN poison.  in_level_dir() widens the safe region by
+     this much, so a particle whose stencil crosses a rank face is still
+     served by this level instead of being pushed to a coarser one. */
+  CCTK_INT   halo_cov[3][2];
   /* stride the padded arrays are laid out with: lsh+2*HALO_W while the
      halo buffers are active, lsh otherwise.  The ghost cGH's cctk_ash
      points here so CCTK_GFINDEX3D in derivative.h matches the layout

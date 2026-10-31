@@ -64,13 +64,19 @@
 # bit-identical across different rank counts.  The grid data itself is
 # bit-identical (checked by dumping ADMBase::metric with
 # CarpetIOASCII::compact_format = yes, output_ghost_points = no), but the
-# sampled trajectory depends on where the rank faces fall: a particle that
-# crosses a face inside one Geodesic::step accumulates a difference of
-# ~4e-5 per crossing (5e-2 over the 32 steps of circ_orbit_grid), and with
-# Geodesic::step >> dt a particle can also leave the safe region of its
-# owner's patch and be dropped by the loss policy.  Exact = yes is
-# rank-count independent (circ_orbit_mpi).  See doc/documentation.tex,
-# "Known limitations".
+# chunk boundaries follow the decomposition, so a particle is handed to a
+# new owner at a different point along its path and the floating-point
+# summation order changes: circ_orbit_grid_2p differs from the
+# single-rank circ_orbit_grid by 9.1e-3 in x and 1.13e-2 in y at
+# t = 3200.  Two rank-dependent mechanisms behind the earlier, much
+# larger disagreement are now fixed: the halo exchange covers edges and
+# corners as well as faces (a node Christoffel whose finite-difference
+# window touched an unfilled edge cell used to fall back silently to the
+# analytic assembly), and the chunk-boundary constraint is applied even
+# to a face the particle sits exactly on (it used to be skipped, letting
+# the particle cross the neighbouring subdomain in one step and be
+# dropped).  Exact = yes is rank-count independent (circ_orbit_mpi).
+# See doc/documentation.tex, "Known limitations".
 #
 # The heavy runs (100- and 200-particle rings, 3-level AMR, the
 # TwoPunctures BBH sets, the conv100 sampler comparisons) are in

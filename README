@@ -43,8 +43,9 @@ tested example that runs on a stock Einstein Toolkit checkout.
 test/ contains regression tests declared in test/test.ccl.  They are
 regression tests (bit-comparison of the particle dump against reference
 data), not convergence or physics tests.  test/check_mpi_identity.sh
-additionally checks that the particle dump is bit-identical at 1, 2 and
-4 MPI ranks.
+additionally checks that the particle dump agrees across 1, 2 and 4 MPI
+ranks within a 1e-6 tolerance (measured: exactly identical at 2 ranks,
+1.1e-8 in the worst column at 4 ranks).
 
 4. Known limitations
 

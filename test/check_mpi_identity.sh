@@ -2,7 +2,8 @@
 # =============================================================================
 # Geodesic: rank-count agreement check (regression for the rank-face
 # stencil bug reported by E. Schnetter, fixed by the halo exchange, the
-# edge/corner halo extension and the FACE_EPS chunk-boundary fix).
+# edge/corner halo extension, the level-consistent owner map and the
+# chunk_face_dist() chunk-boundary fix).
 #
 # The SAME par file is run at 1, 2 and 4 MPI ranks (sequentially, one
 # OpenMP thread per rank, so the comparison is not a thread-count
@@ -16,11 +17,14 @@
 # neighbouring subdomain before being dropped.  The assertion on |z| and
 # |u_z| below catches the symmetry-breaking symptom directly.
 #
-# The criterion is a tolerance, not bit-identity: the FACE_EPS fix
+# The criterion is a tolerance, not bit-identity: the chunk-boundary rule
 # changes how the integration is cut into chunks, so a particle is handed
 # to the neighbouring rank at a different point along its path and the
 # floating-point summation order changes.  What remains is roundoff
-# (measured max over all columns: 0 at 2 ranks, 1.1e-8 at 4 ranks).
+# (measured max over all columns: 0 at 2 ranks and 0 at 4 ranks for the
+# unigrid default below; the AMR case in extra/ellipse_orbit_amr.par is
+# the one that still depends on the rank count, see doc/documentation.tex
+# "Known limitations").
 #
 # Usage:  ./check_mpi_identity.sh [parfile] [itlast]
 #         (default: extra/conv100_local27.par, the 100^3 dx=0.5 Kerr-Schild

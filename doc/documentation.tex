@@ -183,10 +183,20 @@ boundary keeps the replicated arrays bit-identical on every rank.
 In \texttt{Exact = no} runs the ten \texttt{ADMBase} metric, lapse and
 shift fields, at all three stored time levels, are additionally
 exchanged as a five-cell halo around each rank's box before every
-integration batch, and the samplers' fit-history flags travel with the
-particle state, so a particle sees the same stencil data before and
-after a rank hand-over: one-, two- and four-rank dumps of the same run
-are byte-for-byte identical (\texttt{test/check\_mpi\_identity.sh}).
+integration batch.  The exchange covers edges and corners as well as
+faces: the three directions are exchanged in turn and, for each
+direction already handled, the transverse range of the later ones is
+widened by the halo width, so a cell lying in the halo band of two or
+three directions at once is filled as well.  The chunk-boundary
+constraint is applied even to a face that a particle sits exactly on
+(the distance to the face is floored at \texttt{FACE\_EPS}), so such a
+particle takes several short chunks and is handed over normally instead
+of crossing the neighbouring subdomain in a single step.  The
+samplers' fit-history flags travel with the particle state, so a
+particle sees the same stencil data before and after a rank hand-over:
+one-, two- and four-rank dumps of the same run agree to roundoff
+($1.1 \times 10^{-8}$ in the worst column, exactly at two ranks;
+\texttt{test/check\_mpi\_identity.sh}, tolerance $10^{-6}$).
 This mode supports at most four ranks (a $2 \times 2$ decomposition in
 $y$ and $z$, one patch per rank per level); more ranks abort with an
 explicit error.  Note that a bit-identical replicated state is not the
