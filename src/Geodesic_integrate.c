@@ -395,13 +395,14 @@ static void geodesic_halo_update(cGH *cctkGH, int map, int level)
   }
   MPI_Allgather(bb + me * 6, 6, MPI_INT, bb, 6, MPI_INT, MPI_COMM_WORLD);
 
-  /* worst-case slab volume: HW cells thick, at most the local transverse
-     extent wide */
+  /* worst-case slab volume: HW cells thick, at most the padded local
+     transverse extent wide (the e<d directions of the exchange below reach
+     HW cells past the raw edge, so their slabs are that wide) */
   for (int d = 0; d < 3; d++)
   {
     size_t vol = (size_t)HW;
     for (int e = 0; e < 3; e++)
-      if (e != d) vol *= (size_t)L->lsh[e];
+      if (e != d) vol *= (size_t)L->lsh[e] + 2 * (size_t)HW;
     if (vol > slab_max) slab_max = vol;
   }
   CCTK_REAL *sbuf = (CCTK_REAL *)malloc(slab_max * sizeof(CCTK_REAL));
@@ -421,6 +422,7 @@ static void geodesic_halo_update(cGH *cctkGH, int map, int level)
               me, r, bb[r * 6], bb[r * 6 + 1], bb[r * 6 + 2],
               bb[r * 6 + 3], bb[r * 6 + 4], bb[r * 6 + 5]);
   }
+
 
   for (int d = 0; d < 3; d++)
   for (int s = 0; s < 2; s++)
@@ -461,7 +463,17 @@ static void geodesic_halo_update(cGH *cctkGH, int map, int level)
 
     /* transverse overlap of the two raw (interior+ghost) index ranges:
        computed identically from both ranks' boxes, so the Sendrecv
-       counts match regardless of how the two ranks are decomposed */
+       counts match regardless of how the two ranks are decomposed.
+       Directions exchanged before this one (e < d) already hold a valid
+       halo band, so the slab reaches HW cells past the raw edge there:
+       that is what fills the halo EDGES and CORNERS, i.e. the cells a
+       stencil window reads when it crosses two rank faces at once.  A
+       face-only exchange leaves those NaN, which makes the nodal
+       Christoffels non-finite and silently switches the particle to the
+       analytic Christoffel assembly (the rank-dependent branch behind
+       MPI runs disagreeing with scalar ones).  Directions not yet
+       exchanged (e > d) stay clipped to the raw range, whose cells are
+       the only valid ones there. */
     int o0[3], o1[3];
     int ok = 1;
     for (int e = 0; e < 3; e++)
@@ -469,8 +481,11 @@ static void geodesic_halo_update(cGH *cctkGH, int map, int level)
       if (e == d) continue;
       const int rlo_e = bb[r * 6 + e];
       const int rhi_e = bb[r * 6 + 3 + e];
-      o0[e] = (int)L->lbnd[e] > rlo_e ? (int)L->lbnd[e] : rlo_e;
-      o1[e] = (int)L->ubnd[e] < rhi_e ? (int)L->ubnd[e] : rhi_e;
+      int lo = (int)L->lbnd[e] > rlo_e ? (int)L->lbnd[e] : rlo_e;
+      int hi = (int)L->ubnd[e] < rhi_e ? (int)L->ubnd[e] : rhi_e;
+      if (e < d) { lo -= HW; hi += HW; }
+      o0[e] = lo;
+      o1[e] = hi;
       if (o0[e] > o1[e]) { ok = 0; break; }
     }
     if (!ok) continue;
@@ -518,9 +533,10 @@ static void geodesic_halo_update(cGH *cctkGH, int map, int level)
         const CCTK_INT ix = (CCTK_INT)(sx_lo - (int)L->lbnd[d] + g);
         int idx[3];
         idx[d] = ix; idx[(d+1)%3] = a; idx[(d+2)%3] = b;
-        sbuf[o++] = raw[f][tl][((size_t)idx[2] * (size_t)L->lsh[1]
-                                + (size_t)idx[1]) * (size_t)L->lsh[0]
-                               + (size_t)idx[0]];
+        /* read from the padded copy, not the raw array: in the e<d
+           directions the slab sits outside the raw range and only the
+           halo (filled by the earlier passes) has those cells */
+        sbuf[o++] = L->halo[f][tl][LD_HALO_INDEX(idx[0], idx[1], idx[2])];
       }
       MPI_Sendrecv(sbuf, (int)cnt_s, MPI_DOUBLE, nb, sendtag,
                    rbuf, (int)cnt_r, MPI_DOUBLE, nb, recvtag,
@@ -543,6 +559,32 @@ static void geodesic_halo_update(cGH *cctkGH, int map, int level)
   }
   free(sbuf); free(rbuf); free(bb);
 #endif
+
+  /* NaN census of the padded copies, after the face exchange has filled
+     them.  A NaN inside a stencil read window makes the nodal Christoffels
+     non-finite, which sets local27_cf2_bad and silently switches that
+     particle to the analytic Christoffel assembly -- the rank-dependent
+     branch that makes MPI runs disagree with scalar ones. */
+  if (getenv("GEODESIC_HALO_DEBUG"))
+    for (int f = 0; f < 10; f++)
+      for (int tl = 0; tl < 3; tl++)
+      {
+        size_t nan_in = 0, nan_band = 0;
+        int fn_i = 0, fn_j = 0, fn_k = 0;
+        for (CCTK_INT k = L->halo_lo[2]; k <= L->halo_hi[2]; k++)
+          for (CCTK_INT j = L->halo_lo[1]; j <= L->halo_hi[1]; j++)
+            for (CCTK_INT i = L->halo_lo[0]; i <= L->halo_hi[0]; i++)
+              if (!isfinite((double)L->halo[f][tl][LD_HALO_INDEX(i, j, k)]))
+              {
+                const int inband = i < 0 || i >= L->lsh[0] || j < 0 || j >= L->lsh[1] ||
+                                   k < 0 || k >= L->lsh[2];
+                if (inband) nan_band++; else nan_in++;
+                if (nan_in + nan_band == 1) { fn_i = i; fn_j = j; fn_k = k; }
+              }
+        if (nan_in + nan_band > 0)
+          fprintf(stderr, "HALOCENSUS rank=%d lvl=%d f=%d tl=%d nan_interior=%zu nan_band=%zu first=(%d,%d,%d)\n",
+                  me, level, f, tl, nan_in, nan_band, fn_i, fn_j, fn_k);
+      }
 #undef LD_HALO_INDEX
 }
 
@@ -1416,7 +1458,7 @@ int Geodesic_cf2_fitting (int m, const double y[])
     /* The margin-3 (6th-order FD) safe region rejects the particle.  No
        mode has an extrapolant fallback in this version (l27 is fully
        self-contained by design), so the particle is dropped. */
-    Geodesic_gstate.pgeodesic[m].outbd = 1;
+    Geodesic_gstate.pgeodesic[m].outbd = 1;;
     return 0;
   }
   /* make sure this thread's grid view matches the particle's (map, level)
@@ -1829,12 +1871,52 @@ int Geodesic_cf2_fitting (int m, const double y[])
          is never read.) */
       if (cf2_fin)
       {
+        int badk = -1;
         for (int k=0; k<125 && cf2_fin; k++)
         for (mu=0; mu<4 && cf2_fin; mu++)
         for (nu=0; nu<4 && cf2_fin; nu++)
         for (dd=0; dd<4 && cf2_fin; dd++)
           if (!isfinite((double)cf2n[k][mu][nu][dd]))
-          { cf2_fin = 0; }
+          { cf2_fin = 0; badk = k; }
+        if (cf2_fin == 0 && getenv("GEODESIC_CF2_DEBUG"))
+          fprintf(stderr, "CF2DBG m=%d tl=%d centre=(%d,%d,%d) badnode=(%d,%d,%d) FDwin x[%d,%d] y[%d,%d] z[%d,%d] pos=(%.6f,%.6f,%.6f) halo=(%d,%d,%d)..(%d,%d,%d) lsh=(%d,%d,%d)\n",
+                  m, (int)tl,
+                  Geodesic_gstate.pgeodesic[m].point[1], Geodesic_gstate.pgeodesic[m].point[2], Geodesic_gstate.pgeodesic[m].point[3],
+                  Geodesic_gstate.pgeodesic[m].point[1] + (badk/25) - 2,
+                  Geodesic_gstate.pgeodesic[m].point[2] + ((badk/5)%5) - 2,
+                  Geodesic_gstate.pgeodesic[m].point[3] + (badk%5) - 2,
+                  Geodesic_gstate.pgeodesic[m].point[1] + (badk/25) - 2 - 3,
+                  Geodesic_gstate.pgeodesic[m].point[1] + (badk/25) - 2 + 3,
+                  Geodesic_gstate.pgeodesic[m].point[2] + ((badk/5)%5) - 2 - 3,
+                  Geodesic_gstate.pgeodesic[m].point[2] + ((badk/5)%5) - 2 + 3,
+                  Geodesic_gstate.pgeodesic[m].point[3] + (badk%5) - 2 - 3,
+                  Geodesic_gstate.pgeodesic[m].point[3] + (badk%5) - 2 + 3,
+                  gview.origin_space[0] + Geodesic_gstate.pgeodesic[m].point[1]*gview.delta_space[0],
+                  gview.origin_space[1] + Geodesic_gstate.pgeodesic[m].point[2]*gview.delta_space[1],
+                  gview.origin_space[2] + Geodesic_gstate.pgeodesic[m].point[3]*gview.delta_space[2],
+                  gview.halo_lo[0], gview.halo_lo[1], gview.halo_lo[2],
+                  gview.halo_hi[0], gview.halo_hi[1], gview.halo_hi[2],
+                  gview.lsh[0], gview.lsh[1], gview.lsh[2]);
+        if (cf2_fin == 0 && getenv("GEODESIC_CF2_DEBUG"))
+        {
+          const int bx = Geodesic_gstate.pgeodesic[m].point[1] + (badk/25) - 2;
+          const int by = Geodesic_gstate.pgeodesic[m].point[2] + ((badk/5)%5) - 2;
+          const int bz = Geodesic_gstate.pgeodesic[m].point[3] + (badk%5) - 2;
+          for (int tl2 = 0; tl2 < 3; tl2++)
+          {
+            size_t nn = 0; int fi = 0, fj = 0, fk = 0;
+            if (gview.gxx[tl2] == NULL) { fprintf(stderr, "CF2DBG   tl2=%d gxx=NULL\n", tl2); continue; }
+            for (int i = bx-3; i <= bx+3; i++)
+            for (int j = by-3; j <= by+3; j++)
+            for (int k = bz-3; k <= bz+3; k++)
+            {
+              const size_t idx = (size_t)i + (size_t)gview.rsh[0] * ((size_t)j + (size_t)gview.rsh[1] * (size_t)k);
+              if (!isfinite((double)gview.gxx[tl2][idx]))
+                { if (nn == 0) { fi = i; fj = j; fk = k; } nn++; }
+            }
+            fprintf(stderr, "CF2DBG   tl2=%d gxx NaN in FD box = %zu first=(%d,%d,%d)\n", tl2, nn, fi, fj, fk);
+          }
+        }
         if (cf2_fin)
           fit_cf2_poly125(cf2n, Geodesic_gstate.pgeodesic[m].pcf2_125[tl],
                           Geodesic_gstate.pgeodesic[m].pcf2_125c[tl]);
@@ -2731,7 +2813,7 @@ static void metric_at_point(int m, const double y[8], double bg, double gdn[4][4
        the carpetx path never fills). */
     const int pm = Geodesic_gstate.pgeodesic[m].cur_map;
     const int lvl = pick_level(y, pm);
-    if (lvl < 0) { Geodesic_gstate.pgeodesic[m].outbd = 1; return; }
+    if (lvl < 0) { Geodesic_gstate.pgeodesic[m].outbd = 1;; return; }
     switch_to_level(pm, lvl);
   }
   else Geodesic_cf2_fitting(m, y);
@@ -2782,7 +2864,7 @@ static void metric_at_point(int m, const double y[8], double bg, double gdn[4][4
     double g31[10], dg31[10][3];
     {
       int st = aei_interp_point(0,y[1],y[2],y[3],g31,dg31);
-      if (st != 0) { Geodesic_gstate.pgeodesic[m].outbd=1; return; }
+      if (st != 0) { Geodesic_gstate.pgeodesic[m].outbd = 1;; return; }
     }
     {
       double g31a[10], dg31a[10][3];
@@ -2790,7 +2872,7 @@ static void metric_at_point(int m, const double y[8], double bg, double gdn[4][4
          data time; theta is the particle's absolute phase in that window
          (geodesic_time_theta), clamped to [0,1] */
       double theta = geodesic_time_theta(m, y[0]);
-      if (aei_interp_point(1,y[1],y[2],y[3],g31a,dg31a) != 0) { Geodesic_gstate.pgeodesic[m].outbd=1; return; }
+      if (aei_interp_point(1,y[1],y[2],y[3],g31a,dg31a) != 0) { Geodesic_gstate.pgeodesic[m].outbd = 1;; return; }
       for (mu=0;mu<10;mu++)
       {
         g31[mu]=g31a[mu]+theta*(g31[mu]-g31a[mu]);
@@ -2803,13 +2885,13 @@ static void metric_at_point(int m, const double y[8], double bg, double gdn[4][4
   if (Geodesic_gstate.sinterp_mode == 4)
   { /* carpetx: the CarpetX interpolator on the ADMBaseX grid (static metric) */
     double g31[10], dg31[10][3];
-    if (carpetx_interp_point(y[1],y[2],y[3],g31,dg31) != 0) { Geodesic_gstate.pgeodesic[m].outbd=1; return; }
+    if (carpetx_interp_point(y[1],y[2],y[3],g31,dg31) != 0) { Geodesic_gstate.pgeodesic[m].outbd = 1;; return; }
     compose_4metric(g31,dg31,gdn,NULL,NULL);
     return;
   }
   { /* carpet */
     double g31[10], dg31[10][3];
-    if (aei_interp_point(0,y[1],y[2],y[3],g31,dg31) != 0) { Geodesic_gstate.pgeodesic[m].outbd=1; return; }
+    if (aei_interp_point(0,y[1],y[2],y[3],g31,dg31) != 0) { Geodesic_gstate.pgeodesic[m].outbd = 1;; return; }
     compose_4metric(g31,dg31,gdn,NULL,NULL);
   }
 }
@@ -3370,7 +3452,7 @@ int Geodesic_func_ode (double t, const double y[], double f[], void *params)
      preferred automatically (pick_level). */
   if ((y[1] != 0.0 && (!isnormal(y[1]))) || (y[2] != 0.0 && (!isnormal(y[2]))) || (y[3] != 0.0 && (!isnormal(y[3]))))
   {
-    Geodesic_gstate.pgeodesic[m].outbd = 1;
+    Geodesic_gstate.pgeodesic[m].outbd = 1;;
   }else
   {
     /* "out of bounds" = outside the SAFE region of the COARSEST level.
@@ -3423,7 +3505,7 @@ int Geodesic_func_ode (double t, const double y[], double f[], void *params)
         const LevelData *Lo = &Geodesic_gstate.LD[pm][0];
         if (!Lo->valid)
         {
-          Geodesic_gstate.pgeodesic[m].outbd = 1;
+          Geodesic_gstate.pgeodesic[m].outbd = 1;;
         }
         else
         {
@@ -3441,7 +3523,7 @@ int Geodesic_func_ode (double t, const double y[], double f[], void *params)
           }
           else
           {
-            Geodesic_gstate.pgeodesic[m].outbd = 1;
+            Geodesic_gstate.pgeodesic[m].outbd = 1;;
           }
         }
       }
@@ -3451,7 +3533,7 @@ int Geodesic_func_ode (double t, const double y[], double f[], void *params)
                          : (Geodesic_gstate.multi_exact ? 0 : pick_level(y, pm));
       if (lvl < 0)
       {
-        Geodesic_gstate.pgeodesic[m].outbd = 1;
+        Geodesic_gstate.pgeodesic[m].outbd = 1;;
       }else
       {
         /* mid-step reachability (multi_amr, interpolated branch only):
@@ -3479,7 +3561,12 @@ int Geodesic_func_ode (double t, const double y[], double f[], void *params)
             const double hi = Lo->origin[d]
                               + (CCTK_REAL)((CCTK_INT)Lo->lsh[d] - 1) * Lo->dx[d];
             if (y[d+1] < lo || y[d+1] > hi)
-              Geodesic_gstate.pgeodesic[m].outbd = 1;
+            {
+              if (getenv("GEODESIC_DROP_DEBUG"))
+                fprintf(stderr, "REACH m=%d d=%d y=%.9g box=[%.9g,%.9g] origin=%.9g lsh=%d dx=%.6g pos=(%.6f,%.6f,%.6f)\n",
+                        m, d, y[d+1], lo, hi, (double)Lo->origin[d], (int)Lo->lsh[d], (double)Lo->dx[d], y[1], y[2], y[3]);
+              Geodesic_gstate.pgeodesic[m].outbd = 1;;
+            }
           }
         }
         /* refit window: the two-cell box [below-dx, below+dx] centred on
@@ -3505,6 +3592,9 @@ int Geodesic_func_ode (double t, const double y[], double f[], void *params)
 
   if (Geodesic_gstate.pgeodesic[m].outbd)
   {
+    if (getenv("GEODESIC_DROP_DEBUG"))
+      fprintf(stderr, "EBADFUNC-pre m=%d pos=(%.6f,%.6f,%.6f) t=%.6f lvl=%d\n",
+              m, y[1], y[2], y[3], y[0], Geodesic_gstate.pgeodesic[m].level);
     return GSL_EBADFUNC;
   }
 
@@ -3535,7 +3625,7 @@ int Geodesic_func_ode (double t, const double y[], double f[], void *params)
     double beta_up[3], gamma_dn[3][3], gamma_up[3][3];
     if (!build_gup_from_gdn(tgd, NULL, beta_up, gamma_dn, gamma_up, tg4up))
     {
-      Geodesic_gstate.pgeodesic[m].outbd = 1;
+      Geodesic_gstate.pgeodesic[m].outbd = 1;;
       return GSL_EBADFUNC;
     }
 
@@ -3584,7 +3674,7 @@ int Geodesic_func_ode (double t, const double y[], double f[], void *params)
          out-of-bounds and let the loss policy drop it. */
       if (Geodesic_gstate.pgeodesic[m].l27_bad)
       {
-        Geodesic_gstate.pgeodesic[m].outbd = 1;
+        Geodesic_gstate.pgeodesic[m].outbd = 1;;
         return GSL_EBADFUNC;
       }
       for (j1=0; j1<4; j1++)
@@ -3594,7 +3684,13 @@ int Geodesic_func_ode (double t, const double y[], double f[], void *params)
     }
     else if (!christoffel_at_point(m, y, odedata->bg, cf2))
     {
-      Geodesic_gstate.pgeodesic[m].outbd = 1;
+      if (getenv("GEODESIC_DROP_DEBUG"))
+        fprintf(stderr, "EBADFUNC-cf2 m=%d pos=(%.6f,%.6f,%.6f) t=%.6f lvl=%d local27_bad=%d cf2_bad=%d old_level_bad=%d\n",
+                m, y[1], y[2], y[3], y[0], Geodesic_gstate.pgeodesic[m].level,
+                Geodesic_gstate.pgeodesic[m].local27_bad,
+                Geodesic_gstate.pgeodesic[m].local27_cf2_bad,
+                Geodesic_gstate.pgeodesic[m].old_level_bad);
+      Geodesic_gstate.pgeodesic[m].outbd = 1;;
       return GSL_EBADFUNC;
     }
   }
@@ -3697,7 +3793,7 @@ static double geodesic_normalize_u_at_start(int mi, CCTK_REAL ys[8], CCTK_REAL *
     if (!isfinite(u[0]) || u[0] <= 0.0)
     {
       Geodesic_gstate.pgeodesic[mi].norm_bad = 1;   /* aggregated after the loop */
-      Geodesic_gstate.pgeodesic[mi].outbd = 1;   /* let the loss policy below handle this particle */
+      Geodesic_gstate.pgeodesic[mi].outbd = 1;;   /* let the loss policy below handle this particle */
     }
     else
     {
@@ -3725,7 +3821,7 @@ static double geodesic_normalize_u_at_start(int mi, CCTK_REAL ys[8], CCTK_REAL *
     else
     {
       Geodesic_gstate.pgeodesic[mi].norm_bad = 1;   /* aggregated after the loop */
-      Geodesic_gstate.pgeodesic[mi].outbd = 1;   /* let the loss policy below handle this particle */
+      Geodesic_gstate.pgeodesic[mi].outbd = 1;;   /* let the loss policy below handle this particle */
     }
   }
   u[0] = ys[4]; u[1] = ys[5]; u[2] = ys[6]; u[3] = ys[7];
@@ -4515,7 +4611,7 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
          (particle_ty[mi] != 0.0 && (!isnormal(particle_ty[mi]))) ||
          (particle_tz[mi] != 0.0 && (!isnormal(particle_tz[mi]))) )
     {
-      Geodesic_gstate.pgeodesic[mi].outbd = 1;
+      Geodesic_gstate.pgeodesic[mi].outbd = 1;;
     }
     else if (!Geodesic_gstate.multi_exact && !Geodesic_gstate.multi_amr)
     {
@@ -4540,7 +4636,7 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
         {
           const double lo = L0->origin[d] + (CCTK_REAL)margin * L0->dx[d];
           const double hi = L0->origin[d] + (CCTK_REAL)(L0->lsh[d]-1-margin) * L0->dx[d];
-          if (y[d] < lo || y[d] > hi) { Geodesic_gstate.pgeodesic[mi].outbd = 1; break; }
+          if (y[d] < lo || y[d] > hi) { Geodesic_gstate.pgeodesic[mi].outbd = 1;; break; }
         }
       }
     }
@@ -4582,7 +4678,7 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
         const double gap_cells = (dxmax > 0.0) ? (gap / dxmax) : 1e100;
         if (gap_cells > s_owner_margin)
         {
-          Geodesic_gstate.pgeodesic[mi].outbd = 1;
+          Geodesic_gstate.pgeodesic[mi].outbd = 1;;
         }
       }
     }
@@ -4695,7 +4791,10 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
           h  = hstart;         /* re-converge the step size */
           continue;           /* loop recomputes tau_end from the new ts */
         }
-        Geodesic_gstate.pgeodesic[mi].outbd = 1;
+        if (getenv("GEODESIC_DROP_DEBUG"))
+          fprintf(stderr, "ODEFAIL mi=%d retc=%d ts=%.9g tau_end=%.9g h=%.3g pos=(%.6f,%.6f,%.6f) u=(%.6g,%.6g,%.6g,%.6g)\n",
+                  mi, (int)retc, ts, tau_end, h, ys[1], ys[2], ys[3], ys[4], ys[5], ys[6], ys[7]);
+        Geodesic_gstate.pgeodesic[mi].outbd = 1;;
         ys[0] = t_target;
         break;
       }
@@ -4703,7 +4802,7 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
       const double r2 = ys[1]*ys[1] + ys[2]*ys[2] + ys[3]*ys[3];
       if (r2 < excised_radius * excised_radius)
       {
-        Geodesic_gstate.pgeodesic[mi].outbd = 1;
+        Geodesic_gstate.pgeodesic[mi].outbd = 1;;
       }
 
       if (Geodesic_gstate.pgeodesic[mi].outbd)
@@ -4763,7 +4862,7 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
 
         if (!isfinite(rl) || rl >= 0.0)
         {
-          Geodesic_gstate.pgeodesic[mi].outbd = 1;
+          Geodesic_gstate.pgeodesic[mi].outbd = 1;;
           Geodesic_gstate.pgeodesic[mi].renorm_warn = 1;   /* aggregated after the loop */
         }
         else
@@ -4779,7 +4878,7 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
             if (!isfinite(u[0]) || u[0] <= 0.0)
             {
               Geodesic_gstate.pgeodesic[mi].norm_bad = 1;   /* aggregated after the loop */
-              Geodesic_gstate.pgeodesic[mi].outbd = 1;
+              Geodesic_gstate.pgeodesic[mi].outbd = 1;;
             }
             else
             {
@@ -4800,7 +4899,7 @@ static void geodesic_integrate_particle(cGH *cctkGH, const int mi, const double 
             else
             {
               Geodesic_gstate.pgeodesic[mi].norm_bad = 1;   /* aggregated after the loop */
-              Geodesic_gstate.pgeodesic[mi].outbd = 1;
+              Geodesic_gstate.pgeodesic[mi].outbd = 1;;
             }
           }
         }
@@ -4933,7 +5032,7 @@ static void geodesic_recompute_owner_map(cGH *cctkGH, const double *bd, const in
          Flag outbd + owner=-1; the chunk loop's outbd branch (owner<0)
          drops it via the loss policy. */
       owner = -1;
-      Geodesic_gstate.pgeodesic[mi].outbd = 1;
+      Geodesic_gstate.pgeodesic[mi].outbd = 1;;
     }
     Geodesic_gstate.owner_of[mi]  = owner;
     Geodesic_gstate.owner_lvl[mi] = olvl;
@@ -6132,7 +6231,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
           const int l = Geodesic_gstate.owner_lvl[mi];
           if (r < 0 || l < 0)
           {
-            Geodesic_gstate.pgeodesic[mi].outbd = 1;   /* unowned: the loss policy handles it */
+            Geodesic_gstate.pgeodesic[mi].outbd = 1;;   /* unowned: the loss policy handles it */
             continue;
           }
           /* the chunk end must be bit-identical on every rank (the
@@ -6145,7 +6244,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
           const double ut = particle_ttv[mi];
           if (!(ut > 0.0) || !isfinite(ut))
           {
-            Geodesic_gstate.pgeodesic[mi].outbd = 1;
+            Geodesic_gstate.pgeodesic[mi].outbd = 1;;
             continue;
           }
           /* coordinate velocities dx^i/dt = u^i/u^t */
@@ -6155,7 +6254,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
           if (!((vx*vx + vy*vy + vz*vz) > 0.0) ||
               !(isfinite(vx) && isfinite(vy) && isfinite(vz)))
           {
-            Geodesic_gstate.pgeodesic[mi].outbd = 1;
+            Geodesic_gstate.pgeodesic[mi].outbd = 1;;
             continue;
           }
           const double px = particle_tx[mi], py = particle_ty[mi], pz = particle_tz[mi];
@@ -6165,35 +6264,28 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
              riding a shared box face: the equatorial shell sits on the
              z=0 rank boundary, so dm_z ~ 1e-6 with v_z ~ 1e-7 produced
              infinitesimal chunks forever (dm shrinks 25%/chunk, never
-             crossing).  With the directional form: a particle on a face
-             moving away from it is unconstrained by that face; one
-             moving toward the face it sits on has t_hit = 0 and is
-             skipped by the threshold below (it rides through the chunk;
-             the tpoint clip in Geodesic_cf2_fitting keeps its reads safe and the
-             boundary re-owning moves it to the adjacent box) */
+             crossing).  A particle moving away from a face is not
+             constrained by that face at all. */
           double t_hit = 1.0e300;
-          /* face-riding guard: a particle within FACE_EPS of the face it
-             moves TOWARD is treated as sitting ON that face and does not
-             constrain the chunk.  A rider's normal velocity is numerical
-             noise (~1e-10) that keeps flipping sign, so d/v stays
-             ~1e-5..1e-6 step after step and the 25%-margin chunks shrink
-             the distance by 25% each without ever letting it cross --
-             the chunk count ran into the defensive cap and every
-             particle was handed to the loss policy (4p aei, t~1.64).
-             Letting the rider ride is safe: its displacement across the
-             face per step is ~1e-11 (far inside the 0.5-cell mid-step
-             backstop and the >=4-cell ghost zone), and the
-             chunk-boundary re-owning puts it on whichever side it is.
-             A genuinely approaching particle (d >= FACE_EPS) still
-             constrains as before and is handed to the neighbor by the
-             boundary re-owning once it gets within FACE_EPS. */
+          /* d_eff = max(distance-to-face, FACE_EPS): a particle that sits
+             ON the face it moves toward still gets a bounded chunk
+             (FACE_EPS over the speed), so the chunk-boundary re-owning
+             hands it to the neighbour after one short chunk instead of
+             letting it fly across the neighbour's whole box and be killed
+             by the mid-step reachability test.  A rider whose normal
+             velocity is numerical noise (~1e-10) gets a huge t_hit from
+             the same formula and is unaffected, which is what the old
+             "skip the face when d < FACE_EPS" guard was protecting. */
           const double FACE_EPS = 1.0e-6;
-          if (vx > 0.0)    { const double d = bo[3] - px; if (d >= FACE_EPS) { const double th = d / vx;  if (th < t_hit) t_hit = th; } }
-          else if (vx < 0.0) { const double d = px - bo[0]; if (d >= FACE_EPS) { const double th = d / -vx; if (th < t_hit) t_hit = th; } }
-          if (vy > 0.0)    { const double d = bo[4] - py; if (d >= FACE_EPS) { const double th = d / vy;  if (th < t_hit) t_hit = th; } }
-          else if (vy < 0.0) { const double d = py - bo[1]; if (d >= FACE_EPS) { const double th = d / -vy; if (th < t_hit) t_hit = th; } }
-          if (vz > 0.0)    { const double d = bo[5] - pz; if (d >= FACE_EPS) { const double th = d / vz;  if (th < t_hit) t_hit = th; } }
-          else if (vz < 0.0) { const double d = pz - bo[2]; if (d >= FACE_EPS) { const double th = d / -vz; if (th < t_hit) t_hit = th; } }
+          if (vx > 0.0)    { double d = bo[3] - px; if (d < FACE_EPS) d = FACE_EPS; const double th = d / vx;  if (th < t_hit) t_hit = th; }
+          else if (vx < 0.0) { double d = px - bo[0]; if (d < FACE_EPS) d = FACE_EPS; const double th = d / -vx; if (th < t_hit) t_hit = th; }
+          if (vy > 0.0)    { double d = bo[4] - py; if (d < FACE_EPS) d = FACE_EPS; const double th = d / vy;  if (th < t_hit) t_hit = th; }
+          else if (vy < 0.0) { double d = py - bo[1]; if (d < FACE_EPS) d = FACE_EPS; const double th = d / -vy; if (th < t_hit) t_hit = th; }
+          if (vz > 0.0)    { double d = bo[5] - pz; if (d < FACE_EPS) d = FACE_EPS; const double th = d / vz;  if (th < t_hit) t_hit = th; }
+          else if (vz < 0.0) { double d = pz - bo[2]; if (d < FACE_EPS) d = FACE_EPS; const double th = d / -vz; if (th < t_hit) t_hit = th; }
+          if (getenv("GEODESIC_CHUNK_DEBUG") && mi == 0)
+            fprintf(stderr, "CHUNKCALC rank=%d r=%d l=%d box=[%.4f,%.4f]x[%.4f,%.4f]x[%.4f,%.4f] pos=(%.4f,%.4f,%.4f) v=(%.4f,%.4f,%.4f) t_hit=%.4f\n",
+                    me, r, l, bo[0],bo[3], bo[1],bo[4], bo[2],bo[5], px,py,pz, vx,vy,vz, t_hit);
           if (t_hit < 1.0e299)
           {
             const double tc = t_now + margin * t_hit;
@@ -6211,7 +6303,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
                      "Geodesic (multi_amr): chunk count exceeded the defensive cap (100000) in one step; all live particles are handed to the loss policy");
           for (mi = 0; mi < particle_n_total; mi++)
             if (!Geodesic_gstate.pgeodesic[mi].dead && !Geodesic_gstate.pgeodesic[mi].outbd)
-              Geodesic_gstate.pgeodesic[mi].outbd = 1;
+              Geodesic_gstate.pgeodesic[mi].outbd = 1;;
           break;
         }
 
@@ -6233,6 +6325,14 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
             continue;
           geodesic_integrate_particle(cctkGH, mi, t_chunk, t0);
         }
+
+        if (getenv("GEODESIC_CHUNK_DEBUG"))
+          fprintf(stderr, "CHUNK rank=%d n=%d t_now=%.6f -> t_chunk=%.6f p0 owner=%d olvl=%d pos=(%.6f,%.6f,%.6f) outbd=%d\n",
+                  me, nchunks, t_now, t_chunk,
+                  Geodesic_gstate.owner_of ? Geodesic_gstate.owner_of[0] : -9,
+                  Geodesic_gstate.owner_lvl ? Geodesic_gstate.owner_lvl[0] : -9,
+                  (double)particle_tx[0], (double)particle_ty[0], (double)particle_tz[0],
+                  Geodesic_gstate.pgeodesic[0].outbd);
 
         /* ---- chunk boundary: sync + re-own ---- */
         geodesic_mmpi_sync(cctkGH, npr, me, particle_n_total);
@@ -6365,7 +6465,23 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
          dropped/flagged particle is never silent */
       if (Geodesic_gstate.pgeodesic[mi].outbd && !Geodesic_gstate.pgeodesic[mi].norm_bad &&
           !Geodesic_gstate.pgeodesic[mi].renorm_warn && !Geodesic_gstate.pgeodesic[mi].freeze_warn)
+      {
         n_outbd++;
+        if (getenv("GEODESIC_DROP_DEBUG"))
+          fprintf(stderr, "DROPDBG mi=%d pos=(%.6f,%.6f,%.6f) t=%.6f outbd=%d l27_bad=%d local27_bad=%d cf2_bad=%d old_level_bad=%d norm_bad=%d freeze=%d owner=%d olvl=%d\n",
+                  mi,
+                  (double)particle_tx[mi], (double)particle_ty[mi], (double)particle_tz[mi],
+                  (double)particle_tt[mi],
+                  Geodesic_gstate.pgeodesic[mi].outbd,
+                  Geodesic_gstate.pgeodesic[mi].l27_bad,
+                  Geodesic_gstate.pgeodesic[mi].local27_bad,
+                  Geodesic_gstate.pgeodesic[mi].local27_cf2_bad,
+                  Geodesic_gstate.pgeodesic[mi].old_level_bad,
+                  Geodesic_gstate.pgeodesic[mi].norm_bad,
+                  Geodesic_gstate.pgeodesic[mi].freeze_warn,
+                  Geodesic_gstate.owner_of ? Geodesic_gstate.owner_of[mi] : -9,
+                  Geodesic_gstate.owner_lvl ? Geodesic_gstate.owner_lvl[mi] : -9);
+      }
       if (Geodesic_gstate.pgeodesic[mi].rl_last != 0.0)
       {
         if (!rl_have)
