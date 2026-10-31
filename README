@@ -63,6 +63,15 @@ MPI ranks and requires the dumps to agree within a 1e-6 tolerance
   which is appropriate for the hundreds to tens of thousands of
   particles this thorn is designed for, not for arbitrarily large
   ensembles.
+- With Geodesic::Exact = no and the grid samplers, more than 4 MPI ranks
+  are refused at start-up.  The owner map and the halo exchange are
+  written for an arbitrary decomposition, but above 4 ranks the owner
+  map has been seen to leave a particle unclaimed (test/circ_orbit_grid
+  at 8 ranks drops its particle at t ~ 10 while 1 and 2 ranks run to
+  t = 3200), so the thorn stops rather than produce silently wrong
+  trajectories.  Exact = yes and the carpetx sampler do not use the
+  owner map and are not restricted, but are likewise untested above 4
+  ranks.
 - In runs with more than one MPI rank and Geodesic::Exact = no, the
   sampled trajectory depends on the rank count: the grid data itself is
   bit-identical, but the chunked multi-rank integration hands a

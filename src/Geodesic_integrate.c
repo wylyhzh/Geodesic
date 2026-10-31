@@ -5238,7 +5238,11 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
      whose position lies inside its own local patch (interior-box
      ownership); the shared particle state is synchronized with
      MPI_Allgather so every rank holds the identical full state.
-     Only a 2x2 (y,z) decomposition of at most 4 ranks is supported.
+     The owner map itself is decomposition-agnostic (it Allgathers every
+     rank's per-level boxes and picks the nearest claim box), but only a
+     2x2 (y,z) split of at most 4 ranks has been checked against a
+     single-process run; above that the owner map can leave a particle
+     unclaimed and the thorn refuses to start (see the CCTK_ERROR below).
      This is the ONLY valid multi-process mode for Exact = no: the
      alternative (rank 0 integrates alone) cannot work because rank 0
      owns only its own patch of the decomposed grid, so particles in
@@ -5252,8 +5256,16 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
      per-rank patches that Geodesic can see, and the interpolator is an MPI
      collective (see multi_cx below), so the owner map does not apply. */
   Geodesic_gstate.multi_amr = (CCTK_nProcs(cctkGH) > 1) && !Exact && !Geodesic_gstate.carpetx_mode;
+  /* The owner map and the halo exchange are written for an arbitrary
+     decomposition (both Allgather every rank's boxes and consider every rank
+     pair), but only up to 4 ranks has this been checked against a
+     single-process run.  Above that the owner map can leave a particle
+     unclaimed: test/circ_orbit_grid.par at 8 ranks drops its particle at
+     t ~ 10 while 1 and 2 ranks run to t = 3200.  Refuse rather than produce
+     silently wrong trajectories. */
   if (Geodesic_gstate.multi_amr && CCTK_nProcs(cctkGH) > 4)
-    CCTK_ERROR("Geodesic (multi-process AMR): at most 4 MPI ranks are supported.");
+    CCTK_ERROR("Geodesic: at most 4 MPI ranks are supported with the grid "
+               "samplers (Exact = no); see README, Known limitations.");
 
   /* Multi-process CarpetX (multi_cx): the integration is REPLICATED.
      CarpetX_InterpGridArrays redistributes the interpolation points with

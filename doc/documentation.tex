@@ -357,9 +357,19 @@ hydrodynamics or other evolution thorn is needed; in
 \item \textbf{\texttt{Exact = yes} is a single Kerr black hole} in
   Kerr--Schild coordinates (mass \texttt{M}, spin \texttt{a}); it is a
   reference mode, not an evolved or binary spacetime.
-\item \textbf{Multi-process support is limited to four MPI ranks} (a
-  $2 \times 2$ decomposition in $y$ and $z$, one patch per rank per
-  level); more ranks abort with an explicit error.
+\item \textbf{Multi-process support with the grid samplers
+  (\texttt{Exact = no}) is limited to four MPI ranks}; more ranks abort
+  with an explicit error.  The owner map and the halo exchange are
+  written for an arbitrary decomposition (both Allgather every rank's
+  boxes and consider every rank pair), but only a $2 \times 2$ split of
+  four ranks has been checked against a single-process run.  Above that
+  the owner map has been seen to leave a particle unclaimed:
+  \texttt{circ\_orbit\_grid} at eight ranks drops its particle at
+  $t \approx 10$ while 1 and 2 ranks run to $t = 3200$.  The thorn stops
+  rather than produce silently wrong trajectories.
+  \texttt{Exact = yes} and the \texttt{carpetx} sampler do not use the
+  owner map and are not restricted, but are likewise untested above four
+  ranks.
 \item \textbf{\texttt{Exact = no} trajectories are not bit-identical
   across different MPI rank counts.}  The grid data itself is
   bit-identical (verified by dumping \texttt{ADMBase::metric} with

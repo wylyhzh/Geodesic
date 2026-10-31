@@ -65,11 +65,12 @@
       rank caches the pointers of its OWN local patch per level.  Particle
       ownership is by interior boxes: at the trigger, all ranks Allgather
       the per-level interior boxes of their local patches and every rank
-      computes the identical owner map (finest level first, then rank
-      order; half-open boxes).  Each rank integrates the particles it owns
-      and an MPI_Allgather of the full particle state afterwards keeps all
-      ranks' views bit-identical.  At most 4 ranks (a 2x2 y,z
-      decomposition with one patch per rank per level).  The level-0
+      computes the identical owner map (first the level a single rank would
+      pick, then the rank whose claim box is nearest).  Each rank integrates
+      the particles it owns and an MPI_Allgather of the full particle state
+      afterwards keeps all ranks' views bit-identical.  Checked up to 4
+      ranks (a 2x2 y,z decomposition with one patch per rank per level);
+      above that the thorn refuses to start.  The level-0
       patch-symmetry check applies to single-process runs only.
 
     * Multi-process CarpetX (Geodesic_gstate.multi_cx): no ownership at all.
