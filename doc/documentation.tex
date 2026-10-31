@@ -365,20 +365,22 @@ hydrodynamics or other evolution thorn is needed; in
   bit-identical (verified by dumping \texttt{ADMBase::metric} with
   \texttt{CarpetIOASCII::compact\_format = yes} and
   \texttt{output\_ghost\_points = no}), but where the rank faces fall
-  changes the sampled trajectory.  On \texttt{circ\_orbit\_grid} a
-  1-versus-2-rank run differs by $5 \times 10^{-2}$ in $x$ after 32
-  steps ($4 \times 10^{-5}$ from a single face crossing inside one
-  \texttt{Geodesic::step}); on the three-level AMR setup of the
-  published test a 1-versus-4-rank run differs by $2.4$ in $x$ and
-  $1.2$ in $\tau$ at $t = 3200\,M$.  With \texttt{Geodesic::step} much
-  larger than the grid step a particle can also leave the safe region of
-  its owner's patch and be dropped by the loss policy.  \texttt{Exact =
-  yes} is rank-count independent.  The halo exchange
-  (\texttt{GEODESIC\_HALO\_W} = 5) removes the stencil-contamination
-  half of this --- \texttt{extra/conv100\_local27} and
-  \texttt{extra/ellipse\_orbit\_amr} are bit-identical at 1, 2 and 4
-  ranks --- but not the whole of it.  This is under investigation;
-  results that depend on it should be quoted at fixed rank count.
+  changes the sampled trajectory: the chunked multi-rank integration
+  hands a particle to the next owning rank at a point along its path
+  that depends on the decomposition, and the interpolation stencil
+  window moves with it.  The deviation is bounded and oscillates with
+  the orbit rather than growing.  On \texttt{circ\_orbit\_grid} a
+  1-versus-2-rank run differs by at most $5.2\times10^{-2}$ in $y$
+  ($3.3\times10^{-2}$ in $x$) over the 32 steps of that test
+  ($t \le 3200\,M$), while the same comparison on
+  \texttt{extra/conv100\_local27} is exactly zero at 1, 2 and 4 ranks.
+  On the three-level AMR setup of the published test a 1-versus-4-rank
+  run differs by $RANKX$ in $x$ and $RANKTAU$ in $\tau$ at
+  $t = 3200\,M$.  \texttt{Exact = yes} is rank-count independent.  With
+  \texttt{Geodesic::step} much larger than the grid step a particle can
+  also leave the reachable window of its owner's patch and be dropped by
+  the loss policy.  Results that depend on this should be quoted at
+  fixed rank count.
 \item \textbf{The \texttt{l27} sampler must be run single-process}
   whenever particles sit on or within a few cells of a rank face.
 \item \textbf{Memory per particle depends on the sampler.}  The

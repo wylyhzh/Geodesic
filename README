@@ -41,11 +41,21 @@ tested example that runs on a stock Einstein Toolkit checkout.
 3. Tests
 
 test/ contains regression tests declared in test/test.ccl.  They are
-regression tests (bit-comparison of the particle dump against reference
-data), not convergence or physics tests.  test/check_mpi_identity.sh
-additionally checks that the particle dump agrees across 1, 2 and 4 MPI
-ranks within a 1e-6 tolerance (measured: exactly identical at 2 ranks,
-1.1e-8 in the worst column at 4 ranks).
+regression tests (comparison of the particle dump against reference
+data, RELTOL 1e-12), not convergence or physics tests.  Nine tests are
+registered; with the Cactus driver,
+
+  CCTK_TESTSUITE_RUN_TESTS=Geodesic perl lib/sbin/RunTest.pl no <Cactus> sim
+
+they report Number failed = 0 and take 26 s in total (largest single
+test 6.9 s) on a 50^3 KerrSchild grid with one particle.  Ten larger
+regression cases live in test/extra/ and are not picked up by the
+driver; test/extra/README explains how to run them.
+
+test/check_mpi_identity.sh additionally runs the same par at 1, 2 and 4
+MPI ranks and requires the dumps to agree within a 1e-6 tolerance
+(measured on extra/conv100_local27: exactly identical at 2 ranks and at
+4 ranks).
 
 4. Known limitations
 
@@ -55,13 +65,16 @@ ranks within a 1e-6 tolerance (measured: exactly identical at 2 ranks,
   ensembles.
 - In runs with more than one MPI rank and Geodesic::Exact = no, the
   sampled trajectory depends on the rank count: the grid data itself is
-  bit-identical, but where the rank faces fall changes the result
-  (~4e-5 per face crossing inside one Geodesic::step; O(1) after 3200 M
-  of a three-level AMR orbit at 4 ranks). Exact = yes is rank-count
-  independent. The halo exchange removes the stencil half of this
-  (extra/conv100_local27 and extra/ellipse_orbit_amr are bit-identical
-  at 1, 2 and 4 ranks) but not all of it; still under investigation.
-  Quote results at fixed rank count. See doc/documentation.tex.
+  bit-identical, but the chunked multi-rank integration hands a
+  particle to the next owning rank at a point along its path that
+  depends on the decomposition.  The deviation is bounded and
+  oscillates with the orbit rather than growing: at most 5.2e-2 in y
+  for test/circ_orbit_grid.par run at 1 vs 2 ranks over its 32 steps
+  (t <= 3200 M), and exactly 0 on extra/conv100_local27 at 1, 2 and 4
+  ranks.  On the three-level AMR setup it reaches RANKX in x and
+  RANKTAU in tau at t = 3200 M with 4 ranks.  Exact = yes is
+  rank-count independent.  Quote results at fixed rank count.  See
+  doc/documentation.tex.
 
 5. Contact
 

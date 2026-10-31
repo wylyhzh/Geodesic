@@ -4633,20 +4633,26 @@ static void geodesic_mmpi_sync(cGH *cctkGH, const int npr, const int me, const i
      6      L->valid
      7      L->metric_static
      8..10  dx[0..2]
-     11..13 in_level_dir() lower bound of this rank's patch (safe margin,
-           widened by the halo the MPI exchange actually filled)
-     14..16 the same upper bound
-   Those bounds let the owner map rebuild the level's GLOBAL extent so the
-   LEVEL it picks is the level pick_level() would pick on one rank.  Slots
-   0..5 (the per-rank claim box) cannot do that: they are shrunk by the safe
-   margin, leaving holes at internal rank faces, so a particle on a rank face
-   looked closer to a coarse level than to the fine one and got the wrong
-   level. */
+     11..13 patch array lower corner   (origin, ghosts included)
+     14..16 patch array upper corner   (origin + (lsh-1)*dx)
+   The owner map unions these over ranks and shrinks the union by
+   safe_margin_cells(), which reproduces exactly the interval
+   in_level_dir()/pick_level() uses in a single-process run.  Slots 0..5 (the
+   per-rank claim box) cannot do that: they are shrunk per rank, leaving holes
+   at internal rank faces, so a particle on a rank face looked closer to a
+   coarse level than to the fine one and got the wrong level. */
 #endif
 #define GEODESIC_OWNER_REC 17
 #ifdef CCTK_MPI
 static double *s_owner_bd = NULL;
 static double  s_owner_margin = 4.0;
+/* the per-level GLOBAL extents computed by geodesic_recompute_owner_map
+   (same nlev*8 layout as its scratch buffer: [0..2] lo, [3..5] hi,
+   [6] dxmax, [7] present), kept for the chunk-boundary test so the chunked
+   integration switches AMR level at the same place a single-process run's
+   pick_level() would.  Valid until the next recompute. */
+static double *s_owner_gb = NULL;
+static int     s_owner_gb_nlev = -1;
 
 /* Chunk length (in coordinate time units, before dividing by the speed) for
    one face of the owner's claim box.  d_raw is the POSITIVE distance from the
@@ -5091,12 +5097,24 @@ static void geodesic_recompute_owner_map(cGH *cctkGH, const double *bd, const in
 #ifdef CCTK_MPI
   s_owner_margin = env_margin;
 #endif
-  /* per-level global extent: the union over ranks of each rank's
-     in_level_dir() bounds (slots 11..16).  A particle inside this union is
-     served by that level on SOME rank, which is the same question
-     pick_level() answers on a single rank. */
-  double *gb = (double *)calloc((size_t)nlev * 8, sizeof(double));
-  if (!gb) CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: owner-map scratch allocation failed.");
+  /* per-level global extent: the union over ranks of the patch ARRAY corners
+     (slots 11..16), shrunk by safe_margin_cells().  The union of the patch
+     arrays is the level's full array, identical whether the level sits on one
+     rank or on four, so this is the interval in_level_dir()/pick_level() uses
+     in a single-process run, and the level the owner map picks matches it. */
+  double *gb = s_owner_gb;
+  if (gb == NULL || s_owner_gb_nlev != nlev)
+  {
+    free(gb);
+    gb = (double *)calloc((size_t)nlev * 8, sizeof(double));
+    if (!gb) CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: owner-map scratch allocation failed.");
+    s_owner_gb = gb;
+    s_owner_gb_nlev = nlev;
+  }
+  else
+  {
+    for (int i = 0; i < nlev * 8; i++) gb[i] = 0.0;
+  }
   for (int l = 0; l < nlev; l++)
   {
     double *g = gb + (size_t)l * 8;   /* [0..2] lo, [3..5] hi, [6] dxmax, [7] present */
@@ -5116,6 +5134,15 @@ static void geodesic_recompute_owner_map(cGH *cctkGH, const double *bd, const in
       }
       for (int i = 0; i < 3; i++)
         if (b[8+i] > dxm) dxm = b[8+i];
+    }
+    /* shrink the union by the same safe margin in_level_dir() applies to a
+       single rank's patch.  Per-rank shrinking would leave a hole of
+       2*margin*dx at every internal rank face; shrinking the union instead
+       gives the interval a single-process run would compute. */
+    if (g[7] != 0.0 && dxm > 0.0)
+    {
+      const double sh = (double)safe_margin_cells() * dxm;
+      for (int i = 0; i < 3; i++) { g[i] += sh; g[3+i] -= sh; }
     }
     g[6] = dxm;
   }
@@ -5231,7 +5258,9 @@ static void geodesic_recompute_owner_map(cGH *cctkGH, const double *bd, const in
     Geodesic_gstate.owner_of[mi]  = owner;
     Geodesic_gstate.owner_lvl[mi] = olvl;
   }
-  free(gb);
+  /* gb is s_owner_gb: the chunk-boundary level test reads it after this
+     function returns, so it is NOT freed here (it is reused / freed on the
+     next recompute with a different nlev). */
 }
 #endif
 
@@ -5859,25 +5888,23 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
         s[6] = L->valid ? 1.0 : 0.0;
         s[7] = L->metric_static;
         s[8] = L->dx[0]; s[9] = L->dx[1]; s[10] = L->dx[2];
-        /* slots 11..16: the SAME bounds in_level_dir()/pick_level() would
-           compute for this rank's patch (safe margin, widened by the halo
-           the MPI exchange actually filled).  The owner map unions these to
-           rebuild the level's GLOBAL extent, so the level it picks is the
-           level a single rank would pick.  The per-rank claim box in slots
-           0..5 is deliberately narrower (r_lbnd/r_ubnd for l>=1); using it
-           for the level test made the level choice depend on the rank
-           decomposition. */
-        {
-          const int mgn = safe_margin_cells();
-          for (int i = 0; i < 3; i++) {
-            const int lo_i = mgn - (int)L->halo_cov[i][0];
-            const int hi_i = (int)L->lsh[i] - 1 + (int)L->halo_cov[i][1] - mgn;
-            double lo = L->origin[i] + (CCTK_REAL)lo_i * L->dx[i];
-            double hi = L->origin[i] + (CCTK_REAL)hi_i * L->dx[i];
-            if (lo > hi) { lo = L->i_lbnd[i]; hi = L->i_ubnd[i]; }
-            s[11+i] = lo;
-            s[14+i] = hi;
-          }
+        /* slots 11..16: the corners of this rank's patch ARRAY (the coordinate
+           of array index 0 and of index lsh-1, ghosts included).  The owner map
+           unions these over ranks and then shrinks the union by
+           safe_margin_cells(); the union of the patch arrays is the level's
+           full array, which is the SAME object whether the level lives on one
+           rank or on four, so the shrunk union is exactly the interval
+           in_level_dir()/pick_level() uses in a single-process run.
+           Gathering the per-rank in_level_dir() bounds instead would have
+           widened them by halo_cov (the halo only exists in multi-rank runs)
+           and shrunk each rank separately, which leaves the union wider than
+           the single-process interval by halo_cov cells at every level
+           boundary.  Slots 0..5 (the per-rank claim box) are deliberately
+           narrower (r_lbnd/r_ubnd for l>=1); using them for the level test
+           made the level choice depend on the rank decomposition. */
+        for (int i = 0; i < 3; i++) {
+          s[11+i] = L->origin[i];
+          s[14+i] = L->origin[i] + (CCTK_REAL)(L->lsh[i]-1) * L->dx[i];
         }
       }
       MPI_Allgather(s0, nlev*GEODESIC_OWNER_REC, MPI_DOUBLE, bd, nlev*GEODESIC_OWNER_REC,
@@ -6506,6 +6533,35 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
           else if (vy < 0.0) { const double th = chunk_face_dist(py - bo[1], bo[9], marg) / -vy; if (th < t_hit) t_hit = th; }
           if (vz > 0.0)    { const double th = chunk_face_dist(bo[5] - pz, bo[10], marg) / vz;  if (th < t_hit) t_hit = th; }
           else if (vz < 0.0) { const double th = chunk_face_dist(pz - bo[2], bo[10], marg) / -vz; if (th < t_hit) t_hit = th; }
+          /* Level-consistency boundary.  The chunked path samples the metric on
+             Geodesic_gstate.owner_lvl[mi], which is fixed for the whole chunk,
+             while a single-process run re-evaluates pick_level() at every ODE
+             call.  Put a chunk boundary at the face of the GLOBAL extent of the
+             current level (the particle is leaving it) and of the next finer
+             level (the particle is entering it), so both switch level at the
+             same point of the path.  The extents are the union of the patch
+             arrays shrunk by the safe margin, i.e. the same numbers in a 1-rank
+             and an N-rank run, so this constraint does not reintroduce a rank
+             dependence.  A particle already within 1e-9 of a face is left
+             alone: the crossing is handled by the next recompute. */
+          if (s_owner_gb != NULL)
+          {
+            const double pv[3] = { vx, vy, vz };
+            const double pp[3] = { px, py, pz };
+            for (int ll = l; ll <= l + 1 && ll < nlev; ll++)
+            {
+              const double *e = s_owner_gb + (size_t)ll * 8;
+              if (e[7] == 0.0) continue;
+              for (int d = 0; d < 3; d++)
+              {
+                double dd, th;
+                if (pv[d] > 0.0)      { dd = e[3+d] - pp[d]; if (dd < 1.0e-9) continue; th = dd / pv[d]; }
+                else if (pv[d] < 0.0) { dd = pp[d] - e[d];   if (dd < 1.0e-9) continue; th = dd / -pv[d]; }
+                else continue;
+                if (th < t_hit) t_hit = th;
+              }
+            }
+          }
           if (getenv("GEODESIC_CHUNK_DEBUG") && t_hit < 1.0e-3)
             fprintf(stderr, "CHUNKCALC rank=%d mi=%d r=%d l=%d box=[%.4f,%.4f]x[%.4f,%.4f]x[%.4f,%.4f] pos=(%.6f,%.6f,%.6f) v=(%.6f,%.6f,%.6f) t_hit=%.6g\n",
                     me, mi, r, l, bo[0],bo[3], bo[1],bo[4], bo[2],bo[5], px,py,pz, vx,vy,vz, t_hit);
