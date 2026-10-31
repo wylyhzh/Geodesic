@@ -12,7 +12,7 @@
 # the assertion on |z| and |u_z| below catches that directly.
 #
 # Usage:  ./check_mpi_identity.sh [parfile] [itlast]
-#         (default: conv100_local27.par, the 100^3 dx=0.5 Kerr-Schild
+#         (default: extra/conv100_local27.par, the 100^3 dx=0.5 Kerr-Schild
 #          circular-orbit test whose z = 0 plane is a rank face for
 #          the 2- and 4-rank decompositions)
 #         itlast (default 100) truncates the run: bit-identity is already
@@ -25,7 +25,7 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CACTUS_HOME="${CACTUS_HOME:-$(cd "$SCRIPT_DIR/../../../.." && pwd)}"
 EXE="$CACTUS_HOME/exe/cactus_sim"
-PAR="${1:-$SCRIPT_DIR/conv100_local27.par}"
+PAR="${1:-$SCRIPT_DIR/extra/conv100_local27.par}"
 ITLAST="${2:-100}"
 BASE="$(mktemp -d /tmp/geodesic_mpi_identity.XXXXXX)"
 

@@ -1,0 +1,41 @@
+Local regression set — NOT part of the Cactus testsuite
+======================================================
+
+The Cactus testsuite driver (RunTest.pl) globs `test/*.par` only, so
+nothing in this directory is run automatically.  These are the heavier
+runs that the review criteria (under 10 s per test, under 2 min for the
+whole component) do not allow in `test/`: `circ_orbit_amr` alone takes
+about 20 minutes on one core.
+
+They are kept because they cover things the small tests do not: 100- and
+200-particle rings, 3-level AMR with particles crossing level boundaries,
+the TwoPunctures BBH sets, and the conv100 sampler comparisons at
+1 / 2 / 4 ranks.
+
+How to run them
+---------------
+
+    cd <Cactus>/arrangements/EinsteinAnalysis/Geodesic/test
+    ./run_tests.sh -all          # uses RunTest.pl on the sim configuration
+
+or one at a time, from a scratch directory:
+
+    mkdir /tmp/rt && cd /tmp/rt
+    OMP_NUM_THREADS=1 mpirun -np 4 \
+        <Cactus>/exe/cactus_sim \
+        <Cactus>/arrangements/EinsteinAnalysis/Geodesic/test/extra/conv100_local27.par
+    cmp conv100_local27/geodesic_particles.txt \
+        <Cactus>/arrangements/EinsteinAnalysis/Geodesic/test/extra/conv100_local27/geodesic_particles.txt
+
+`check_mpi_identity.sh` (in the parent directory) runs the 1-, 2- and
+4-rank bit-identity comparison against `extra/conv100_local27.par` by
+default, and against any other par you pass it.
+
+Reference data
+--------------
+
+Each `<name>/geodesic_particles.txt` is the dump of a verified run of the
+matching par.  The conv100 and tp_* references were regenerated on
+2026-10-28 with the 10-column dump (revision 2026.10.28-1 added
+`cctk_time`); the `*.regen.out` and `*.out` files in this directory are
+the console logs of those runs, kept for reference only.
