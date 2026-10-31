@@ -316,7 +316,7 @@ trajectory is not bit-identical across different rank counts (see
 Limitations below).  \texttt{Exact = yes} is rank-count independent, and
 that is what \texttt{circ\_orbit\_mpi} checks.
 
-Heavier regression runs --- 100- and 200-particle rings, three-level
+Heavier regression runs --- 100-particle rings, three-level
 AMR, the \texttt{conv100} sampler comparisons at 1/2/4 ranks, and the
 100-particle rings on the two-puncture \texttt{GW150914} background
 (\texttt{TwoPunctures}, $144^3$, $\Delta x = 0.25$) --- live in
@@ -396,6 +396,17 @@ hydrodynamics or other evolution thorn is needed; in
   fixed rank count.
 \item \textbf{The \texttt{l27} sampler must be run single-process}
   whenever particles sit on or within a few cells of a rank face.
+\item \textbf{Explicit initial conditions are limited to the first 100
+  particles.}  The initial data is supplied through the parameter arrays
+  \texttt{particle\_x}, \texttt{particle\_y}, \texttt{particle\_z},
+  \texttt{particle\_xv}, \texttt{particle\_yv}, \texttt{particle\_zv},
+  \texttt{particle\_tv}, declared with 100 entries each
+  (\texttt{particle\_n <= 100}).  100 is the largest parameter-array
+  extent used anywhere in the Einstein Toolkit, and Cactus echoes every
+  parameter in \texttt{cactus\_sim -O}, so the arrays are deliberately
+  not larger.  Larger ensembles set \texttt{particle\_n <= 100}
+  explicitly and let \texttt{particle\_n\_total} (up to 10000) fill the
+  remainder with random initial conditions.
 \item \textbf{Memory per particle depends on the sampler.}  The
   stencil cache is allocated only for the sampler actually selected:
   \texttt{l27} keeps the 27-node cache ($\approx 35$\,kB per particle),

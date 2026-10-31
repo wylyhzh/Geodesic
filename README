@@ -63,6 +63,15 @@ MPI ranks and requires the dumps to agree within a 1e-6 tolerance
   which is appropriate for the hundreds to tens of thousands of
   particles this thorn is designed for, not for arbitrarily large
   ensembles.
+- Explicit initial conditions are given through the parameter arrays
+  particle_x / particle_y / particle_z / particle_xv / particle_yv /
+  particle_zv / particle_tv, which are declared for the first 100
+  particles (particle_n <= 100).  100 is the largest parameter-array
+  extent used anywhere in the Einstein Toolkit, and every parameter is
+  echoed by `cactus_sim -O`, so the arrays are deliberately not larger.
+  Bigger ensembles set particle_n <= 100 explicitly and let
+  particle_n_total (up to 10000) fill the rest with random initial
+  conditions.
 - With Geodesic::Exact = no and the grid samplers, more than 4 MPI ranks
   are refused at start-up.  The owner map and the halo exchange are
   written for an arbitrary decomposition, but above 4 ranks the owner

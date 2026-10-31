@@ -78,7 +78,7 @@
 # dropped).  Exact = yes is rank-count independent (circ_orbit_mpi).
 # See doc/documentation.tex, "Known limitations".
 #
-# The heavy runs (100- and 200-particle rings, 3-level AMR, the
+# The heavy runs (100-particle rings, 3-level AMR, the
 # TwoPunctures BBH sets, the conv100 sampler comparisons) are in
 # test/extra/.  The Cactus testsuite driver globs test/*.par only, so
 # they are not run automatically; test/extra/README explains how to run

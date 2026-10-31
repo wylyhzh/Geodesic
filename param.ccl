@@ -22,14 +22,19 @@ REAL a "Kerr black-hole spin (used when Exact = yes)"
 } 0.0
 
 # ------------------ number of particles ------------------
-# Explicit per-particle parameters are declared for the first 1000
-# particles (matching the particle_n / particle_n_total ranges).  Runs
-# with more than 1000 explicitly listed particles are not supported
-# through parfiles; use particle_n (fixed part) <= 1000 and fill the
-# rest with random initial conditions via particle_n_total.
-INT particle_n "Number of fixed particles (max 1000). 0 disables particle evolution."
+# Explicit per-particle parameters are declared for the first 100
+# particles.  100 is the largest parameter-array extent used anywhere in
+# the Einstein Toolkit (QuasiLocalMeasures, WaveExtractL/CPM, Outflow,
+# Dissipation, InterpToArray, HarmonicDecomposition all use [100]), and
+# every parameter is echoed by `cactus_sim -O`, so an oversized array
+# would bury the parameter listing.  Runs that need more particles than
+# this set particle_n <= 100 explicitly and let particle_n_total fill the
+# remainder with random initial conditions; see also
+# Geodesic::particle_start_velocity for rebuilding an orbit from E and L_z
+# rather than listing components.
+INT particle_n "Number of fixed particles (max 100). 0 disables particle evolution."
 {
-  0:1000 :: "Allowed range"
+  0:100 :: "Allowed range"
 } 0
 
 INT particle_n_total  "Number of total particles. 0 disables particle evolution. particle_n_total >= particle_n"
@@ -38,38 +43,38 @@ INT particle_n_total  "Number of total particles. 0 disables particle evolution.
 } 0
 
 # ------------------ initial coordinates ------------------
-REAL particle_x[1000] "Initial particle x coordinate"
+REAL particle_x[100] "Initial particle x coordinate"
 {
   *:* :: "Any value"
 } 1.0
 
-REAL particle_y[1000] "Initial particle y coordinate"
+REAL particle_y[100] "Initial particle y coordinate"
 {
   *:* :: "Any value"
 } 1.0
 
-REAL particle_z[1000] "Initial particle z coordinate"
+REAL particle_z[100] "Initial particle z coordinate"
 {
   *:* :: "Any value"
 } 4.0
 
 # ------------------ initial 4-velocity u^mu = dx^mu / dtau ------------------
-REAL particle_xv[1000] "Initial particle u^x = dx/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
+REAL particle_xv[100] "Initial particle u^x = dx/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
 {
   *:* :: "Any value"
 } 0.0
 
-REAL particle_yv[1000] "Initial particle u^y = dy/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
+REAL particle_yv[100] "Initial particle u^y = dy/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
 {
   *:* :: "Any value"
 } 0.0
 
-REAL particle_zv[1000] "Initial particle u^z = dz/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
+REAL particle_zv[100] "Initial particle u^z = dz/dtau (contravariant 4-velocity component; NOT a 3-velocity)"
 {
   *:* :: "Any value"
 } 0.0
 
-REAL particle_tv[1000] "Initial particle u^t = dt/dtau (auto-corrected)"
+REAL particle_tv[100] "Initial particle u^t = dt/dtau (auto-corrected)"
 {
   *:* :: "Any value"
 } 1.0

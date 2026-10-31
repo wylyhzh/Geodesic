@@ -464,11 +464,11 @@ the arrangement.  To run selected tests outside the default set, list them:
   of `circ_orbit_amr` (via `util/check_conserved`) is about 2-3x
   smaller than this run's, consistent with the 2nd-order 27-point
   metric interpolation.
-- `ellipse_orbit_amr` is a 200-particle sample of one bound
+- `ellipse_orbit_amr` is a 100-particle sample of one bound
   equatorial *elliptic* geodesic (Kerr M = 2, a = 0.5, Kerr-Schild
   coordinates): pericentre r = 7.5, apocentre (64, 0, 0),
   E = 0.9742480384407799, L_z = 7.1053558433047188, particle i at
-  azimuth 2 pi i / 200 of the first winding of the strongly
+  azimuth 2 pi (2i) / 200 of the first winding of the strongly
   precessing orbit (~4.02 pi per radial period).  It runs on a
   144^3 base grid (domain +-72, dx = 1) with three static spherical
   Carpet refinement boxes (half-widths 36/18/9, factor 2), so the
