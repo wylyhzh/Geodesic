@@ -52,9 +52,15 @@ additionally checks that the particle dump is bit-identical at 1, 2 and
   which is appropriate for the hundreds to tens of thousands of
   particles this thorn is designed for, not for arbitrarily large
   ensembles.
-- In AMR setups with more than one MPI rank, a residual dependence of
-  the sampled metric on the owning rank remains under investigation;
-  unigrid runs are bit-identical across rank counts (see README.md).
+- In runs with more than one MPI rank and Geodesic::Exact = no, the
+  sampled trajectory depends on the rank count: the grid data itself is
+  bit-identical, but where the rank faces fall changes the result
+  (~4e-5 per face crossing inside one Geodesic::step; O(1) after 3200 M
+  of a three-level AMR orbit at 4 ranks). Exact = yes is rank-count
+  independent. The halo exchange removes the stencil half of this
+  (extra/conv100_local27 and extra/ellipse_orbit_amr are bit-identical
+  at 1, 2 and 4 ranks) but not all of it; still under investigation.
+  Quote results at fixed rank count. See doc/documentation.tex.
 
 5. Contact
 
