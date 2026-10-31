@@ -4,10 +4,11 @@ A parallel test-particle geodesic tracker thorn for the
 [Einstein Toolkit](https://einsteintoolkit.org) (Cactus).
 
 - **Paper:** Yuhua Li, *Geodesic: a parallel test-particle geodesic tracker
-  for the Einstein Toolkit* (2026, preprint draft — PDF included in
-  [doc/geodesic_paper.pdf](doc/geodesic_paper.pdf), Chinese translation in
-  [doc/geodesic_paper_zh.pdf](doc/geodesic_paper_zh.pdf); comments welcome.
-  To be submitted to arXiv, gr-qc cross-listed with astro-ph.HE).
+  for the Einstein Toolkit* (2026; submitted to arXiv, gr-qc cross-listed
+  with astro-ph.HE — the identifier will be filled in here once arXiv
+  announces it).  The parameter files that reproduce every number in the
+  paper are in [doc/par/](doc/par/); comments on the manuscript are
+  welcome by mail.
 - **Licence:** GPLv2+ (see [COPYING](COPYING))
 - **Maintainer:** Yuhua Li <liyhts@yeah.net>
 
@@ -266,15 +267,26 @@ A complete, tested parameter file (Kerr--Schild metric `M = 2`,
 equatorial circular orbit, `Exact = yes`) is provided in
 [par/example.par](par/example.par).
 
-The parameter files that produced every number in the paper are also
-included, so all reported results can be reproduced directly:
+The parameter files that produced every number in the paper live in
+[doc/par/](doc/par/), so all reported results can be reproduced
+directly.  `par/` itself keeps only the example file above.
 
 | File | Paper section |
 |---|---|
-| [par/conserv.par](par/conserv.par) | conservation of E, Lz and the norm (Sec. 5.2) |
-| [par/conv50.par](par/conv50.par), [par/conv100.par](par/conv100.par), [par/conv200.par](par/conv200.par), [par/convexact.par](par/convexact.par) | grid-convergence study (Sec. 5.3) |
-| [par/scale.par](par/scale.par) | strong scaling with 10^4 particles (Sec. 6) |
-| [par/interp_amr_carpet.par](par/interp_amr_carpet.par), [par/interp_amr_aei.par](par/interp_amr_aei.par), [par/interp_amr_local27.par](par/interp_amr_local27.par) | the same orbit as [par/conv100.par](par/conv100.par) under 3-level AMR, with the three `metric_interp` samplers, for a line-by-line comparison against the unigrid conv100 dump |
+| [doc/par/conserv.par](doc/par/conserv.par) | conservation of E, Lz and the norm (Sec. 5.2) |
+| [doc/par/conv50.par](doc/par/conv50.par), [doc/par/conv100.par](doc/par/conv100.par), [doc/par/conv200.par](doc/par/conv200.par), [doc/par/convexact.par](doc/par/convexact.par) | grid-convergence study (Sec. 5.3) |
+| [doc/par/interp_amr_carpet.par](doc/par/interp_amr_carpet.par), [doc/par/interp_amr_aei.par](doc/par/interp_amr_aei.par), [doc/par/interp_amr_local27.par](doc/par/interp_amr_local27.par) | the same orbit as `doc/par/conv100.par` under 3-level AMR, with the three `metric_interp` samplers, for a line-by-line comparison against the unigrid conv100 dump (Sec. 5.5) |
+| [doc/par/tp_local27_025.par](doc/par/tp_local27_025.par), [doc/par/tp_aei_025.par](doc/par/tp_aei_025.par), [doc/par/tp_carpet_025.par](doc/par/tp_carpet_025.par) | 100-particle ring released at t = 1.60 on the two-puncture (GW150914) background, one per sampler (Sec. 5.6) |
+| [doc/par/tp_far_local27_025_t80.par](doc/par/tp_far_local27_025_t80.par), [doc/par/tp_far_aei_025_t80.par](doc/par/tp_far_aei_025_t80.par), [doc/par/tp_far_carpet_025_t80.par](doc/par/tp_far_carpet_025_t80.par) | the same ring started outside the innermost refinement level, to separate sampler error from AMR depth (Sec. 5.6) |
+| `doc/par/tp_far_r{9,10,11,12}_025_t{025,027,029,030,032,035}_i{010,015,030}.par`, [doc/par/tp_l27r_025_far_r9.par](doc/par/tp_l27r_025_far_r9.par), [doc/par/tp_l27r_025_far_r9_infull.par](doc/par/tp_l27r_025_far_r9_infull.par) | the resolution / timestep / safe-region-threshold scan behind the cost-and-threshold discussion (Sec. 5.6) |
+| [doc/par/scale.par](doc/par/scale.par) | strong scaling with 10^4 particles (Sec. 6) |
+
+Three further files are **not** paper companions but CarpetX smoke tests:
+[doc/par/cx_minkowski.par](doc/par/cx_minkowski.par),
+[doc/par/cx_minkowski_np4.par](doc/par/cx_minkowski_np4.par) (Minkowski
+space on CarpetX, single and multi-patch) and
+[doc/par/cx_dbg.par](doc/par/cx_dbg.par).  The paper does not yet cover
+the CarpetX path.
 
 The Geodesic-specific part of the example file is:
 
@@ -474,7 +486,8 @@ the arrangement.  To run selected tests outside the default set, list them:
 - `conv100` is the paper's grid-convergence orbit (the P0 circular
   orbit, r = 10, M = 2, a = 0.5) on a 100^3 grid (dx = 0.5),
   `Exact = no`, 4 MPI ranks -- shortened for the testsuite to 200 steps
-  (t = 20.0); the paper run itself, [par/conv100.par](par/conv100.par),
+  (t = 20.0); the paper run itself,
+  [doc/par/conv100.par](doc/par/conv100.par),
   is 1500 steps (t = 150.1, ~1 orbital period).  The single-particle
   dump is compared against reference data row by row.
 - `conv100_l27`, `conv100_local27`, `conv100_aei`, `conv100_carpet`

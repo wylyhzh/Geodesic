@@ -30,3 +30,7 @@ doc/documentation.pdf
 
 # regression reference backups taken before re-running a test
 *.bak-*
+
+# ThornDocHTML figure-conversion artifacts
+# (any PDF under doc/ gets converted to EPS by make -ThornDocHTML)
+doc/*.eps
