@@ -645,6 +645,26 @@ X at their last alive position.  If no `DATAFILE` is given, the first
 
 ## Choosing dx and dt on a time-dependent background
 
+**Decision procedure** (the tables below are the evidence for each step):
+
+1. **Pick dx first, and pick it for the background, not for the particles.**
+   The binding constraint is that the grid must not trigger a gauge
+   instability in the evolved spacetime; the geodesic integration itself is
+   not what fails (item 3 below).  Here that threshold sits between
+   dx = 0.125 (background blows up at t ~ 10.6-10.9) and dx = 0.1123 (stable
+   to t = 14.05).
+2. **Prefer a uniform grid unless the particles occupy a small part of the
+   domain.**  An AMR box pays off only while its volume fraction f is small
+   (item 4: 1.9x plain uniform 1/8 at f = 0.055, but 8.1x at f = 0.44), and
+   the resolution requirement that actually bites is usually a *background*
+   property -- here the gauge behaviour at the punctures -- which a box placed
+   around the particles would not cover anyway.
+3. **Then pick dt as large as the clock lag allows.**  The lag
+   `cctk_time - t` is a dt effect, not a sampler effect (item 1), and dt is
+   the cheap knob: halving dt doubles the cost, halving dx multiplies it by 8
+   (item 2).  Choose the dt whose residual lag is small enough for the
+   comparison you intend to make between runs.
+
 Scope: these numbers are for a particle distribution that spans a large
 fraction of the grid -- the r = 8 ring inside a +-10.5 domain.  If the
 particles are instead confined to a small sub-volume, AMR can be the cheaper

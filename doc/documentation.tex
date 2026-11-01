@@ -289,6 +289,40 @@ coordinates (not a 3-velocity); the thorn checks
 $g_{\mu\nu}u^\mu u^\nu = -1$ at initialization and uses the given
 values if they are normalized.
 
+\subsection{Choosing \texttt{dx} and \texttt{dt} on an Evolved Background}
+
+On an analytic metric (\texttt{Exact = "yes"}) the grid spacing does not
+matter.  On an evolved background it is the first decision to make, and it
+belongs to the \emph{background}, not to the particles.
+
+\begin{enumerate}
+\item Choose \texttt{dx} so that the background itself stays stable.  The
+      failure mode is a gauge instability of the spacetime discretisation,
+      not of the geodesic integration: on a TwoPunctures $b=5$ background a
+      uniform $\Delta x = 0.125$ grid develops a puncture-local, one-step
+      jump of the shift from $\sim 0.1$ to $10^{18}$--$10^{246}$ at
+      $t \approx 10.6$--$10.9$ for both $\Delta t = 0.0125$ and
+      $\Delta t = 0.00625$, with no NaN anywhere, while
+      $\Delta x = 0.1123$ runs to $t = 14.05$ without incident.
+\item Prefer a uniform grid unless the particles occupy a small fraction $f$
+      of the domain.  One extra refinement level costs $16f$ relative to the
+      base resolution, and the resolution requirement that actually binds is
+      normally a background property (here, the behaviour at the punctures),
+      which a refinement box placed around the particles would not cover.
+\item Choose \texttt{dt} from the clock lag.  The thorn integrates each
+      particle in its own coordinate time; column 10 of the dump
+      (\texttt{cctk\_time}) minus column 1 (\texttt{t}) is the accumulated
+      lag, and it scales with \texttt{dt} rather than with the sampler
+      ($+0.155$ at $\Delta t = 0.05$, $+0.049$ at $0.025$, below $10^{-9}$ at
+      $0.0125$ and smaller on these runs).  \texttt{dt} is also the cheap
+      knob: halving it doubles the cost, halving \texttt{dx} multiplies it by
+      eight.
+\end{enumerate}
+
+The measurements behind these rules, including the cost model for refinement
+boxes, are in the ``Choosing dx and dt on a time-dependent background''
+section of the thorn's \texttt{README.md}.
+
 \subsection{Tests}
 
 The thorn ships a Cactus testsuite in \texttt{test/} with ten tests,
