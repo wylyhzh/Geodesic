@@ -311,7 +311,12 @@ directly.  `par/` itself keeps only the example file above.
 | [doc/par/interp_amr_carpet.par](doc/par/interp_amr_carpet.par), [doc/par/interp_amr_aei.par](doc/par/interp_amr_aei.par), [doc/par/interp_amr_local27.par](doc/par/interp_amr_local27.par) | the same orbit as `doc/par/conv100.par` under 3-level AMR, with the three `metric_interp` samplers, for a line-by-line comparison against the unigrid conv100 dump (Sec. 5.5) |
 | [doc/par/tp_local27_025.par](doc/par/tp_local27_025.par), [doc/par/tp_aei_025.par](doc/par/tp_aei_025.par), [doc/par/tp_carpet_025.par](doc/par/tp_carpet_025.par) | 100-particle ring released at t = 1.60 on the two-puncture (GW150914) background, one per sampler (Sec. 5.6) |
 | [doc/par/tp_far_local27_025_t80.par](doc/par/tp_far_local27_025_t80.par), [doc/par/tp_far_aei_025_t80.par](doc/par/tp_far_aei_025_t80.par), [doc/par/tp_far_carpet_025_t80.par](doc/par/tp_far_carpet_025_t80.par) | the same ring started outside the innermost refinement level, to separate sampler error from AMR depth (Sec. 5.6) |
-| `doc/par/tp_far_r{9,10,11,12}_025_t{025,027,029,030,032,035}_i{010,015,030}.par`, [doc/par/tp_l27r_025_far_r9.par](doc/par/tp_l27r_025_far_r9.par), [doc/par/tp_l27r_025_far_r9_infull.par](doc/par/tp_l27r_025_far_r9_infull.par) | the resolution / timestep / safe-region-threshold scan behind the cost-and-threshold discussion (Sec. 5.6) |
+| `doc/par/tp_far_r{9,10,11,12}_025_t{025,027,029,030,032,035}_i{010,015,030}.par`, [doc/par/tp_l27r_025_far_r9.par](doc/par/tp_l27r_025_far_r9.par), [doc/par/tp_l27r_025_far_r9_infull.par](doc/par/tp_l27r_025_far_r9_infull.par) | exploratory resolution / timestep / safe-region-threshold scan; **not cited in the paper** — kept for provenance of the settings used by the runs above |
+| `doc/par/tp_ring_h18_amr_r8.par`, `doc/par/tp_ring_h18_amr_r8_aei.par` | AMR 1/8 base + 1/16 box (168³ on ±10.5, 2 levels, dt = 0.025): the two AMR rows of the cost/lag table (Sec. 5.6) |
+| `doc/par/tp_ring_u18o16dt00625_100p.par`, `doc/par/tp_ring_u18o16dt00625_100p_aei.par` | unigrid 1.8/16 (187³ on ±10.5, dx = 0.1123, dt = 0.00625, 2248 steps to t = 14.05): the next two rows of the cost/lag table (Sec. 5.6) |
+| [doc/par/tp_ring_u1516_100p.par](doc/par/tp_ring_u1516_100p.par), [doc/par/tp_ring_u1516_100p_aei.par](doc/par/tp_ring_u1516_100p_aei.par) | unigrid 1.5/16 (224³ on ±10.5, dx = 0.09375, dt = 0.00625, 2248 steps to t = 14.05): the last two stable rows of the cost/lag table, and the `fig_ring_u1516_*` figures (Sec. 5.6) |
+| `doc/par/tp_ring_h14_100p_rel160_r0.par`, `doc/par/tp_ring_h18_100p_rel160_r0.par`, `doc/par/tp_ring_h116_100p_rel160_r0.par` | unigrid 1/4 / 1/8 / 1/16 on the ±9.25 domain (74³ / 148³ / 296³, dt = 2dx): the two "ring lost" rows of the cost/lag table, plus the 1/16 reference run at that domain (Sec. 5.6) |
+| `doc/par/tp_ring_u18dt0125_100p.par`, `doc/par/tp_ring_u18dt00625_100p.par` | unigrid 1/8 on ±10.5 (168³) at dt = 0.0125 and 0.00625: the two "background blows up" rows of the cost/lag table (Sec. 5.6) |
 | [doc/par/scale.par](doc/par/scale.par) | strong scaling with 10^4 particles (Sec. 6) |
 
 Three further files are **not** paper companions but CarpetX smoke tests:
@@ -687,8 +692,8 @@ is fixed.
 | AMR 1/8 base + 1/16 box r=8, aei | 0.125 / 0.0625 | 0.025 / 0.0125 | 2.18e10 | 54,782 | 4.0e5 | +0.033 | 76/100 | stable |
 | uniform 1.8/16 (187^3), local27 | 0.1123 | 0.00625 | 1.47e10 | 28,545 | 5.2e5 | 0.000 | 74/100 | stable |
 | uniform 1.8/16 (187^3), aei | 0.1123 | 0.00625 | 1.47e10 | 25,014 | 5.9e5 | 0.000 | 81/100 | stable |
-| uniform 1.5/16 (225^3), local27 | 0.09375 | 0.00625 | 2.56e10 | 47,340 | 5.4e5 | 0.000 | 74/100 | stable |
-| uniform 1.5/16 (225^3), aei | 0.09375 | 0.00625 | 2.56e10 | 44,673 | 5.7e5 | 0.000 | 78/100 | stable |
+| uniform 1.5/16 (224^3), local27 | 0.09375 | 0.00625 | 2.53e10 | 47,340 | 5.4e5 | 0.000 | 74/100 | stable |
+| uniform 1.5/16 (224^3), aei | 0.09375 | 0.00625 | 2.53e10 | 44,673 | 5.7e5 | 0.000 | 78/100 | stable |
 
 Footnote: the AMR and 1.5/16 runs still use `excised_radius = 2.0` (the
 uniform 1.8/16 run uses 0.0, the correct value for a binary).  That sphere is a
@@ -703,12 +708,12 @@ The dt ladder at fixed dx (uniform grids; lag taken at the last frame with
 
 | dx | dt | point-steps | median lag | outcome |
 |---|---|---|---|---|
-| 0.25 (74^3) | 0.05 | 9.4e7 | +0.155 at t=9.65 | ring lost before 11.60 |
-| 0.125 (148^3) | 0.025 | 1.50e9 | +0.049 at t=10.85 | ring lost before 11.60 |
-| 0.125 (168^3) | 0.0125 | 5.3e9 | 0.000 | background blew up at t=10.85 (shift ~1e246) |
+| 0.25 (74^3) | 0.05 | 7.9e7 | +0.155 at t=9.65 | ring lost before 11.60 |
+| 0.125 (148^3) | 0.025 | 1.4e9 | +0.049 at t=10.85 | ring lost before 11.60 |
+| 0.125 (168^3) | 0.0125 | 4.1e9 | 0.000 | background blew up at t=10.85 (shift ~1e246) |
 | 0.125 (168^3) | 0.00625 | 8.1e9 | 0.000 | background blew up at t=10.65 (shift ~1e18) |
 | 0.1123 (187^3) | 0.00625 | 1.47e10 | 0.000 | stable to 14.05 |
-| 0.09375 (225^3) | 0.00625 | 2.56e10 | 0.000 | stable to 14.05 |
+| 0.09375 (224^3) | 0.00625 | 2.53e10 | 0.000 | stable to 14.05 |
 
 What this says:
 
