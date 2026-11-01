@@ -147,7 +147,7 @@ GeodesicState Geodesic_gstate = { .seed = 123456789u,
    ranks (a 2x2 y,z decomposition with one patch per rank per level).
    Carpet runs only.
 
-   Multi-process + metric_interp = carpetx (multi_cx): REPLICATION, no
+   Multi-process + the CarpetX sampler (multi_cx): REPLICATION, no
    ownership.  CarpetX_InterpGridArrays is an MPI collective (it
    redistributes the interpolation points over the octree and exchanges
    the results with MPI_Alltoall/MPI_Alltoallv), so every rank must issue
@@ -2431,7 +2431,43 @@ static int aei_interp_point(int tl, double x, double y, double z,
   return 0;
 }
 
-/* CarpetX pointwise interpolation (metric_interp = carpetx):
+/* Which sampler this run uses.  The driver decides, not the parameter file:
+   the four keyword samplers all read a level-mode Cactus grid
+   (cctk_lsh / cctk_origin_space / the ADMBase group on the GH), none of
+   which exists under CarpetX -- there the metric lives in an AMReX MultiFab
+   and only CarpetX's own registered interpolator can reach it.  So under
+   CarpetX the answer is always 4 and Geodesic::metric_interp is ignored.
+   There is deliberately no "carpetx" keyword (see param.ccl): a parameter
+   file that still sets it is rejected by Cactus itself when the parameter
+   is read ("Range error setting parameter 'Geodesic::metric_interp' to
+   'carpetx'"), so this routine never sees that string. */
+CCTK_INT Geodesic_sampler_mode (const char *metric_interp)
+{
+  if (CCTK_IsThornActive("CarpetX")) return 4;
+  if (metric_interp)
+  {
+    if (strcmp(metric_interp, "aei")     == 0) return 1;
+    if (strcmp(metric_interp, "carpet")  == 0) return 2;
+    if (strcmp(metric_interp, "local27") == 0) return 3;
+  }
+  return 0;   /* "l27" */
+}
+
+/* Name used for the sampler in the start-up banner and in every dump
+   header, so a data file always records the sampler that produced it. */
+const char *Geodesic_sampler_name (CCTK_INT mode)
+{
+  switch (mode)
+  {
+    case 1:  return "aei";
+    case 2:  return "carpet";
+    case 3:  return "local27";
+    case 4:  return "carpetx";
+    default: return "l27";
+  }
+}
+
+/* CarpetX pointwise interpolation (the CarpetX sampler):
    one point, the 10 ADMBaseX metric fields x operations
    {value, d_x, d_y, d_z} = 40 outputs in outbuf[4*f+op].
 
@@ -2520,7 +2556,7 @@ static int carpetx_interp_point(double x, double y, double z,
       cx_varidx[f] = CCTK_VarIndex(cx_field[f]);
       if (cx_varidx[f] < 0)
         CCTK_WARN(CCTK_WARN_ABORT,
-          "Geodesic (metric_interp = carpetx): cannot resolve one of the "
+          "Geodesic (CarpetX sampler): cannot resolve one of the "
           "ADMBaseX metric variables (gxx..gzz, lapse, shift).");
     }
     cx_varidx_ok = 1;
@@ -2543,6 +2579,64 @@ static int carpetx_interp_point(double x, double y, double z,
     }
   }
   return 0;
+}
+
+/* One-shot start-up self-check for the CarpetX sampler.
+   CarpetX registers its InterpGridArrays overload unconditionally
+   (CarpetX/src/driver.cxx), but the implementation itself
+   (CarpetX/src/interpolate.cxx) contains no device code at all: it walks
+   the MultiFab with host MFIter/ParIter loops and reads the stencil
+   through host Array4 pointers.  In a CUDA CarpetX build that data lives
+   in device memory, so the read yields garbage (or faults) instead of the
+   metric.  Cactus has no run-time query for "was this executable built
+   with CUDA", so check the thing that actually matters: interpolate the
+   initial metric at a handful of points and require it to be finite and
+   positive-definite.  A CPU (OpenMP) build always passes; a GPU build
+   stops here with an explicit message instead of integrating particles
+   through a garbage metric.  Cheap: a few interpolation calls, once. */
+static void carpetx_selfcheck(void)
+{
+  double lo[3], hi[3], frac[3] = { 0.5, 0.25, 0.75 };
+  int nc[3], ngz, bad = 0, bad_glob = 0;
+  int ix, iy, iz, f, d;
+
+  if (Geodesic_carpetx_domain(lo, hi, nc, &ngz) != 0) return;  /* reported elsewhere */
+
+  for (ix=0; ix<3; ix++)
+    for (iy=0; iy<3; iy++)
+      for (iz=0; iz<3; iz++)
+      {
+        double p[3], g31[10], dg31[10][3];
+        double det;
+        int ok = 1;
+        for (d=0; d<3; d++)
+          p[d] = lo[d] + (hi[d]-lo[d]) * (d==0 ? frac[ix] : d==1 ? frac[iy] : frac[iz]);
+        if (carpetx_interp_point(p[0], p[1], p[2], g31, dg31) != 0) { bad++; continue; }
+        for (f=0; f<10 && ok; f++)
+          if (!isfinite(g31[f]) || !isfinite(dg31[f][0])
+              || !isfinite(dg31[f][1]) || !isfinite(dg31[f][2])) ok = 0;
+        if (!ok) { bad++; continue; }
+        /* g_ij must be positive definite: diagonals > 0 and det > 0 */
+        if (g31[0] <= 0.0 || g31[3] <= 0.0 || g31[5] <= 0.0) { bad++; continue; }
+        det = g31[0]*(g31[3]*g31[5] - g31[4]*g31[4])
+            - g31[1]*(g31[1]*g31[5] - g31[4]*g31[2])
+            + g31[2]*(g31[1]*g31[4] - g31[3]*g31[2]);
+        if (!(det > 0.0)) bad++;
+      }
+
+  MPI_Allreduce(&bad, &bad_glob, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+  if (bad_glob > 0)
+    CCTK_WARN(CCTK_WARN_ABORT,
+      "Geodesic (CarpetX sampler): the metric interpolated from CarpetX is "
+      "neither finite nor positive-definite at the start of the run, so no "
+      "usable metric is available.  Two common causes: (a) the ADMBaseX "
+      "initial data was never set -- ADMBaseX::initial_data = \"none\" leaves "
+      "the grid at its fill value; (b) this is a CUDA CarpetX build -- "
+      "Geodesic's CarpetX path needs host-readable metric data, and CarpetX's "
+      "own InterpGridArrays (CarpetX/src/interpolate.cxx) walks the MultiFab "
+      "with host pointers, so it works in CPU (OpenMP) builds only.  Set the "
+      "initial data, or rebuild CarpetX without CUDA, or use the Carpet "
+      "driver.");
 }
 
 /* CarpetX does not traverse CCTK_POSTSTEP in level mode and leaves
@@ -2594,7 +2688,7 @@ static void carpetx_fill_geometry(LevelData *L, double dt, double time)
 
   if (Geodesic_carpetx_domain(lo, hi, nc, &ngz) != 0)
     CCTK_WARN(CCTK_WARN_ABORT,
-              "Geodesic (metric_interp = carpetx): invalid CarpetX domain "
+              "Geodesic (CarpetX sampler): invalid CarpetX domain "
               "(ncells_* must be >= 2 and xmax > xmin and so on).");
 
   for (d=0; d<3; d++)
@@ -3222,7 +3316,8 @@ static void geodesic_probe_open(cGH *gh, int m)
 
   fprintf(Geodesic_gstate.pfp, "# Geodesic probe: interpolated vs exact Kerr-Schild at the same event\n");
   fprintf(Geodesic_gstate.pfp, "# config: metric_interp=%s probe_stride=%d probe_max_rows=%d Exact=%s level=%d dx=%.17g %.17g %.17g\n",
-          metric_interp, (int)Geodesic_gstate.probe_stride, (int)Geodesic_gstate.probe_max_rows,
+          Geodesic_sampler_name(Geodesic_sampler_mode(metric_interp)),
+          (int)Geodesic_gstate.probe_stride, (int)Geodesic_gstate.probe_max_rows,
           Geodesic_gstate.sexact ? "yes" : "no", (int)Geodesic_gstate.pgeodesic[m].level,
           (double)gview.delta_space[0], (double)gview.delta_space[1], (double)gview.delta_space[2]);
   fprintf(Geodesic_gstate.pfp, "# columns: kind idx mu alpha beta interp exact err s_x s_y s_z r x y z t path\n");
@@ -3668,7 +3763,7 @@ int Geodesic_func_ode (double t, const double y[], double f[], void *params)
      Kerr-Schild values at this same event.  Inert unless Geodesic::probe_file
      is set (probe_on is parsed once per integration call, not per RHS
      evaluation).  Skipped for Exact = yes, where nothing is interpolated, and
-     for metric_interp = carpetx, whose interpolator is an MPI collective. */
+     for the CarpetX sampler, whose interpolator is an MPI collective. */
   if (Geodesic_gstate.probe_on && !Geodesic_gstate.sexact && Geodesic_gstate.sinterp_mode != 4)
     geodesic_probe_tick(m, y, cf2, odedata->cctkGH);
 
@@ -3903,10 +3998,15 @@ static void geodesic_dump_header(FILE *fp)
   DECLARE_CCTK_PARAMETERS
 
   fprintf(fp, "# Geodesic revision %s\n", GEODESIC_REVISION);
+  /* The sampler recorded here is the one that actually ran, not the par
+     keyword: under CarpetX the driver picks CarpetX and metric_interp is
+     ignored.  For every other run the two agree. */
   fprintf(fp, "# config: excised_radius=%g initial_radius=%g Exact=%s"
               " metric_interp=%s particle_loss_policy=%s particle_n_total=%d\n",
           (double)excised_radius, (double)initial_radius,
-          Exact ? "yes" : "no", metric_interp, particle_loss_policy,
+          Exact ? "yes" : "no",
+          Geodesic_sampler_name(Geodesic_sampler_mode(metric_interp)),
+          particle_loss_policy,
           (int)particle_n_total);
   /* The t column is the particle's own integrated coordinate time (the ODE
      state y[0], dy[0]/dtau = u^t), not the grid time: the particle clock is
@@ -5288,21 +5388,16 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
   const int report_here =
     !(Geodesic_gstate.multi_amr || Geodesic_gstate.multi_cx) || CCTK_MyProc(cctkGH) == 0;
 
-  /* parse metric_interp before the acquire block: the halo update below
+  /* Resolve the sampler before the acquire block: the halo update below
      must know whether the sampler is a stencil (l27/local27) or pointwise.
-     The keyword is fixed for the run, so parse once and cache.  (The
-     authoritative parse that selects the particle cache pools runs later
-     in this routine, on every call; same string, same result.) */
+     The answer is fixed for the run (the driver and the keyword both are),
+     so resolve once and cache.  (The authoritative resolution that selects
+     the particle cache pools runs later in this routine, on every call;
+     same inputs, same result.) */
   {
     static int sinterp_mode_cached = -1;
     if (sinterp_mode_cached < 0)
-    {
-      if      (strcmp(metric_interp, "aei")     == 0) sinterp_mode_cached = 1;
-      else if (strcmp(metric_interp, "carpet")  == 0) sinterp_mode_cached = 2;
-      else if (strcmp(metric_interp, "local27") == 0) sinterp_mode_cached = 3;
-      else if (strcmp(metric_interp, "carpetx") == 0) sinterp_mode_cached = 4;
-      else                                            sinterp_mode_cached = 0;
-    }
+      sinterp_mode_cached = (int)Geodesic_sampler_mode(metric_interp);
     Geodesic_gstate.sinterp_mode = sinterp_mode_cached;
   }
 
@@ -5647,27 +5742,19 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
      per iteration at 10^4 particles.
 
      The stencil arrays are sampler-specific (see Geodesic.h): the
-     27-node group is only read by metric_interp = l27, the 125-node
-     group only by metric_interp = local27, and aei / carpet /
-     Exact = yes use neither.  Only the pool of the selected sampler is
-     allocated; every particle binds pointers to its own pool slot, so
-     an unused sampler costs 0 bytes per particle. */
+     27-node group is only read by the l27 sampler, the 125-node group only
+     by local27, and aei / carpet / CarpetX / Exact = yes use neither.  Only
+     the pool of the selected sampler is allocated; every particle binds
+     pointers to its own pool slot, so an unused sampler costs 0 bytes per
+     particle. */
 
-  /* metric_interp (grid mode only; the Exact = yes branch ignores it).
-     Parsed here, before the cache is allocated, because the sampler
-     selects the cache pools.  The remaining linear constraints (Exact =
-     no, not carpet, ADMBase metric_timelevels >= 2) are not checked
+  /* The sampler (grid mode only; the Exact = yes branch ignores it).
+     Resolved here, before the cache is allocated, because the sampler
+     selects the cache pools; under CarpetX the driver overrides the
+     keyword.  The remaining linear constraints (Exact = no, not a
+     pointwise sampler, ADMBase metric_timelevels >= 2) are not checked
      anywhere: the sampler only warns or errors once it runs. */
-  if (strcmp(metric_interp, "aei") == 0)
-    Geodesic_gstate.sinterp_mode = 1;
-  else if (strcmp(metric_interp, "carpet") == 0)
-    Geodesic_gstate.sinterp_mode = 2;
-  else if (strcmp(metric_interp, "local27") == 0)
-    Geodesic_gstate.sinterp_mode = 3;
-  else if (strcmp(metric_interp, "carpetx") == 0)
-    Geodesic_gstate.sinterp_mode = 4;
-  else
-    Geodesic_gstate.sinterp_mode = 0;   /* "l27" */
+  Geodesic_gstate.sinterp_mode = Geodesic_sampler_mode(metric_interp);
 
   if (Geodesic_gstate.pgeodesic == NULL || Geodesic_gstate.pgeodesic_capacity < particle_n_total)
   {
@@ -5914,15 +6001,16 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
      run WITHOUT the AEI thorns; modes 1 (aei) and 2 (carpet) call the
      pointwise AEI order-4 interpolant.  The interpolators are registered
      at STARTUP, after PARAMCHECK. */
-  /* Resolve the CarpetX interpolator handle (metric_interp = carpetx).
-     CarpetX registers it at STARTUP, after PARAMCHECK. */
+  /* Resolve the CarpetX interpolator handle (the CarpetX sampler, which the
+     driver selects).  CarpetX registers it at STARTUP, after PARAMCHECK. */
   if (!Geodesic_gstate.sexact && Geodesic_gstate.sinterp_mode == 4 && Geodesic_gstate.cx_handle < 0)
   {
     Geodesic_gstate.cx_handle = CCTK_InterpHandle("CarpetX");
     if (Geodesic_gstate.cx_handle < 0)
       CCTK_WARN(CCTK_WARN_ABORT,
-        "Geodesic (metric_interp = carpetx): cannot resolve the "
+        "Geodesic (CarpetX sampler): cannot resolve the "
         "interpolator registered by CarpetX.");
+    carpetx_selfcheck();   /* once per run: is the interpolated metric usable? */
   }
 
   if (!Geodesic_gstate.sexact && (Geodesic_gstate.sinterp_mode == 1 || Geodesic_gstate.sinterp_mode == 2)
@@ -6547,7 +6635,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
        thread-safe; the implicit OpenMP barrier precedes the post-loop
        S2 sync).
 
-       Serial under metric_interp = carpetx: every interpolation call goes
+       Serial under the CarpetX sampler: every interpolation call goes
        through CarpetX_InterpGridArrays, which is an MPI collective
        (AMReX Redistribute + Alltoall/Alltoallv), and MPI collectives must
        not be issued concurrently from several threads.  This also covers

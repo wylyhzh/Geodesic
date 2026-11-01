@@ -66,7 +66,8 @@
 #   minkowski_line_carpetx
 #                        the CarpetX driver instead of Carpet: four
 #                        particles in four octants on a flat ADMBaseX grid,
-#                        metric_interp = "carpetx".  This is the only test
+#                        sampled by CarpetX's own interpolator (the driver
+#                        selects it; metric_interp does not apply).  This is the only test
 #                        that exercises the CarpetX code path -- the
 #                        pointwise ADMBaseX sampler, the two GLOBAL-mode
 #                        entry points Geodesics_init_carpetx /

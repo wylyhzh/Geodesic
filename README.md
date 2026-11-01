@@ -93,6 +93,32 @@ samplers (`Geodesic::metric_interp`):
 | 3 | aei | Pointwise order-4 Lagrange interpolation via `AEILocalInterp` (10 ADMBase fields + first spatial derivatives at the particle position); the 4-metric and Christoffels are composed from the sampled fields.  The two stored time levels are linearly blended in the particle's coordinate time. |
 | 4 | carpet | Pointwise sampler with the same `AEILocalInterp` order-4 spatial molecule as `aei`; the time derivative is the carpet-style 2nd-order 3-point difference `(3 L0 - 4 L1 + L2) / (2 dt)` of the full 4-metric. |
 
+**Under the CarpetX driver `metric_interp` does not apply.**  The four
+samplers above all read a level-mode Cactus grid — `cctk_lsh`,
+`cctk_origin_space`, the `ADMBase` group on the `cGH` — none of which
+exists when CarpetX is the driver: there the metric lives in an AMReX
+`MultiFab` (`ADMBaseX`) and only CarpetX's own registered interpolator can
+reach it.  Geodesic therefore detects the driver with
+`CCTK_IsThornActive("CarpetX")` and uses that interpolator automatically
+(order = `CarpetX::interpolation_order`, no per-particle cache, static
+metric).  There is deliberately no `carpetx` value of `metric_interp`: it
+is not an alternative interpolation *algorithm*, it is what the *driver*
+makes available, and listing it would let a parameter file ask for a
+sampler that cannot work under Carpet.  The dump header and the start-up
+banner always report the sampler that actually ran.
+
+The CarpetX path is supported in a **CPU (OpenMP) CarpetX build only**.
+CarpetX registers its `InterpGridArrays` overload unconditionally
+(`CarpetX/src/driver.cxx`), but the implementation
+(`CarpetX/src/interpolate.cxx`) contains no device code: it walks the
+`MultiFab` with host `MFIter`/`ParIter` loops and reads the stencil
+through host `Array4` pointers.  Cactus offers no run-time query for
+"built with CUDA?", so Geodesic checks what matters instead: at the start
+of the run it interpolates the initial metric at a few points and requires
+it to be finite and positive-definite, and aborts with an explicit message
+if not.  A GPU build fails there rather than integrating particles through
+a garbage metric.
+
 **Semantics to keep straight**
 
 - **`l27` and `local27` are fully self-contained**: they need no
@@ -155,11 +181,15 @@ samplers (`Geodesic::metric_interp`):
 - `ADMBase` — required by the grid samplers `l27`, `local27`, `aei` and
   `carpet` (they fetch its fields by name at run time); for
   `Exact = yes` only the grid geometry (dimensions, spacing, origin,
-  ghost zones) is used, the metric values are ignored.  Not needed for
-  `metric_interp = carpetx`, which samples `ADMBaseX` instead (ADMBase
-  and CarpetX cannot be combined: CarpetX asserts that every non-grid
-  group is REAL and CONSTANT, while ADMBase declares INT SCALAR groups)
-- `CarpetX` — only for `metric_interp = carpetx`
+  ghost zones) is used, the metric values are ignored.  Under the CarpetX
+  driver it is not used at all: the metric comes from `ADMBaseX`, and
+  `ADMBase` and `CarpetX` cannot be combined in any case (CarpetX asserts
+  that every non-grid group is REAL and CONSTANT, while ADMBase declares
+  INT SCALAR groups).
+  Under the CarpetX driver the metric comes from `ADMBaseX` instead and
+  `ADMBase` is not used at all.
+- `CarpetX` — activates the CarpetX driver; Geodesic then uses CarpetX's
+  own interpolator automatically (see "Interpolation modes")
 - `GSL` (Runge--Kutta integrator)
 - `Carpet` (required in current Einstein Toolkit builds: it is the
   only thorn implementing Cactus group storage, which `particle_arrays`
@@ -198,7 +228,7 @@ Kerr--Schild formulas used by `Exact = yes` are built in.  Activate
   the patch).  `GEODESIC_HALO_DEBUG`, set to anything, prints the per-rank
   halo geometry (`lsh`, bounds, ghost zones, box extents) to stderr before
   each exchange.
-- With `metric_interp = carpetx` (CarpetX driver) the multi-process mode is
+- Under the CarpetX driver the multi-process mode is
   different: CarpetX's interpolator is an MPI collective (it redistributes
   the interpolation points over the octree and exchanges the results with
   `MPI_Alltoall`/`MPI_Alltoallv`), so the interpolation calls of all ranks
@@ -321,7 +351,7 @@ that provides the ADMBase grid fields.
 | `step` | coordinate-time advance per Cactus iteration; 0 uses `cctk_delta_time` |
 | `max_iter_cap` | max ODE tau-steps per particle per Cactus iteration (default 2000) |
 | `Exact` | metric source: `no` = grid, `yes` = analytic Kerr--Schild |
-| `metric_interp` | grid-mode sampler: `l27` (simplest 27-point Lagrange fit, current level only, particle dropped on fit failure), `local27` (default; 125-node 5x5x5 quartic tensor-product fit, self-contained, no AEI), `aei` (AEILocalInterp pointwise order-4, 2-level linear time blend), `carpet` (AEI order-4 spatial molecule + carpet-style time difference) |
+| `metric_interp` | grid-mode sampler: `l27` (simplest 27-point Lagrange fit, current level only, particle dropped on fit failure), `local27` (default; 125-node 5x5x5 quartic tensor-product fit, self-contained, no AEI), `aei` (AEILocalInterp pointwise order-4, 2-level linear time blend), `carpet` (AEI order-4 spatial molecule + carpet-style time difference).  Ignored under the CarpetX driver, which selects CarpetX's own interpolator automatically. |
 | `geodesic_amr_levels` | number of Carpet refinement levels used for the stencil (1-16, default 3); must equal `Carpet::refinement_levels` for an AMR run |
 | `M` / `a` | Kerr mass and spin used by `Exact = yes` (built-in analytic formulas) |
 | `initial_radius` / `excised_radius` | `initial_radius`: safe shell for the `respawn` policy (re-placement happens outside it).  `excised_radius` is a live boundary during integration: a particle whose Euclidean radius drops below it is marked out of bounds and handled by `particle_loss_policy` (dropped under `drop`); it is also the inner rejection radius for random (re)placement.  Set it to 0 for a binary, where the sphere has no meaning and can drop particles that merely pass close to a puncture. |
@@ -486,7 +516,8 @@ the arrangement.  To run selected tests outside the default set, list them:
   initial data is limited to "Cartesian Minkowski" and "linear wave", and
   `ADMBase` itself cannot be combined with CarpetX at all.  So this test
   runs four particles in four octants on a flat 64^3 ADMBaseX grid over
-  [-10,10]^3 with `metric_interp = "carpetx"`, 32 steps of dt = 0.1.  It
+  [-10,10]^3, 32 steps of dt = 0.1; the sampler is the CarpetX one, which
+  the driver selects by itself.  It
   is the only test that exercises the CarpetX code path: the pointwise
   ADMBaseX sampler, the two `OPTIONS: GLOBAL` entry points
   `Geodesics_init_carpetx` / `Geodesics_integrate_carpetx`, and the
@@ -925,7 +956,8 @@ symptom -> cause -> fix -> what now guards it.
    has two conventions and `metric_interp` selects between them.  `l27`
    (`sinterp_mode 0`) rescales all four components by `1/sqrt(-g(u,u))`, which
    keeps the direction the ODE produced but also scales `u^i`; every other
-   sampler (`local27`, `aei`, `carpet`, `carpetx`) keeps `u^i` and re-solves
+   sampler (`local27`, `aei`, `carpet`, and the CarpetX sampler that the
+   CarpetX driver selects) keeps `u^i` and re-solves
    `u^0` from the quadratic.  Both end with `g(u,u) = -1` exactly -- the
    difference is which components absorb the correction, not whether the
    constraint holds.  The three full-rescale branches came in with `dfc095f`
@@ -997,7 +1029,7 @@ never refits and never sets `outbd` or the `*_bad` flags, so it cannot perturb
 a trajectory; `probe_max_rows` caps the output at block granularity (whole
 blocks only, so the count can overshoot by up to 60 rows).  With more than one
 MPI rank each rank writes its own `<probe_file>.proc<N>`.  It is skipped for
-`Exact = yes` (nothing is interpolated) and for `metric_interp = carpetx`
+`Exact = yes` (nothing is interpolated) and for the CarpetX sampler
 (whose interpolator is an MPI collective and cannot be re-entered).
 
 The reference column is the **analytic Kerr--Schild** metric of `M`/`a` at the

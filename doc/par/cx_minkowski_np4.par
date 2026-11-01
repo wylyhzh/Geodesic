@@ -73,7 +73,9 @@ ADMBaseX::initial_shift = "zero"
 #------------------------------------------------------------------------------
 
 Geodesic::Exact          = "no"
-Geodesic::metric_interp  = "carpetx"
+# No Geodesic::metric_interp here on purpose: under the CarpetX driver
+# Geodesic uses CarpetX's own interpolator automatically -- the keyword only
+# selects a sampler when the Carpet driver is in charge.
 Geodesic::geodesic_amr_levels = 1
 Geodesic::rverbose       = "no"
 

@@ -426,7 +426,7 @@ typedef struct {
                              particles owned by its local patch (interior-box
                              ownership); the shared particle state is kept
                              consistent by MPI_Allgather (<= 4 ranks) */
-  bool multi_cx;          /* multi-process + metric_interp = carpetx: the
+  bool multi_cx;          /* multi-process + the CarpetX sampler: the
                              integration is replicated on every rank (the
                              CarpetX interpolator is an MPI collective), so
                              no owner map and no state exchange are needed
@@ -445,11 +445,15 @@ typedef struct {
                              violates the mass shell) */
   CCTK_REAL norm_dev_step; /* same, but only for the current integration
                              call; reset after each report */
-  /* spatial metric sampler (par Geodesic::metric_interp):
+  /* spatial metric sampler:
      0 = l27 (simplest 27-point fit), 1 = aei (AEILocalInterp),
      2 = carpet, 3 = local27 (the self-contained 125-node fit),
-     4 = carpetx (CarpetX InterpGridArrays on the ADMBaseX grid).
-     Grid mode only (Exact = no); the default is local27. */
+     4 = CarpetX's own interpolator on the ADMBaseX grid.
+     Grid mode only (Exact = no); the default is local27.
+     0..3 come from the par keyword Geodesic::metric_interp; 4 is never
+     selectable by hand -- Geodesic_sampler_mode() sets it when the CarpetX
+     driver is active, because that is the only sampler that can read an
+     AMReX grid.  Under CarpetX the keyword is ignored. */
   CCTK_INT sinterp_mode;
   /* aei: interpolation + coordinate-system handles (resolved lazily on
      the first grid-mode integration; -1 until then) */
@@ -535,6 +539,13 @@ extern GeodesicState Geodesic_gstate;
 /* CarpetX grid parameters (see carpetx_fill_geometry in
    Geodesic_integrate.c); returns -1 for an invalid domain. */
 int Geodesic_carpetx_domain (double lo[3], double hi[3], int nc[3], int *ngz);
+
+/* The sampler this run actually uses (see Geodesic_sampler_mode in
+   Geodesic_integrate.c): the CarpetX driver forces mode 4 regardless of the
+   metric_interp keyword.  Geodesic_sampler_name maps a mode to the string
+   written into the banner and the dump headers. */
+CCTK_INT Geodesic_sampler_mode (const char *metric_interp);
+const char *Geodesic_sampler_name (CCTK_INT mode);
 
 /* -------------------- Per-step ODE parameters for Geodesic_func_ode -------------------- */
 typedef struct ODE_DATA {

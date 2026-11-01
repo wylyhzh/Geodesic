@@ -14,7 +14,7 @@
 #
 # What it pins that the Carpet tests do not:
 #
-#   metric_interp = "carpetx"   the pointwise ADMBaseX sampler, which reaches
+#   the CarpetX sampler        the pointwise ADMBaseX sampler, which reaches
 #                               CarpetX_InterpGridArrays through the
 #                               CCTK_InterpGridArrays overload that CarpetX
 #                               registers (Geodesic does not declare the
@@ -56,7 +56,7 @@ Cactus::cctk_itlast    = 32
 # Nothing registers an RHS here, so the Minkowski data is simply left alone.
 #
 # CartGrid3D and CoordBase are deliberately NOT activated.  In
-# metric_interp = "carpetx" mode Geodesic takes the domain from the CarpetX
+# Under the CarpetX driver Geodesic takes the domain from the CarpetX
 # parameters (Geodesic_init.c calls Geodesic_carpetx_domain()), so it needs
 # neither of them, and activating them alongside CarpetX is not harmless: on
 # this node, 2 MPI ranks with OMP_NUM_THREADS=20, a run that activates them
@@ -120,7 +120,9 @@ ADMBaseX::initial_shift = "zero"
 #------------------------------------------------------------------------------
 
 Geodesic::Exact          = "no"
-Geodesic::metric_interp  = "carpetx"
+# No Geodesic::metric_interp here on purpose: under the CarpetX driver
+# Geodesic uses CarpetX's own interpolator automatically -- the keyword only
+# selects a sampler when the Carpet driver is in charge.
 Geodesic::geodesic_amr_levels = 1
 Geodesic::rverbose       = "no"
 

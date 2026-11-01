@@ -305,13 +305,23 @@ CCTK_INT geodesic_amr_levels "Number of Carpet refinement levels (max = GEODESIC
 # resolve the interpolator registered as "Lagrange polynomial
 # interpolation" and abort if it is missing); l27 and local27 are
 # self-contained.
-KEYWORD metric_interp "Spatial metric/Christoffel sampler: l27, local27, aei, carpet, or carpetx"
+#
+# Under the CarpetX driver this keyword is ignored: the four samplers above
+# all read a level-mode Cactus grid (cctkGH grid variables), which does not
+# exist under CarpetX -- the metric lives in AMReX MultiFab, not in the
+# Cactus GH.  Geodesic detects the driver with CCTK_IsThornActive("CarpetX")
+# and uses CarpetX's own registered interpolator (order =
+# CarpetX::interpolation_order, no per-particle cache, static metric)
+# automatically.  There is deliberately no "carpetx" option here: it is not
+# an alternative interpolation *algorithm*, it is what the *driver* makes
+# available, and offering it under Carpet would let a parameter file select a
+# sampler that cannot possibly work.
+KEYWORD metric_interp "Spatial metric/Christoffel sampler (ignored under CarpetX, which selects its own): l27, local27, aei, or carpet"
 {
   "l27"      :: "simplest 27-point Lagrange fit (current time level only; particle dropped on fit failure; 35 kB/particle cache; best for stationary metrics)"
   "local27"  :: "125-node 5x5x5 quartic tensor-product fit, 3 time levels (default; self-contained, no AEI; 241 kB/particle cache)"
   "aei"      :: "AEILocalInterp point-wise Lagrange (order 4; no per-particle cache; needs the AEILocalInterp thorn)"
   "carpet"   :: "AEI order-4 spatial molecule + carpet-style time derivative (no per-particle cache; needs AEILocalInterp)"
-  "carpetx"  :: "CarpetX point-wise interpolation of ADMBaseX (order = CarpetX::interpolation_order; no per-particle cache; static metric; needs the CarpetX thorn)"
 } "local27"
 
 # ------------------ interpolation-error probe (diagnostic) ------------------
@@ -327,7 +337,7 @@ KEYWORD metric_interp "Spatial metric/Christoffel sampler: l27, local27, aei, ca
 # no extra output, and the integration path is bit-identical to a build
 # without the probe.  With more than one MPI rank integrating particles each
 # rank writes its own <probe_file>.proc<N>.  Skipped for Exact = yes (nothing
-# is interpolated there) and for metric_interp = carpetx (its interpolator is
+# is interpolated there) and for the CarpetX sampler (its interpolator is
 # an MPI collective and cannot be re-entered from the probe).
 STRING probe_file "File name for the interpolation-error probe sidecar (empty = probe off)"
 {

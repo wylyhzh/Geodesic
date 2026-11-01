@@ -131,6 +131,22 @@ Two modes are available, selected by the \texttt{Exact} parameter:
   number and the particles are fully independent.
 \end{itemize}
 
+Under the \texttt{CarpetX} driver the situation is different: there is no
+level-mode \texttt{cGH} grid and no \texttt{ADMBase} group, the metric
+living in an AMReX \texttt{MultiFab} (\texttt{ADMBaseX}).  The thorn
+detects the driver with \texttt{CCTK\_IsThornActive("CarpetX")} and uses
+the interpolator registered by \texttt{CarpetX} itself
+(\texttt{CarpetX\_InterpGridArrays}, order
+\texttt{CarpetX::interpolation\_order}); the \texttt{metric\_interp}
+keyword is ignored in that case, and there is deliberately no
+\texttt{carpetx} value of it, because the choice is made by the driver and
+not by the parameter file.  That interpolator is a host-side
+implementation in \texttt{CarpetX/src/interpolate.cxx}, so the
+\texttt{CarpetX} path is supported in CPU (OpenMP) builds only; the thorn
+checks at start-up that the interpolated initial metric is finite and
+positive-definite and aborts with that message rather than integrating
+through garbage.
+
 \subsection{Time integration}
 
 Each particle is integrated in proper time $\tau$ with the adaptive
@@ -311,8 +327,8 @@ The tests fall into four groups:
   ($\Delta x = 0.5$) on 2 MPI ranks: per-level metric acquisition and
   level selection.
 \item \texttt{minkowski\_line\_carpetx}: the \texttt{CarpetX} path.
-  \texttt{CarpetX} cannot host the Kerr tests: the metric available to
-  \texttt{metric\_interp = carpetx} comes from \texttt{ADMBaseX}, whose
+  \texttt{CarpetX} cannot host the Kerr tests: the metric available under
+  \texttt{CarpetX} comes from \texttt{ADMBaseX}, whose
   initial data is limited to \texttt{"Cartesian Minkowski"} and
   \texttt{"linear wave"}, and \texttt{ADMBase} itself cannot be combined
   with \texttt{CarpetX} at all (\texttt{CarpetX::SetupGlobals} asserts
@@ -386,7 +402,7 @@ hydrodynamics or other evolution thorn is needed; in
   \texttt{circ\_orbit\_grid} at eight ranks drops its particle at
   $t \approx 10$ while 1 and 2 ranks run to $t = 3200$.  The thorn stops
   rather than produce silently wrong trajectories.
-  \texttt{Exact = yes} and the \texttt{carpetx} sampler do not use the
+  \texttt{Exact = yes} and the \texttt{CarpetX} sampler do not use the
   owner map and are not restricted, but are likewise untested above four
   ranks.
 \item \textbf{\texttt{Exact = no} trajectories are not bit-identical

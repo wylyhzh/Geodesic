@@ -1,8 +1,9 @@
 #------------------------------------------------------------------------------
 # Geodesic + CarpetX: Minkowski straight-line test (stage 1, single rank).
 #
-#   Grid mode with metric_interp = "carpetx": the metric is read from the
-#   ADMBaseX grid through CarpetX's pointwise InterpGridArrays interface.
+#   Grid mode on the CarpetX driver: the metric is read from the
+#   ADMBaseX grid through CarpetX's pointwise InterpGridArrays interface
+#   (Geodesic picks that sampler by itself when CarpetX is active).
 #   The initial data is exact Minkowski, so the geodesic through
 #   (x,y,z) = (2,0,0) with coordinate velocity (0,0.5,0) is known
 #   analytically:
@@ -82,7 +83,9 @@ ADMBaseX::initial_shift = "zero"
 #------------------------------------------------------------------------------
 
 Geodesic::Exact          = "no"
-Geodesic::metric_interp  = "carpetx"
+# No Geodesic::metric_interp here on purpose: under the CarpetX driver
+# Geodesic uses CarpetX's own interpolator automatically -- the keyword only
+# selects a sampler when the Carpet driver is in charge.
 Geodesic::geodesic_amr_levels = 1
 Geodesic::rverbose       = "no"
 

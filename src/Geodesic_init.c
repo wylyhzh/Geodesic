@@ -99,7 +99,9 @@ void Geodesics_init(CCTK_ARGUMENTS)
              " particle_start_velocity=%s particle_dump_file=%s",
              GEODESIC_REVISION,
              (double)excised_radius, (double)initial_radius,
-             Exact ? "yes" : "no", metric_interp, particle_loss_policy,
+             Exact ? "yes" : "no",
+             Geodesic_sampler_name(Geodesic_sampler_mode(metric_interp)),
+             particle_loss_policy,
              (int)particle_n_total, (double)particle_start_time,
              (int)particle_start_steps,
              particle_start_velocity,
@@ -133,7 +135,7 @@ void Geodesics_init(CCTK_ARGUMENTS)
       int nc[3], ngz, d;
       if (Geodesic_carpetx_domain(lo, hi, nc, &ngz) != 0)
         CCTK_WARN(CCTK_WARN_ABORT,
-                  "Geodesic (metric_interp = carpetx): invalid CarpetX domain "
+                  "Geodesic (CarpetX sampler): invalid CarpetX domain "
                   "(ncells_* must be >= 2 and xmax > xmin and so on).");
       for (d=0; d<3; d++)
       {
