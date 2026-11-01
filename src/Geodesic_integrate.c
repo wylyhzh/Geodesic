@@ -34,6 +34,7 @@
 #include "cctk_Functions.h"
 #include <stddef.h>                     /* defines size_t */
 #include <math.h>
+#include <float.h>                      /* DBL_MAX (dump frame-time test) */
 #include <pthread.h>                    /* mutex guarding Util table creation */
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_vector.h>
@@ -6683,7 +6684,13 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
       report_here)
   {
     const double frame_t = geodesic_dump_frame_time (particle_tt, particle_n_total);
-    const int datable = frame_t > -HUGE_VAL / 2.0;
+    /* "is there a frame we can date?"  geodesic_dump_frame_time() returns
+       -HUGE_VAL (= -infinity) when no particle has a finite time stamp.
+       Testing that with `> -HUGE_VAL/2` is a comparison against infinity,
+       which is tautological under fast math (Cactus turns it on with
+       VECTORISE=yes) and icx warns about it; -DBL_MAX is a finite bound and
+       gives the same answer for every value the function can return. */
+    const int datable = frame_t > -DBL_MAX;
     if (Geodesic_gstate.dfp == NULL)
       Geodesic_gstate.dfp = geodesic_dump_open(particle_dump_file);
     if (Geodesic_gstate.dfp && (!datable || frame_t > Geodesic_gstate.last_dump_time))
