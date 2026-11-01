@@ -383,18 +383,38 @@ be traced back to the code and parameter set that produced it.
 
 ## Tests
 
-The thorn ships a Cactus testsuite in `test/` with 19 tests, driven by
+The thorn ships a Cactus testsuite in `test/` with **10 tests**, driven by
 the official `RunTest.pl` infrastructure.  The convenient launcher is
 `test/run_tests.sh`:
 
-- `./run_tests.sh` (no argument) runs the 9-test default set, which
-  covers all four metric-sampling back-ends and both metric families
-  (stationary Kerr grid and the two-puncture frozen-initial-data
-  background; see the paper for the ML_BSSN-evolved merger runs):
-  `conv100`, `conv100_l27`, `conv100_local27`, `conv100_local27_1p`,
-  `conv100_aei`, `conv100_carpet`, `circ_orbit`, `tp_local27_025`,
-  `tp_far_local27_025_t80`.
-- `./run_tests.sh -all` runs all 19 tests in `test/test.ccl`.
+- `./run_tests.sh` (no argument) runs the ten tests registered in
+  `test/test.ccl`: `circ_orbit`, `circ_orbit_conserved`, `circ_orbit_mpi`,
+  `circ_orbit_grid`, `circ_orbit_grid_l27`, `circ_orbit_grid_aei`,
+  `circ_orbit_grid_carpet`, `circ_orbit_grid_2p`, `circ_orbit_amr_small`,
+  `minkowski_line_carpetx`.
+- `./run_tests.sh -all` leaves `CCTK_TESTSUITE_RUN_TESTS` unset, so
+  `RunTest.pl` runs every test registered anywhere in the arrangement.
+
+Nine of the ten share one grid: 50^3 KerrSchild over [-25,25]^3 (dx = 1,
+`Driver::ghost_size = 4`, Carpet excision of the r < 4 sphere via
+`Geodesic::excised_radius`), 32 Cactus steps of dt = 0.1 with
+`Geodesic::step = 100`, so the particle coordinate time advances 3200 M
+while the grid advances 3.2 M; one of them adds a static CarpetRegrid2
+box.  The tenth runs on the CarpetX driver instead of Carpet, on flat
+ADMBaseX data instead of Kerr.  Measured on this node with
+`OMP_NUM_THREADS=1` and the Cactus driver (`RunTest.pl`): **10 tests, 10
+passed, 29.7 s of wall clock, slowest single test 7.2 s**
+(`circ_orbit_amr_small`), which is inside the Einstein Toolkit review
+limits (under 10 s per test, under 2 min for the whole component).  Peak
+memory: 422 MB for the heaviest test (`circ_orbit_amr_small`, measured
+with `/usr/bin/time -v`), 142 MB for the CarpetX one.
+
+The heavier runs -- 100-particle rings, the 3-level AMR runs, the
+TwoPunctures BBH probes, the `conv100` sampler comparisons -- are in
+`test/extra/` and are **not** part of the testsuite: `RunTest.pl` globs
+`test/*.par` only, and those runs are far over the review time budget
+(`circ_orbit_amr` alone takes ~20 min on one core).  `test/extra/README`
+explains how to run them as a local regression set.
 
 Following the Einstein Toolkit convention that the user declares the
 local machine, `run_tests.sh` auto-detects the core count (`nproc`)
@@ -412,13 +432,13 @@ Equivalently, from the Cactus root:
 for every test live in `test/<testname>/geodesic_particles.txt`, the
 only file compared; run directories of instrumented builds may also
 contain `formaline-*` / timer artifacts, which the comparator ignores.
-All nineteen references carry the `cctk_time` column (ten columns), so the
+All ten references carry the `cctk_time` column (ten columns), so the
 comparator (`RunTestUtils.pl`) checks every column of every test.  Keep them
 that way: with a nine-column reference the comparator not only skips
 `cctk_time`, it also mis-aligns its NaN bookkeeping once the produced file
 carries the `# config:` header line -- `tp_aei_025` and `tp_carpet_025`
-reported "did not reproduce 442 NaNs / significant differences on 442 lines"
-while the nine shared columns were bit-identical.
+(in `test/extra/`) reported "did not reproduce 442 NaNs / significant
+differences on 442 lines" while the nine shared columns were bit-identical.
 Note that `./run_tests.sh -all` does not restrict itself to this thorn: it
 unsets `CCTK_TESTSUITE_RUN_TESTS`, which makes `RunTest.pl` run every test in
 the arrangement.  To run selected tests outside the default set, list them:
@@ -434,11 +454,9 @@ the arrangement.  To run selected tests outside the default set, list them:
   On a correct run both are constant to about nine digits over the
   whole orbit; a broken integrator shows up as a drift of E / L_z.
 - `circ_orbit_mpi` is the `circ_orbit` run with 2 MPI ranks (requires
-  `mpirun`); the integration runs on a single rank, so the dump must be
-  bit-identical to the single-rank reference.  The default set also
-  includes 4-rank runs (`conv100`, `conv100_local27`, `conv100_aei`,
-  `conv100_carpet`, `tp_local27_025`, `tp_far_local27_025_t80`),
-  which exercise the same owner-computes multi-rank path.
+  `mpirun`); in `Exact = yes` mode nothing is interpolated, so the dump
+  must be bit-identical to the single-rank reference.  This is the
+  rank-count independence test for the integrator itself.
 - `circ_orbit_grid` is the same orbit through the `Exact = no`
   interpolation path: the metric is the Kerr--Schild initial data
   stored on the ADMBase grid, the past time levels are filled with the
@@ -447,90 +465,118 @@ the arrangement.  To run selected tests outside the default set, list them:
   reference data row by row, as for `circ_orbit`; E and L_z stay
   stable to about four digits over the orbit, which is the expected
   grid-metric interpolation error of this mode.
-- `circ_orbit_amr` is a 100-particle ring on the same circular
-  orbits, `Exact = no`, with AMR: a 50^3 base grid (dx = 1) plus two
-  static Carpet refinement boxes centred on the origin (half-widths
-  16 and 8, factor 2).  The orbits stay at r in [11.7, 12.1], so
-  every particle lives on the level-1 grid (dx = 0.5) for the whole
-  run and the level-2 box (dx = 0.25) is never sampled; each
-  particle's 27-point stencil is drawn from the finest level that
-  contains it.  This validates the per-level metric acquisition, the
-  stationary-metric detection on refined levels, and the level
-  selection; the dump is compared against reference data row by
-  row.  The test's par file is configured for a single process.
-- `circ_orbit_100` is the control for `circ_orbit_amr`: the same
-  100 particles on the same 50^3 grid with no refinement, so the
-  stencil is always sampled on the base grid.  The E / L_z scatter
-  of `circ_orbit_amr` (via `util/check_conserved`) is about 2-3x
-  smaller than this run's, consistent with the 2nd-order 27-point
-  metric interpolation.
-- `ellipse_orbit_amr` is a 100-particle sample of one bound
-  equatorial *elliptic* geodesic (Kerr M = 2, a = 0.5, Kerr-Schild
-  coordinates): pericentre r = 7.5, apocentre (64, 0, 0),
-  E = 0.9742480384407799, L_z = 7.1053558433047188, particle i at
-  azimuth 2 pi (2i) / 200 of the first winding of the strongly
-  precessing orbit (~4.02 pi per radial period).  It runs on a
-  144^3 base grid (domain +-72, dx = 1) with three static spherical
-  Carpet refinement boxes (half-widths 36/18/9, factor 2), so the
-  particles occupy all four levels at t = 0 and cross level
-  boundaries in both directions.  With `Geodesic::step = 100` and
-  256 Cactus steps (no subcycling) the particle coordinate time
-  advances to 25600, about 19 radial periods.  It uses
-  `Exact = yes` deliberately: on the 2nd-order grid metric
-  (`Exact = no`) the init-time u^t re-solve plus coherent
-  integration error push the near-pericentre particles across the
-  plunging boundary into the excised sphere, where they are
-  dropped; with the built-in analytic metric no particle is dropped
-  and `util/check_conserved` gives max drifts of 2.4e-6 (E) and
-  7.1e-5 (L_z) relative to the initial values over the whole run.
-  The dump is compared against reference data row by row.
-- `conv100` is the paper's grid-convergence orbit (the P0 circular
-  orbit, r = 10, M = 2, a = 0.5) on a 100^3 grid (dx = 0.5),
-  `Exact = no`, 4 MPI ranks -- shortened for the testsuite to 200 steps
-  (t = 20.0); the paper run itself,
-  [doc/par/conv100.par](doc/par/conv100.par),
-  is 1500 steps (t = 150.1, ~1 orbital period).  The single-particle
-  dump is compared against reference data row by row.
-- `conv100_l27`, `conv100_local27`, `conv100_aei`, `conv100_carpet`
-  are the same orbit on the same grid, one per metric-sampling
-  back-end (`metric_interp = l27` / `local27` / `aei` / `carpet`; `aei`
-  and `carpet` sample through the `AEILocalInterp` / `LocalInterp`
-  interpolation interface), at 200 steps (t = 20.0) except `l27`, which
-  runs 100 steps (t = 10.0).  Each dump must reproduce its reference to
-  RELTOL 1e-12.
-  `conv100_l27` runs single process: the equatorial ring sits on rank
-  faces in the default 2x2 (y,z) multi-rank decomposition, where the
-  `l27` stencil is clipped out of the particle (see Limitations).
-- `conv100_local27_1p` is the single-process twin of `conv100_local27`
-  compared against the four-process reference dump: a PASS is a
-  1-vs-4-rank bit-identity check of the `local27` back-end (see
-  `test/check_mpi_identity.sh` for the 1/2/4-rank version at three
-  rank counts in one run).
+- `circ_orbit_grid_l27`, `circ_orbit_grid_aei`, `circ_orbit_grid_carpet`
+  are the same `Exact = no` orbit with `metric_interp = "l27"` (3x3x3
+  node fit, current time level only), `"aei"` (AEILocalInterp's pointwise
+  4th-order Lagrange interpolant) and `"carpet"` (the same 4th-order
+  interpolant reached through `LocalInterp`, i.e. the data-acquisition
+  path rather than the stencil).  `aei` needs `ActiveThorns` to include
+  `AEILocalInterp LocalInterp`; `carpet` needs `LocalInterp`.  All three
+  run on 2 MPI ranks.
+- `circ_orbit_grid_2p` is the `circ_orbit_grid` run on 2 MPI ranks with
+  its own reference: the multi-rank stencil path (Geodesic's own halo
+  exchange, `GEODESIC_HALO_W = 5`) must be reproducible at fixed rank
+  count.  It is *not* bit-identical to the single-rank
+  `circ_orbit_grid` -- see "KNOWN LIMITATION" in `test/test.ccl`.
+- `circ_orbit_amr_small` runs the same orbit on the 50^3 base grid plus
+  one static CarpetRegrid2 box of half-width 16 (dx = 0.5) on 2 MPI
+  ranks: exercises the per-level grid acquire and `pick_level`.
+- `minkowski_line_carpetx` is the CarpetX counterpart.  CarpetX cannot
+  host the Kerr tests: the metric there comes from `ADMBaseX`, whose
+  initial data is limited to "Cartesian Minkowski" and "linear wave", and
+  `ADMBase` itself cannot be combined with CarpetX at all.  So this test
+  runs four particles in four octants on a flat 64^3 ADMBaseX grid over
+  [-10,10]^3 with `metric_interp = "carpetx"`, 32 steps of dt = 0.1.  It
+  is the only test that exercises the CarpetX code path: the pointwise
+  ADMBaseX sampler, the two `OPTIONS: GLOBAL` entry points
+  `Geodesics_init_carpetx` / `Geodesics_integrate_carpetx`, and the
+  `multi_cx` replication mode (every rank integrates every particle,
+  because CarpetX's interpolator is an MPI collective).  The answer is
+  analytic to roundoff -- straight lines with constant `u^mu`, final
+  positions matching `x0 + v t` to 8e-16 -- and, unlike the grid-sampler
+  Kerr tests, the dump *is* bit-identical at 1, 2 and 4 ranks, because
+  replication carries no chunk boundaries.  It needs `CarpetX`,
+  `ADMBaseX` and `ODESolvers` in the configuration; the Einstein Toolkit
+  thornlist has them enabled.
+### The local regression set in `test/extra/`
 
-On that 200-step orbit, single process, the maximum position error
-against the `Exact = yes` trajectory of the same orbit is:
+`test/extra/` holds 15 heavier runs with their own reference dumps.  They
+are **not** registered in `test/test.ccl` and `RunTest.pl` never sees them
+(it globs `test/*.par` only); they are a local regression set for what the
+ten testsuite tests cannot afford to cover.  Run them from a scratch
+directory, one at a time:
 
-| `metric_interp` | t = 2 | t = 10 | t = 20 |
-|---|---|---|---|
-| `l27`     | 3.74e-6 | 4.42e-5 | 9.97e-5 |
-| `aei`     | 3.68e-7 | 6.29e-6 | 2.97e-5 |
-| `local27` | 1.60e-7 | 2.56e-7 | 1.97e-7 |
+    mkdir /tmp/rt && cd /tmp/rt
+    OMP_NUM_THREADS=1 mpirun -np 4 \
+        <Cactus>/exe/cactus_sim \
+        <Cactus>/arrangements/EinsteinAnalysis/Geodesic/test/extra/conv100_local27.par
+    cmp conv100_local27/geodesic_particles.txt \
+        <Cactus>/arrangements/EinsteinAnalysis/Geodesic/test/extra/conv100_local27/geodesic_particles.txt
 
-(100^3 grid, dx = 0.5, dt = 0.1, particle started at t = 0.)
-- `tp_local27_025`, `tp_aei_025`, `tp_carpet_025` are NEAR-field
-  probes on the two-puncture `GW150914` background (TwoPunctures
-  initial data, 144^3 grid, dx = 0.25, no AMR, excised radius 2):
-  a 100-particle ring at r = 8 with strong inward velocity, 20 steps.
-  The strong-field plunge produces deterministic NaN drops
-  (`loss_policy = drop`); the NaN-aware comparator skips rows that are
-  NaN in both files but fails if the drop pattern (which particles,
-  at which steps) changes.
+`test/check_mpi_identity.sh` runs the 1-, 2- and 4-rank bit-identity
+comparison for a given par (default `extra/conv100_local27.par`).
+
+- `circ_orbit_amr` / `circ_orbit_100`: a 100-particle ring of circular
+  orbits, `Exact = no`, on a 50^3 base grid (dx = 1) with two static
+  Carpet refinement boxes (half-widths 16 and 8, factor 2), versus the
+  same ring with no refinement.  The orbits stay at r in [11.7, 12.1], so
+  every particle lives on the level-1 grid (dx = 0.5) and the level-2 box
+  (dx = 0.25) is never sampled; this validates per-level metric
+  acquisition, stationary-metric detection on refined levels, and level
+  selection.  The E / L_z scatter of `circ_orbit_amr` is about 2-3x
+  smaller than the unrefined control's, consistent with 2nd-order 27-point
+  metric interpolation.  `circ_orbit_amr` takes ~20 min on one core.
+- `ellipse_orbit_amr`: 100 particles sampled along one bound equatorial
+  *elliptic* geodesic (Kerr M = 2, a = 0.5, Kerr-Schild coordinates),
+  pericentre r = 7.5, apocentre (64, 0, 0), on a 144^3 base grid
+  (domain +-72, dx = 1) with three static spherical Carpet refinement
+  boxes (half-widths 36/18/9, factor 2), so the particles occupy all four
+  levels at t = 0 and cross level boundaries in both directions.  With
+  `Geodesic::step = 100` and 256 Cactus steps (no subcycling) the particle
+  coordinate time advances to 25600, about 19 radial periods of the
+  strongly precessing orbit (~4.02 pi per radial period).  It uses
+  `Exact = yes` deliberately: on the 2nd-order grid metric (`Exact = no`)
+  the init-time u^t re-solve plus coherent integration error push the
+  near-pericentre particles across the plunging boundary into the excised
+  sphere, where they are dropped.  With the built-in analytic metric no
+  particle is dropped and `util/check_conserved` gives max drifts of
+  2.4e-6 (E) and 7.1e-5 (L_z) over the whole run.
+- `conv100`, `conv100_l27`, `conv100_local27`, `conv100_local27_1p`,
+  `conv100_aei`, `conv100_carpet`: the paper's grid-convergence orbit
+  (r = 10, M = 2, a = 0.5) on a 100^3 grid (dx = 0.5), `Exact = no`, one
+  per sampler (`metric_interp = l27` / `local27` / `aei` / `carpet`), at
+  200 steps (t = 20.0) except `l27` at 100 steps (t = 10.0);
+  `conv100_local27_1p` is the single-process twin of `conv100_local27`,
+  so a match is a 1-vs-4-rank bit-identity check of the `local27`
+  back-end.  `conv100_l27` runs single process because the equatorial ring
+  sits on rank faces in the default 2x2 (y,z) decomposition, where the
+  `l27` stencil is clipped out of the particle (see Limitations).  The
+  paper run itself, [doc/par/conv100.par](doc/par/conv100.par), is 1500
+  steps (t = 150.1, ~1 orbital period).  On the 200-step orbit, single
+  process, the maximum position error against the `Exact = yes` trajectory
+  of the same orbit is:
+
+  | `metric_interp` | t = 2 | t = 10 | t = 20 |
+  |---|---|---|---|
+  | `l27`     | 3.74e-6 | 4.42e-5 | 9.97e-5 |
+  | `aei`     | 3.68e-7 | 6.29e-6 | 2.97e-5 |
+  | `local27` | 1.60e-7 | 2.56e-7 | 1.97e-7 |
+
+  (100^3 grid, dx = 0.5, dt = 0.1, particle started at t = 0.)
+- `tp_local27_025`, `tp_aei_025`, `tp_carpet_025`: NEAR-field probes on
+  the two-puncture `GW150914` background (TwoPunctures initial data,
+  144^3 grid, dx = 0.25, no AMR, `excised_radius = 2`): a 100-particle
+  ring at r = 8 with strong inward velocity, 20 steps.  The strong-field
+  plunge produces deterministic NaN drops
+  (`particle_loss_policy = drop`); the NaN-aware comparator skips rows
+  that are NaN in both files but fails if the drop pattern (which
+  particles, at which steps) changes.
 - `tp_far_local27_025_t80`, `tp_far_aei_025_t80`,
-  `tp_far_carpet_025_t80` are FAR-field probes on the same background:
-  a 100-particle ring at r = 10 with modest inward velocity, 80
-  steps.  All 100 particles survive with zero NaN on all three
-  back-ends; these are well-posedness regression tests on a strongly
-  curved two-puncture background.
+  `tp_far_carpet_025_t80`: FAR-field probes on the same background: a
+  100-particle ring at r = 10 with modest inward velocity, 80 steps.  All
+  100 particles survive with zero NaN on all three samplers; these are
+  well-posedness regression tests on a strongly curved two-puncture
+  background.
 
 `util/check_conserved` is a small wrapper script: on first use it
 compiles `util/check_conserved.c` (plain C, libc + libm) into

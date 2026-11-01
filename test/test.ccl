@@ -1,14 +1,18 @@
 # Geodesic thorn testsuite configuration.
 #
-# Nine tests.  Every one runs on a 50^3 KerrSchild grid over
+# Ten tests.  Nine of them run on a 50^3 KerrSchild grid over
 # [-25,25]^3 (dx = 1, Driver::ghost_size = 4, Carpet excision of the
 # r < 4 sphere via Geodesic::excised_radius) for 32 Cactus steps of
 # dt = 0.1 with Geodesic::step = 100, i.e. the particle coordinate time
 # advances 3200 M while the grid advances 3.2 M.  One test adds a single
-# CarpetRegrid2 box.  Each test dumps the full particle state
-# (t x y z u^t u^x u^y u^z tau cctk_time) once per Cactus step, 32-33
-# rows, and the driver compares it row by row against the reference in
-# the matching directory.
+# CarpetRegrid2 box.  The tenth runs on the CarpetX driver instead of
+# Carpet, on flat space instead of Kerr (ADMBaseX, the only metric CarpetX
+# can hand to Geodesic, has no Kerr-Schild initial data -- see the header
+# of minkowski_line_carpetx.par), with 64^3 cells over [-10,10]^3, the
+# same dt = 0.1 and the same 32 steps.  Each test dumps the full particle
+# state (t x y z u^t u^x u^y u^z tau cctk_time) once per Cactus step,
+# 32-33 rows, and the driver compares it row by row against the reference
+# in the matching directory.
 #
 # What is covered:
 #
@@ -58,6 +62,25 @@
 #                        static CarpetRegrid2 box of half-width 16
 #                        (dx = 0.5), on 2 MPI ranks: exercises the
 #                        per-level grid acquire and pick_level.
+#
+#   minkowski_line_carpetx
+#                        the CarpetX driver instead of Carpet: four
+#                        particles in four octants on a flat ADMBaseX grid,
+#                        metric_interp = "carpetx".  This is the only test
+#                        that exercises the CarpetX code path -- the
+#                        pointwise ADMBaseX sampler, the two GLOBAL-mode
+#                        entry points Geodesics_init_carpetx /
+#                        Geodesics_integrate_carpetx, and the multi_cx
+#                        replication mode (every rank integrates every
+#                        particle, because CarpetX's interpolator is an MPI
+#                        collective).  The answer is analytic to roundoff
+#                        (straight lines, constant u^mu): the final positions
+#                        match x0 + v t to 8e-16.  Unlike the grid-sampler
+#                        Kerr tests, this one IS bit-identical at 1, 2 and 4
+#                        ranks -- replication carries no chunk boundaries.
+#                        Needs CarpetX, ADMBaseX and ODESolvers in the
+#                        configuration; the EinsteinToolkit thornlist has
+#                        them enabled.
 #
 # KNOWN LIMITATION, and why the grid-sampler references are generated at
 # the rank count the test runs at: with Exact = no the trajectory is NOT
@@ -138,6 +161,12 @@ TEST circ_orbit_grid_2p
 }
 
 TEST circ_orbit_amr_small
+{
+  RELTOL 1e-12
+  NPROCS 2
+}
+
+TEST minkowski_line_carpetx
 {
   RELTOL 1e-12
   NPROCS 2

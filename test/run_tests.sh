@@ -3,24 +3,33 @@
 # Geodesic thorn testsuite launcher (official Einstein Toolkit mechanism).
 #
 # Usage:
-#   ./run_tests.sh         default set: the 9 regression tests that cover
-#                          all four metric-sampling back-ends and both
-#                          metric families (stationary Kerr grid,
-#                          non-stationary TwoPunctures merger):
+#   ./run_tests.sh         the default set: the ten tests registered in
+#                          test/test.ccl (the same set that "-all" runs;
+#                          they are listed explicitly so that the script
+#                          fails loudly if one of them disappears):
 #
-#                            Geodesic/conv100
-#                            Geodesic/conv100_l27
-#                            Geodesic/conv100_local27
-#                            Geodesic/conv100_local27_1p
-#                            Geodesic/conv100_aei
-#                            Geodesic/conv100_carpet
 #                            Geodesic/circ_orbit
-#                            Geodesic/tp_local27_025
-#                            Geodesic/tp_far_local27_025_t80
+#                            Geodesic/circ_orbit_conserved
+#                            Geodesic/circ_orbit_mpi
+#                            Geodesic/circ_orbit_grid
+#                            Geodesic/circ_orbit_grid_l27
+#                            Geodesic/circ_orbit_grid_aei
+#                            Geodesic/circ_orbit_grid_carpet
+#                            Geodesic/circ_orbit_grid_2p
+#                            Geodesic/circ_orbit_amr_small
+#                            Geodesic/minkowski_line_carpetx
 #
-#   ./run_tests.sh -all    every test listed in test/test.ccl (19 tests,
-#                          including the AMR / MPI variants and the aei /
-#                          carpet TwoPunctures probes).
+#   ./run_tests.sh -all    every test found in any test.ccl of the
+#                          arrangement, i.e. CCTK_TESTSUITE_RUN_TESTS is
+#                          left unset.  For this thorn that is the same
+#                          ten tests, plus whatever other thorns in the
+#                          arrangement register tests.
+#
+# The heavier runs (100-particle rings, 3-level AMR, the TwoPunctures BBH
+# probes, the conv100 sampler comparisons) live in test/extra/ and are NOT
+# part of the testsuite: RunTest.pl globs test/*.par only, and the review
+# criteria are under 10 s per test / under 2 min for the whole component.
+# test/extra/README explains how to run them as a local regression set.
 #
 # The script drives the standard Cactus testsuite infrastructure
 # (lib/sbin/RunTest.pl via "gmake sim-testsuite"), non-interactively
@@ -70,15 +79,16 @@ fi
 
 CONFIG="sim"
 
-DEFAULT_TESTS="Geodesic/conv100 \
-  Geodesic/conv100_l27 \
-  Geodesic/conv100_local27 \
-  Geodesic/conv100_local27_1p \
-  Geodesic/conv100_aei \
-  Geodesic/conv100_carpet \
-  Geodesic/circ_orbit \
-  Geodesic/tp_local27_025 \
-  Geodesic/tp_far_local27_025_t80"
+DEFAULT_TESTS="Geodesic/circ_orbit \
+  Geodesic/circ_orbit_conserved \
+  Geodesic/circ_orbit_mpi \
+  Geodesic/circ_orbit_grid \
+  Geodesic/circ_orbit_grid_l27 \
+  Geodesic/circ_orbit_grid_aei \
+  Geodesic/circ_orbit_grid_carpet \
+  Geodesic/circ_orbit_grid_2p \
+  Geodesic/circ_orbit_amr_small \
+  Geodesic/minkowski_line_carpetx"
 
 case "${1:-}" in
     ""|-default|--default)

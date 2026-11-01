@@ -1,0 +1,192 @@
+#------------------------------------------------------------------------------
+# Geodesic + CarpetX: Minkowski straight lines, four particles.
+#
+# This is the CarpetX counterpart of the eight KerrSchild tests in this
+# directory, which all run on the Carpet driver.  CarpetX cannot host those:
+# the metric there comes from ADMBaseX, whose initial data is limited to
+# "Cartesian Minkowski" and "linear wave" (ADMBaseX/param.ccl) -- there is no
+# Kerr-Schild initial data for ADMBaseX -- and ADMBase itself cannot be
+# combined with CarpetX at all (CarpetX::SetupGlobals asserts that every
+# non-grid-function group is REAL and CONSTANT, while ADMBase declares INT
+# SCALAR groups such as shift_state).  So the CarpetX test uses flat space,
+# where the geodesics are straight lines with constant u^mu and any deviation
+# is pure interpolation plus integration error.
+#
+# What it pins that the Carpet tests do not:
+#
+#   metric_interp = "carpetx"   the pointwise ADMBaseX sampler, which reaches
+#                               CarpetX_InterpGridArrays through the
+#                               CCTK_InterpGridArrays overload that CarpetX
+#                               registers (Geodesic does not declare the
+#                               interface itself -- CarpetX does not export it
+#                               either -- so Geodesic_integrate.c calls it
+#                               through the Cactus binding and checks that the
+#                               resolved handle really is the one registered
+#                               as "CarpetX").
+#   the GLOBAL-mode entry points  Geodesics_init_carpetx /
+#                               Geodesics_integrate_carpetx (schedule.ccl),
+#                               which CarpetX calls exactly once with the
+#                               driver's global-mode cGH; the level-mode
+#                               entries return early under CarpetX.
+#   multi_cx replication        on 2 ranks every rank integrates every
+#                               particle from the identical replicated state,
+#                               because CarpetX's interpolator is an MPI
+#                               collective and an adaptive ODE step cannot be
+#                               split between ranks.  The four particles sit
+#                               in four different octants so they fall in
+#                               different CarpetX rank domains.  The dump must
+#                               be bit-identical at 1, 2 and 4 ranks; see
+#                               test/check_mpi_identity.sh.
+#
+# Grid: [-10,10]^3 with 64 cells per dimension (dx = 0.3125), one level,
+# dt = dtfac * min(dx) = 0.32 * 0.3125 = 0.1, 32 steps to t = 3.2 -- the same
+# step count and grid dt as the KerrSchild tests above.  Geodesic::step = 0.0
+# advances the particle clock by the elapsed grid time, so the particle
+# coordinate time also ends at 3.2 and every particle stays well inside the
+# grid (max radius reached 2 + 0.5 * 3.2 = 3.6).
+#------------------------------------------------------------------------------
+Cactus::cctk_run_title = "Geodesic/CarpetX testsuite: Minkowski straight lines"
+
+Cactus::terminate      = "iteration"
+Cactus::cctk_itlast    = 32
+
+# ODESolvers is required: ADMBaseX schedules its initial-data group inside
+# ODESolvers_Initial only when ODESolvers is active (ADMBaseX/schedule.ccl),
+# so without it the metric/lapse/shift stay at the CarpetX sNaN fill value.
+# Nothing registers an RHS here, so the Minkowski data is simply left alone.
+#
+# CartGrid3D and CoordBase are deliberately NOT activated.  In
+# metric_interp = "carpetx" mode Geodesic takes the domain from the CarpetX
+# parameters (Geodesic_init.c calls Geodesic_carpetx_domain()), so it needs
+# neither of them, and activating them alongside CarpetX is not harmless: on
+# this node, 2 MPI ranks with OMP_NUM_THREADS=20, a run that activates them
+# aborts or hangs after a warning from CoordBase.c:425 ("Error reading
+# coordinate name") and an assertion inside Cactus's own parameter table
+# (Cactus/util/Table.c:5499, delete_table_entry_by_ptr: tep != NULL).  The
+# same failure happens with Geodesic removed from ActiveThorns, so it is a
+# race between CartGrid3D/CoordBase and OpenMP in the Cactus parameter
+# table, not something Geodesic causes; removing the two thorns from this
+# par avoids it.  A run without them reproduces the reference bit for bit.
+ActiveThorns = "CarpetX ADMBaseX ODESolvers Geodesic IOUtil"
+
+# Geodesic declares no READS (it fetches fields by name at run time), so there
+# is nothing for the driver to pre-synchronise.  CarpetX insists on one of the
+# presync modes (CarpetX/schedule.cxx); "mixed-error" is the weaker one.
+Cactus::presync_mode = "mixed-error"
+Cactus::cctk_show_schedule = no
+
+#------------------------------------------------------------------------------
+# CarpetX grid
+#------------------------------------------------------------------------------
+
+CarpetX::verbose = no
+CarpetX::poison_undefined_values = yes
+
+CarpetX::xmin = -10.0
+CarpetX::ymin = -10.0
+CarpetX::zmin = -10.0
+CarpetX::xmax = +10.0
+CarpetX::ymax = +10.0
+CarpetX::zmax = +10.0
+
+CarpetX::ncells_x = 64
+CarpetX::ncells_y = 64
+CarpetX::ncells_z = 64
+
+CarpetX::max_num_levels  = 1
+CarpetX::regrid_every    = 0
+CarpetX::ghost_size      = 3
+
+CarpetX::prolongation_type  = "ddf"
+CarpetX::prolongation_order = 5
+CarpetX::interpolation_order = 3
+
+CarpetX::dtfac = 0.32
+
+Driver::periodic_x = no
+Driver::periodic_y = no
+Driver::periodic_z = no
+
+#------------------------------------------------------------------------------
+# Initial data: flat metric, unit lapse, zero shift
+#------------------------------------------------------------------------------
+
+ADMBaseX::initial_data  = "Cartesian Minkowski"
+ADMBaseX::initial_lapse = "one"
+ADMBaseX::initial_shift = "zero"
+
+#------------------------------------------------------------------------------
+# Geodesic: four particles, grid mode via the CarpetX sampler
+#------------------------------------------------------------------------------
+
+Geodesic::Exact          = "no"
+Geodesic::metric_interp  = "carpetx"
+Geodesic::geodesic_amr_levels = 1
+Geodesic::rverbose       = "no"
+
+Geodesic::M = 1.0
+Geodesic::a = 0.0
+
+# no excision / respawn in this test: the particles stay at r <= 3.6
+Geodesic::excised_radius = 0.0
+Geodesic::particle_loss_policy = "flag"
+
+Geodesic::initial_radius   = 8.0
+Geodesic::particle_rand_xmin = -8.0
+Geodesic::particle_rand_xmax = +8.0
+Geodesic::particle_rand_ymin = -8.0
+Geodesic::particle_rand_ymax = +8.0
+Geodesic::particle_rand_zmin = -8.0
+Geodesic::particle_rand_zmax = +8.0
+Geodesic::particle_middle_sp = 0.0
+
+Geodesic::step              = 0.0
+Geodesic::particle_n        = 4
+Geodesic::particle_n_total  = 4
+Geodesic::particle_dump_every = 1
+Geodesic::particle_dump_file = "minkowski_line_carpetx/geodesic_particles.txt"
+
+# u^mu convention (NOT a 3-velocity): for coordinate velocity of speed 0.5,
+# u^t = 1/sqrt(1-0.5^2) = 1.1547005383792515 and u^i = 0.5 u^t along the
+# direction of motion.
+Geodesic::particle_x[0] =  2.0
+Geodesic::particle_y[0] =  0.0
+Geodesic::particle_z[0] =  0.0
+Geodesic::particle_tv[0] = 1.1547005383792515
+Geodesic::particle_xv[0] = 0.0
+Geodesic::particle_yv[0] = 0.5773502691896258
+Geodesic::particle_zv[0] = 0.0
+
+Geodesic::particle_x[1] = -2.0
+Geodesic::particle_y[1] =  0.0
+Geodesic::particle_z[1] =  0.0
+Geodesic::particle_tv[1] = 1.1547005383792515
+Geodesic::particle_xv[1] = 0.5773502691896258
+Geodesic::particle_yv[1] = 0.0
+Geodesic::particle_zv[1] = 0.0
+
+Geodesic::particle_x[2] =  0.0
+Geodesic::particle_y[2] = -2.0
+Geodesic::particle_z[2] =  0.0
+Geodesic::particle_tv[2] = 1.1547005383792515
+Geodesic::particle_xv[2] = 0.0
+Geodesic::particle_yv[2] = 0.0
+Geodesic::particle_zv[2] = 0.5773502691896258
+
+Geodesic::particle_x[3] =  0.0
+Geodesic::particle_y[3] =  0.0
+Geodesic::particle_z[3] =  2.0
+Geodesic::particle_tv[3] = 1.1547005383792515
+Geodesic::particle_xv[3] = -0.5773502691896258
+Geodesic::particle_yv[3] = 0.0
+Geodesic::particle_zv[3] = 0.0
+
+#------------------------------------------------------------------------------
+# Output
+#------------------------------------------------------------------------------
+
+IO::out_every     = 0
+IO::parfile_write = "no"
+
+CarpetX::out_metadata = no
+CarpetX::out_tsv      = no

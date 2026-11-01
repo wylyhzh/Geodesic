@@ -275,17 +275,19 @@ values if they are normalized.
 
 \subsection{Tests}
 
-The thorn ships a Cactus testsuite in \texttt{test/} with nine tests,
+The thorn ships a Cactus testsuite in \texttt{test/} with ten tests,
 declared in \texttt{test/test.ccl}.  Every test compares the plain-text
 particle dump (\texttt{test/<name>/geodesic\_particles.txt}) against
 reference data; \texttt{circ\_orbit\_conserved} additionally compares
 the Kerr constants of motion $E$ and $L_z$ produced by the
-postprocessor \texttt{util/check\_conserved}.  All nine run on the same
-$50^3$ Kerr--Schild grid over $[-25,25]^3$ ($\Delta x = 1$) for 32
-Cactus steps, one of them with a single refinement box added, and each
-reference is 32--36 rows.  Measured with the Cactus driver
-(\texttt{RunTest.pl}, one OpenMP thread per rank): 9 tests, 9 passed,
-42\,s of wall clock.  The tests fall into three groups:
+postprocessor \texttt{util/check\_conserved}.  Nine of them run on the
+same $50^3$ Kerr--Schild grid over $[-25,25]^3$ ($\Delta x = 1$) for 32
+Cactus steps, one of those with a single refinement box added, and each
+reference is 32--36 rows.  The tenth runs on the \texttt{CarpetX} driver
+instead.  Measured with the Cactus driver (\texttt{RunTest.pl}, one
+OpenMP thread per rank): 10 tests, 10 passed, 29.7\,s of wall clock,
+slowest single test 7.2\,s; peak memory 422\,MB for the heaviest test.
+The tests fall into four groups:
 
 \begin{itemize}
 \item \texttt{circ\_orbit}, \texttt{circ\_orbit\_conserved},
@@ -308,6 +310,23 @@ reference is 32--36 rows.  Measured with the Cactus driver
   base grid with one static \texttt{CarpetRegrid2} box of half-width 16
   ($\Delta x = 0.5$) on 2 MPI ranks: per-level metric acquisition and
   level selection.
+\item \texttt{minkowski\_line\_carpetx}: the \texttt{CarpetX} path.
+  \texttt{CarpetX} cannot host the Kerr tests: the metric available to
+  \texttt{metric\_interp = carpetx} comes from \texttt{ADMBaseX}, whose
+  initial data is limited to \texttt{"Cartesian Minkowski"} and
+  \texttt{"linear wave"}, and \texttt{ADMBase} itself cannot be combined
+  with \texttt{CarpetX} at all (\texttt{CarpetX::SetupGlobals} asserts
+  that every non-grid-function group is \texttt{REAL CONSTANT}).  So this
+  test runs four particles in four octants on a flat $64^3$
+  \texttt{ADMBaseX} grid over $[-10,10]^3$ for 32 steps of
+  $\Delta t = 0.1$.  It is the only test that reaches the
+  \texttt{OPTIONS: GLOBAL} entry points \texttt{Geodesics\_init\_carpetx}
+  and \texttt{Geodesics\_integrate\_carpetx} and the replicated
+  multi-process mode.  The answer is analytic to roundoff (straight
+  lines, constant $u^\mu$; final positions match $x_0 + v t$ to
+  $8\cdot10^{-16}$), and --- unlike the grid-sampler Kerr tests --- the
+  dump is bit-identical at 1, 2 and 4 ranks, because replication carries
+  no chunk boundaries.
 \end{itemize}
 
 Each \texttt{Exact = no} reference is generated at the rank count that
