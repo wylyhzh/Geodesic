@@ -215,10 +215,12 @@ Kerr--Schild formulas used by `Exact = yes` are built in.  Activate
   `Exact = no` runs the grid fields read by the interpolation stencils
   are exchanged as a five-cell halo around each rank's box, so a
   particle sees the same stencil data before and after a rank
-  hand-over.  Multi-rank runs are therefore bit-for-bit reproducible
+  hand-over.  Multi-rank runs are therefore reproducible to roundoff
   (verified against single-rank baselines in the conv test series, and
   by `test/check_mpi_identity.sh`, which compares 1-, 2- and 4-rank
-  dumps byte for byte).  The testsuite's 2-rank test
+  dumps within a 1e-6 tolerance -- measured exactly 0 at 2 and at 4
+  ranks on both `extra/conv100_local27.par` and the 4-level AMR
+  `extra/ellipse_orbit_amr.par`).  The testsuite's 2-rank test
   (`test/circ_orbit_mpi`) and the 4-rank `conv100` / TwoPunctures
   tests are part of the default test set (see Tests below).
   Ownership is decided with a claim margin of 4 cells around each rank's box;
@@ -544,8 +546,9 @@ directory, one at a time:
     cmp conv100_local27/geodesic_particles.txt \
         <Cactus>/arrangements/EinsteinAnalysis/Geodesic/test/extra/conv100_local27/geodesic_particles.txt
 
-`test/check_mpi_identity.sh` runs the 1-, 2- and 4-rank bit-identity
-comparison for a given par (default `extra/conv100_local27.par`).
+`test/check_mpi_identity.sh` runs the 1-, 2- and 4-rank agreement
+comparison (1e-6 tolerance) for a given par (default
+`extra/conv100_local27.par`).
 
 - `circ_orbit_amr` / `circ_orbit_100`: a 100-particle ring of circular
   orbits, `Exact = no`, on a 50^3 base grid (dx = 1) with two static
@@ -932,7 +935,8 @@ symptom -> cause -> fix -> what now guards it.
    every decomposition and the values across a face are bit-identical copies
    of the neighbour's array, so the rank count stops being an accuracy
    parameter.  *Guarded by*: `test/check_mpi_identity.sh` (1-, 2- and 4-rank
-   dumps compared byte for byte) plus the 2-rank `circ_orbit_mpi` and the
+   dumps compared within a 1e-6 tolerance; exactly 0 on the two defaults)
+   plus the 2-rank `circ_orbit_mpi` and the
    4-rank `conv100` / TwoPunctures tests in the default set.
 
 2. **Interpolation caches and quality flags did not follow the particle.**

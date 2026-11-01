@@ -92,8 +92,12 @@ MPI ranks and requires the dumps to agree within a 1e-6 tolerance
   1, 2 and 4 ranks.  On the three-level AMR setup a 1-vs-4-rank run
   differs by 0.20 in x and 0.10 in tau at t = 3200 M, growing from
   7.9e-6 after one step; the t = 0 rows of all 100 particles are
-  bit-identical there.  Exact = yes is rank-count independent.  Quote
-  results at fixed rank count.  See doc/documentation.tex.
+  bit-identical there.  At the shorter 4-level AMR case
+  test/extra/ellipse_orbit_amr.par (t = 25.6) the 1-, 2- and 4-rank
+  dumps are still exactly identical, so this is a long-time effect
+  rather than a per-crossing one.  Exact = yes is rank-count
+  independent.  Quote results at fixed rank count.  See README.md,
+  "Limitations".
 
 5. Contact
 

@@ -20,11 +20,15 @@
 # The criterion is a tolerance, not bit-identity: the chunk-boundary rule
 # changes how the integration is cut into chunks, so a particle is handed
 # to the neighbouring rank at a different point along its path and the
-# floating-point summation order changes.  What remains is roundoff
-# (measured max over all columns: 0 at 2 ranks and 0 at 4 ranks for the
-# unigrid default below; the AMR case in extra/ellipse_orbit_amr.par is
-# the one that still depends on the rank count, see doc/documentation.tex
-# "Known limitations").
+# floating-point summation order changes.  Measured max over all columns:
+# 0 at 2 ranks and 0 at 4 ranks for the unigrid default below, and also
+# 0 at 2 and 4 ranks for the AMR case extra/ellipse_orbit_amr.par at
+# itlast=256 (t = 25.6, 4 levels, dx = 1 down to 1/8).  The residual AMR
+# rank dependence is a long-time effect, not a per-crossing one: on the
+# three-level fixture of the paper it is exactly 0 at t = 0, 7.9e-6 at
+# t = 10 and 2.0e-1 by t = 3200, which is why it is recorded as a known
+# limitation (README, section 4; README.md "Limitations") instead of being
+# asserted here.
 #
 # Usage:  ./check_mpi_identity.sh [parfile] [itlast]
 #         (default: extra/conv100_local27.par, the 100^3 dx=0.5 Kerr-Schild
