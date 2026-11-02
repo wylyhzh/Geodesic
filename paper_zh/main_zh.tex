@@ -1,0 +1,945 @@
+% main_zh.tex -- 中文版（arXiv 草稿 gr-qc，交叉 astro-ph.HE）
+% "Geodesic：一个面向 Einstein Toolkit 的并行测试粒子测地线追踪器"
+% 编译: xelatex main_zh && bibtex main_zh && xelatex main_zh && xelatex main_zh
+\documentclass[11pt,UTF8]{ctexart}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{natbib}
+\usepackage{float}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+
+\setlength{\textwidth}{16.5cm}
+\setlength{\textheight}{22.5cm}
+\setlength{\oddsidemargin}{-0.2cm}
+\setlength{\evensidemargin}{-0.2cm}
+\setlength{\topmargin}{-1.2cm}
+
+% 图缺失时直接报错（不做静默占位）
+\newcommand{\maybefig}[2]{\includegraphics[width=#2]{#1}}
+
+% 数据数值表（唯一数据源；验证 run 结束后填入，与英文版保持一致）
+\newcommand{\num}[1]{\csname gnum#1\endcsname}
+\newcommand{\gnumconsexp}{9}
+% 数学数值：调用处均在 $...$ 内
+\newcommand{\gnummaxdE}{2.8\times10^{-10}}
+\newcommand{\gnummaxnorm}{8.9\times10^{-16}}
+\newcommand{\gnumexacterr}{1.7\times10^{-6}}
+\newcommand{\gnumconvorder}{5.6}
+\newcommand{\gnumscaleeff}{10.4}
+\newcommand{\gnumhydrofrac}{3.1}
+
+\title{\texttt{Geodesic}：一个面向 \texttt{Einstein Toolkit} 的并行测试粒子测地线追踪器}
+
+\author{Yuhua Li\thanks{liyhts@yeah.net} \\
+% 作者已退休，不填单位
+{\small 独立研究者}}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+我们提出 \texttt{Geodesic}，一个面向 \texttt{Einstein Toolkit} 的新 thorn，
+用于在 Kerr--Schild 直角坐标描述的时空中积分测试粒子测地线。该 thorn
+提供两种度规求值方式：一是精确解析的 Kerr--Schild 度规，与计算网格
+无关，并经符号化验证为真空解；二是网格度规模式，由单个参数选取四种
+局部采样器之一（\texttt{l27}、\texttt{local27}、\texttt{aei}、
+\texttt{carpet}）。每个粒子都是独立的计算单元，粒子循环因此可以
+扩展到 $10^4$ 个粒子，在 44 核节点的 88 个逻辑线程上实测加速
+$9.2\times$；同一独立性也是 owner-computes MPI
+模式的基础，该模式下复制的粒子状态在每个 rank 上逐位相同；采样器在
+Carpet AMR 网格上无需修改即可运行。测地线方程用自适应 Runge--Kutta--Fehlberg（RKF45）
+格式积分，并在每一步对四速度重新归一化。我们从五个方面验证该
+thorn：(i) 三条束缚轨道在 $T=1000\,M$ 内能量 $E$、轴角动量 $L_z$
+与范数守恒到 $\sim 10^{-\num{consexp}}$；(ii) 默认采样器的网格收敛，
+实测局部收敛阶 \num{convorder}；(iii) 在 $100$ 粒子的进动轨道上比较
+各网格采样器；(iv) 3 层 AMR 网格上的稳定轨道；(v) 双穿孔 \texttt{GW150914} 背景上的稳健性检验：\texttt{ML\_BSSN}
+演化的（时变）并合时空上测地线稳定积分到 $t=14.05\,M$，并给出背景分辨率与时间步
+的稳定性门槛和代价；冻结初值上近环轨道的强场丢失是确定性的、基本与后端无关，并
+以三分辨率扫描给出各采样器的观测阶趋势。嵌入完整的 \texttt{GRHydro} 演化时，$10^4$
+个粒子的积分只增加总墙钟时间的百分之几。thorn 以 GPLv2+ 许可证发布，
+并随文提供本文所用的全部配置文件。
+\end{abstract}
+
+\section{引言}
+
+测试粒子测地线是数值相对论与黑洞吸积流研究中最基本的诊断工具\citep{poisson2004}：
+它为自洽的水动力与电磁学解提供对比用的参考轨道\citep{bz1977}，定义了用于解释谱线轮廓
+与吸积盘进动的轨道结构\citep{bardeen1973,gralla2020}，并作为数值模拟产生的时空的验证工具
+\citep{kerr1963,bardeen1972,wilkins1972}。面向 3+1 split 时空的通用测地线
+积分器已用于 GRMHD 模拟的测试粒子诊断\citep{bacchini2018,bacchini2019}；
+也有专门在数值相对论输出上求光线传播与光学观测量的程序 \citep{grasso2022}，
+以及在给定度规上做偏振射线追踪的程序 \citep{aimar2024}；Kerr 的类时测地线
+与坠轨测地线已有解析结果与公开程序 \citep{park2024,dyson2023}；self-force
+工作中，粒子世界线则与场一起在数值网格上推进 \citep{vretinaris2026}。
+但这些都不是 Cactus 调度内的测试粒子测地线追踪器：
+\citet{bacchini2018,bacchini2019} 的验证对象是固定或给定的度规，
+上述程序也均未涉及在由 AMR 网格跨 MPI 进程分解的
+演化时空上追踪粒子。目前紧致天体广义相对论模拟的
+标准框架——Cactus 代码框架 \citep{cactusweb} 及其扩展
+\texttt{Einstein Toolkit} \citep{loeffler2012}——都不提供 Kerr--Schild
+坐标下测试粒子的测地线追踪器，而 Kerr--Schild 坐标恰恰是大多数 Kerr
+初值与时空演化 thorn 所采用的坐标。今天需要测地线的用户只能自己写积分器，
+或在事后对演化度规场做插值；两种方式中，在每个粒子位置做全局度规插值的开销
+都阻碍了问题结构本应允许的直接并行扩展。
+
+\texttt{Geodesic} 正是为填补这一空缺而编写的 \texttt{Einstein Toolkit}
+thorn。其设计目标是：(i) 同时支持精确解析 Kerr--Schild 度规与从模拟网格
+插值的度规，使同一组粒子既可以在解析背景上追踪，也可以在演化时空上追踪；
+(ii) 保持每个粒子的工作完全局部，使粒子循环可以用 OpenMP 并行且无需粒子间
+通信；(iii) 作为 Kerr--Schild 直角坐标下测地线方程的干净、可审计的参考
+实现，并经独立实现交叉验证。
+
+其中第二个目标是关于数据依赖的陈述，而不是关于已实现效率的陈述：该循环没有
+粒子间通信，但其实测 OpenMP 扩展性受内存与跨插槽带宽限制，而非负载不均，
+我们报告实测数字而非理想化数字（Sec.~\ref{sec:scaling}）。把粒子与其读取的
+网格数据共置（co-locate）的并行方案预期会更好，但我们没有实现这样的方案。
+
+本文的主要贡献是：
+\begin{enumerate}
+\item 一个在 Kerr--Schild 直角坐标下用自适应 RKF45 格式积分测地线方程、
+  并在每一步对四速度重新归一化的 thorn；
+\item 一个经过符号化真空验证的精确解析 Kerr--Schild 度规
+  （Sec.~\ref{sec:exactmetric}）；
+\item 由单个参数选取的四种局部网格度规采样器（\texttt{l27}、
+  \texttt{local27}、\texttt{aei}、\texttt{carpet}，
+  Sec.~\ref{sec:samplers}），其中每个粒子都是独立的计算单元，
+  并用 $10^4$ 粒子的强扩展实验
+  加以验证（Sec.~\ref{sec:scaling}）；
+\item 一套验证实验：三条不同束缚轨道在 $T=1000\,M$ 内 $E$、$L_z$ 与范数
+  的守恒，展示默认采样器实测 \num{convorder} 阶局部收敛的
+  网格收敛研究，在 $100$ 粒子的进动轨道上精确度规与网格采样器的
+  四方比较，以及双穿孔 GW150914 并合背景上的稳健性检验
+  （Sec.~\ref{sec:gw150914}）。
+\end{enumerate}
+
+本文余下部分组织如下：Sec.~\ref{sec:method} 描述 thorn 所用 3+1 形式下的
+测地线方程与粒子四速度的初始化；Sec.~\ref{sec:metric} 精确模式与四种
+网格度规采样器；Sec.~\ref{sec:impl} 实现细节，包括 OpenMP 与 MPI 并行化、
+AMR 层处理与粒子生命周期管理；Sec.~\ref{sec:verification} 验证结果（含采样器四方比较）；
+Sec.~\ref{sec:scaling} 强扩展结果；Sec.~\ref{sec:concl} 为结论。
+
+\section{方法}\label{sec:method}
+
+\subsection{测地线方程}
+
+我们在 Kerr--Schild 直角坐标 $(t,x,y,z)$ 中工作，自转轴沿 $+z$ 方向。
+质量为 $M$、无量纲自旋 $a$ 的 Kerr 度规取 \citep{kerrschild1965}
+\begin{equation}
+g_{\mu\nu} = \eta_{\mu\nu} + \frac{2Mr^3}{D}\,l_\mu l_\nu ,
+\qquad
+l_\mu = \left(1,\, \frac{a y + r x}{Q},\, \frac{r y - a x}{Q},\, \frac{z}{r}\right),
+\label{eq:metric-form}
+\end{equation}
+其中 $\eta_{\mu\nu}=\mathrm{diag}(-1,1,1,1)$，$Q = r^2 + a^2$，
+$D = r^4 + a^2z^2$，$r$ 为 Kerr 径向坐标，
+$r^2 = (x^2+y^2+z^2-a^2 + \sqrt{(x^2+y^2+z^2-a^2)^2 + 4a^2z^2})/2$。
+矢量 $l_\mu$ 是零矢量（$g_{\mu\nu}l^\mu l^\nu = 0$），度规是真空解
+$R_{\mu\nu} = 0$（Sec.~\ref{sec:exactmetric}）。
+
+有质量测试粒子的四速度 $u^\mu = \mathrm{d}x^\mu/\mathrm{d}\tau$ 满足测地线
+方程
+\begin{equation}
+\frac{\mathrm{d}u^\mu}{\mathrm{d}\tau} =
+-\Gamma^\mu_{\alpha\beta}\,u^\alpha u^\beta ,
+\qquad
+g_{\mu\nu}u^\mu u^\nu = -1 ,
+\label{eq:geo}
+\end{equation}
+其中 $\Gamma^\mu_{\alpha\beta}$ 是 $g_{\mu\nu}$ 的 Christoffel 符号。
+由于度规是稳态且轴对称的，沿测地线有两个守恒量：由 Killing 矢量
+$\partial_t$ 给出的比能量 $E = -u_t$，以及由 Killing 矢量
+$-y\partial_x + x\partial_y$ 给出的轴角动量
+$L_z = -y\,u_x + x\,u_y$（其中 $u_\mu = g_{\mu\nu}u^\nu$ 为协变分量）。
+两者均用作验证监视量。
+
+\subsection{固有时下的积分}
+
+thorn 以固有时 $\tau$ 为自变量积分式 (\ref{eq:geo})，用自适应五阶
+Runge--Kutta--Fehlberg 格式（RKF45, \citealt{fehlberg1969}；即 GNU
+Scientific Library~\citep{gsl} 的 \texttt{rkf45} 驱动器），
+绝对误差容差 $10^{-8}$、相对误差容差为零。每个 Cactus 时间步把粒子推进到
+坐标时间 $t + \Delta t$：先预测使 $t$ 落在目标值上的固有时间增量，
+再用线性回插消除超调，使所有粒子共享 Cactus 时间轴。单个 Cactus 步内
+的固有时子步数受每粒子上限 \texttt{max\_iter\_cap}（默认 2000）约束，
+避免固有时步长坍缩的粒子（如接近视界时）卡住整个演化。
+每一步之后对四速度重新归一化，
+使 $g_{\mu\nu}u^\mu u^\nu = -1$ 在舍入精度内成立，从而消除纯自适应积分器
+会累积的范数长期漂移。归一化时保持 ODE 步产生的空间分量 $u^i$ 不变，
+将约束作为关于 $u^t$ 的二次方程求解：
+\begin{equation}
+g_{00}\,(u^t)^2 + 2\,g_{0i}\,u^i\,u^t + \left(1 + \gamma_{ij}u^i u^j\right) = 0,
+\label{eq:renorm}
+\end{equation}
+取未来指向的根。在 ergosphere 之外（$g_{00}<0$），两根异号，唯一正根无歧义；
+在 ergosphere 之内，同一组 $u^i$ 可能确实对应两个未来指向的解（这是系拖
+的几何效应），此时按连续性选取，即取最接近重新归一化之前 ODE 步产生的
+$u^t$ 的那个根。
+
+\subsection{四速度的初始化}
+
+粒子初值在 par 文件中以位置 $(x,y,z)$ 和 Kerr--Schild 坐标下的逆变四速度
+分量 $u^\mu$ 给出，其中 $u^\mu=(u^t,u^x,u^y,u^z)$。第一个时间步时，thorn 在初始位置求值
+度规并检查归一化条件 $g_{\mu\nu}u^\mu u^\nu = -1$：若以 $10^{-6}$ 的容差
+满足，则原样使用输入，日志中注明；否则保持 $u^i$ 不变，由式
+(\ref{eq:renorm}) 重新求解 $u^t$，并把修正前后两个值写入日志。该检查是
+幂等的：把日志中记录的初值再填回 par 文件，数值不会改变。$10^{-6}$ 的
+容差是有意放宽松的——上文的每步再归一化在第一步就会把约束恢复到舍入
+精度。本文使用的全部轨道都先用独立的 Python 实现（RK4，
+$\Delta t = 0.02\,M$）积分精确度规的测地线方程生成并验证，再把得到的
+精确四速度直接写入 par 文件；初值列于表 \ref{tab:orbits}。
+
+\section{度规求值}\label{sec:metric}
+
+\subsection{精确 Kerr--Schild 模式}\label{sec:exactmetric}
+
+当 \texttt{Exact = yes} 时，thorn 在粒子位置解析地求值 Kerr--Schild 度规
+及其坐标导数（式 \ref{eq:metric-form}），因此结果与计算网格无关。
+解析 Christoffel 符号由度规的解析一阶导数给出，演化中不引入任何差分。
+作为自洽性检查，我们用 SymPy~\citep{sympy} 对实现的度规做了符号化真空验证：
+thorn 度规的各分量与 Kerr--Schild 形式（式 \ref{eq:metric-form}）逐项核对
+（同时证明了 $l_\mu$ 为零矢量），Christoffel 符号由解析度规及其解析逆
+$g^{\mu\nu} = \eta^{\mu\nu} - H\,l^\mu l^\nu$ 组装，在五个一般点以 40 位
+精度求值 Ricci 张量，得 $\max|R_{\mu\nu}| < 10^{-170}$，即所实现的度规在
+远超机器精度上就是真空解。
+
+\subsection{网格度规采样器}\label{sec:samplers}
+
+当 \texttt{Exact = no} 时，度规取自模拟网格：thorn 读取 \texttt{ADMBase}
+的 lapse、shift 与空间度规（在调度中以 \texttt{READS} 子句声明），在
+包围粒子的模板网格点处组装协变度规 $g_{\mu\nu}$，并用中心差分
+（模板型采样器为六阶）求空间度规导数。
+Christoffel 符号还需要时间导数 $\partial_t g_{\mu\nu}$；它以及粒子坐标
+时刻的度规值如何从存储的 \texttt{ADMBase} 时间层获得，由下面的各采样器
+各自固定。静态度规会被自动检测（最旧的两个存储层在子采样上相对
+$10^{-12}$ 一致），此时 $\partial_t g_{\mu\nu} = 0$ 严格成立、时间差分被
+跳过。单个粒子步内联络冻结在网格当前时刻，故时变度规下粒子步长上限
+为网格时间步；时变运行因此需要 \texttt{ADMBase} 场存三个时间层
+（\texttt{Carpet::init\_fill\_timelevels = yes}）。度规与 Christoffel
+符号在（一般偏离网格的）粒子位置如何采样，由参数
+\texttt{metric\_interp} 选取，四种选择如下。四种采样器都是局部的：
+一个粒子的计算只读取它附近的网格单元，不写任何其它粒子使用的数据。
+
+\paragraph{l27。}
+最简单的采样器：对每个粒子，thorn 确定包围它的 $3\times3\times3$
+格单元模板的 27 个网格点，并对每个度规分量与每个 Christoffel 符号
+拟合唯一的多项式：它在每个坐标方向至多二次，且精确插值这 27 个模板
+值——即 27 项张量积 Lagrange 插值多项式\citep{berrut2004}。拟合是
+一次矩阵--向量乘法（预计算的 $27\times27$ 逆 Vandermonde 矩阵），在
+模板上恒定的场直接取常数值、免去乘法。节点 Christoffel 符号由六阶
+差分的度规导数算出，$\partial_t g_{\mu\nu}$ 由三个存储时间层上的二阶
+后向差分 $(3L_0-4L_1+L_2)/(2\,\Delta t)$ 给出（静态度规时为零）；
+度规值只取当前时间层。拟合按粒子缓存：每个 Cactus 时间步只构建一次
+（仅当粒子跨入相邻模板单元时步内重新构建），此后自适应 RKF45 的所有
+子步与阶都只评估缓存的多项式——步内右端项不再触及网格与差分。
+拟合在 27 个模板节点上精确（node-exact），对光滑场为局部三阶精度
+$\mathcal{O}(\Delta x^3)$，而模板值的差分误差为 $\mathcal{O}(\Delta x^6)$，
+不构成收敛限制。拟合退化或非有限时按丢失策略丢粒（Sec.~\ref{sec:impl}），
+该模式没有后备插值。采样点被裁剪到局部处理器盒子内部的格单元，因此
+模板不会触及鬼格区，该采样器在 MPI 域分解下是安全的；但在多进程运行中，
+若粒子位于 rank 面之上或距其仅数格之内，模板中心会被裁剪得偏离粒子，
+单侧 27 点拟合通过不了有效性检查，粒子会在第一步被丢弃（其他后端不受
+影响）——4-rank 单级网格默认 $2\times2$（$y,z$）分解下，所有赤道粒子都
+落在 $z=0$ 的 rank 面上，这正是测试套件中 \texttt{l27} 以单进程运行的
+原因。
+
+\paragraph{local27（默认）。}
+自包含的变体，模板比 \texttt{l27} 更宽、拟合次数更高：对三个存储时间层中的每一层，thorn 对每个度规分量
+与每个节点 Christoffel 符号拟合穿过粒子周围模板的 125 节点
+（$5\times5\times5$）四次张量积多项式（三次可分离的 $5\times5$ 逆
+Vandermonde 变换，即 \texttt{l27} 矩阵的 $125\times125$ 对应物），
+并在粒子的坐标时间上用三节点（二次）Lagrange 插值混合三层拟合。
+拟合在全部 125 个网格节点上精确，空间上形式五阶精度。它不使用任何
+外部插值 thorn。拟合像
+\texttt{l27} 一样按粒子缓存。两条退化路径保证该采样器在 AMR 网格上
+与强曲率区依然良定：当过去的时间层尚未填充（第一步，或新生长的
+refinement 区域）时，时间混合退化为两层线性混合或只用当前层；当节点
+Christoffel 采样出现非有限值（六阶差分窗口触及切除或奇异区域）时，
+Christoffel 符号改由度规拟合及其空间导数解析地组装。
+
+\paragraph{aei（四阶逐点）。}
+\texttt{metric\_interp = aei} 用 \texttt{AEILocalInterp}
+thorn\citep{aeithornguide} 在粒子位置求值十个 3+1 场（lapse、三个
+shift、六个空间度规分量）及其一阶空间导数的四阶逐点 Lagrange 插值，
+再由这些采样值逐点合成度规与 Christoffel 符号。最近的两个存储时间层
+按粒子的坐标时间线性混合，$\partial_t g_{\mu\nu}$ 取一阶差分
+$(L_0-L_1)/\Delta t$。与 \texttt{l27}、\texttt{local27} 不同，它不按
+粒子缓存拟合：每个 RKF45 阶都重新求值插值。
+
+\paragraph{carpet。}
+\texttt{metric\_interp = carpet} 是逐点采样器，空间部分用与
+\texttt{aei} 相同的四阶 \texttt{AEILocalInterp} 模板，在当前时间层
+求值；时间导数取完整 4-度规的二阶三点差分
+$(3L_0-4L_1+L_2)/(2\,\Delta t)$，即其命名来源 \texttt{CarpetInterp}
+驱动器\citep{carpethornguide} 的惯例。与 \texttt{aei} 一样，它在
+OpenMP 与 owner-computes MPI 模式下无需修改即可运行。
+
+\section{实现}\label{sec:impl}
+
+\texttt{Geodesic} 用 C 语言实现，是一个 Cactus/\texttt{Einstein Toolkit}
+thorn。粒子状态
+$(t,x,y,z,u^t,u^x,u^y,u^z)$ 存储在 Cactus interface 数组
+\texttt{particle\_tt}、\texttt{particle\_tx}\ldots 中，积分循环是对粒子
+的普通 C 循环，外加一个 \texttt{schedule(dynamic,1)} 的 OpenMP
+\texttt{parallel for}：
+\begin{verbatim}
+#pragma omp parallel for schedule(dynamic,1)
+for (mi = 0; mi < particle_n_total; mi++) {
+    /* per-particle RKF45 step on the locally evaluated metric */
+}
+\end{verbatim}
+循环内没有共享状态：每个线程为自己负责的粒子求度规
+（解析方式见 Sec.~\ref{sec:exactmetric}，或用
+Sec.~\ref{sec:samplers} 的局部采样器从网格采样）
+并推进自己的 Runge--Kutta 状态。单进程内唯一的同步是
+每个 Cactus 时间步末尾并行区结束处的 OpenMP 屏障；多进程运行时
+其后是下文所述的 MPI 状态交换。
+
+\paragraph{MPI 与 AMR。}
+粒子数组声明为 \texttt{DISTRIB=CONSTANT}（在每个 rank 上完整复制），
+且可 checkpoint，因此粒子状态在重启后保留。多进程网格运行中，计算域
+在各 rank 间划分，每个 rank 积分其本地 patch 拥有的粒子（带申领边带的
+内部盒所有权）。快速粒子可能在单个 Cactus 步内越过 rank 面，因此该模式
+把一个步按坐标时间分成若干 chunk：chunk 长度取得使每个存活粒子都严格
+留在其所有者的内部盒之内；每个 chunk 边界上交换完整状态并重算所有权表，
+使跨入相邻 rank 盒子的粒子在下一 chunk 由该 rank 接手。各 rank 由相同的
+复制状态导出相同的 chunk 边界，因此 chunk 划分本身不需要额外通信。最后
+一个 chunk 与丢失策略之后，一次 \texttt{MPI\_Allgather}
+交换逐粒子状态，使复制的数组在所有 rank 上逐位一致。这一
+owner-computes 方案显式地把中心模板跨 rank 面提供：每个 rank 为自己
+patch 上的十个 \texttt{ADMBase} 场（全部三个时间层）保留一份宽度五格、
+带 halo 边带的副本，在每批积分开始时通过 all-pairs 的 MPI 交换填充。
+交换除面之外也覆盖棱与角：三个方向依次交换，且对已经处理过的每个方向，
+后续方向的横向范围都外扩一个 halo 宽度，因此同时落在两三个方向 halo 带内
+的格子也会被填充。若只交换六个面，这些格子保持未初始化，由含此类格子的
+窗口组装出的节点 Christoffel 会静默退回到解析组装分支——这正是轨迹依赖
+rank 数的原因。chunk 边界约束对粒子正好坐落其上的面同样生效（到面的距离
+以 \texttt{FACE\_EPS} 为下限）；否则这样的粒子会取一个无界的 chunk，
+一口气飞过相邻子域后才被丢弃。拟合历史标志随粒子状态在每个 chunk 边界
+一起传递，因此移交给新所有者的粒子会重新拟合，而不是沿用前一个所有者的
+缓存多项式。对网格拟合采样器，该方案因此在舍入意义下与 rank 数无关：
+同一个 par 文件在 1、2、4 个 rank 下给出的粒子 dump 在最差一列上符合到
+$1.1\times10^{-8}$，在两个 rank 下则完全相同，包括模板跨越 rank 面的粒子。
+不期望逐位相同：chunk 边界随域分解而变，粒子在路径上的不同点移交给新
+所有者，浮点求和顺序随之改变。测试套件强制这一符合性：
+四进程测试 \texttt{conv100\_local27} 与其单进程孪生
+\texttt{conv100\_local27\_1p} 都与同一份参考 dump 比较；thorn 还附带
+1/2/4 rank 的一致性脚本 \texttt{test/check\_mpi\_identity.sh}（容差 $10^{-6}$）。
+逐点采样器则通过
+\texttt{CCTK\_InterpLocalUniform} 只从本 rank 自己的 patch 插值，其模板在
+patch 边界处被截断；同一个 par 文件在 1 与 4 个 rank 下相对符合到约
+$3\times10^{-13}$ 而非逐位相同，对这些后端不声称逐位一致。目前支持至多四个 rank（$y$、$z$ 方向 $2\times2$ 分解，
+每 rank 每层一个 patch）。多进程 \texttt{Exact} 运行中解析度规处处
+有效，故由 rank~0 积分全部粒子并写 dump。积分调度在
+\texttt{CCTK\_POSTSTEP} 的 Carpet 层模式：每次调用把该层的网格指针与
+几何存入按层描述符，粒子在每批调用中积分一次——在 Carpet 时间子环下
+于最细层调用上进行，步长取经过的坐标时间——因此积分器在 AMR 演化中
+无需修改即可工作。每个粒子在其安全区包含它的最细 refinement 层上积分
+（最多 16 层，\texttt{geodesic\_amr\_levels}，默认 3）；支持
+MultiPatch（Thornburg~\citep{thornburg2004}）多块系统：跨越块边界的粒子，
+其位置与空间速度由块 Jacobian 变换。
+
+\paragraph{粒子生命周期。}
+越出计算域、或四速度归一化检查失败（式 (\ref{eq:renorm}) 不存在未来指向
+根）的粒子由运行时参数 \texttt{particle\_loss\_policy} 决定如何处理：
+\texttt{drop}（默认）把粒子状态置为 NaN 并停止追踪；\texttt{flag}
+将其冻结在最后有效状态；\texttt{respawn} 把它重新放置到安全盒内的
+均匀随机位置（安全盒是计算域向内缩进七格的范围，受
+$r < \mathrm{excised\_radius}+1.5$（排除球内）、
+$r > \mathrm{initial\_radius}$（初始粒子壳外）与
+$|z| < \mathrm{particle\_middle\_sp}$（默认 $1.0$）三个拒绝条件
+约束），空间速度分量置零、$u^t$ 取占位值，下一步由式
+(\ref{eq:renorm}) 的逐步再求解完成归一化。所有丢失事件都会带粒子编号
+写入日志。Sec.~\ref{sec:scaling} 的强扩展 run 使用 \texttt{respawn}，
+以在长时运行中保持粒子数恒定、防止单个丢失粒子破坏统计。
+
+\paragraph{诊断。}
+当 \texttt{particle\_dump\_every = k > 0} 时，thorn 把完整
+粒子状态 $(t,x,y,z,u^t,u^x,u^y,u^z,\tau)$ 写入参数
+\texttt{particle\_dump\_file} 指定的文件（默认
+\texttt{geodesic\_particles.txt}，位于工作目录）：文件以初始状态
+（$t=0$，在第一步积分之前记录）开头，之后每 $k$ 个迭代追加一组行（仅
+rank~0）；该文件是下文全部验证图的数据来源。\texttt{rverbose = yes}
+会在每次 ODE 右端求值时把粒子状态打印到日志，供调试用。
+
+\section{验证}\label{sec:verification}
+
+\subsection{测试轨道}
+
+全部验证 run 使用 $M=2$、$a=0.5$（即 \texttt{KerrSchild} 初值的取值 \citep{moreno2002}）
+与笛卡尔网格，格宽 $\Delta x$。三条束缚轨道（表 \ref{tab:orbits}）
+均在 thorn 运行前用独立的 Python 实现生成并验证：
+
+\begin{table}[h]
+\centering
+\caption{验证所用测试轨道（$M=2$，$a=0.5$）。$u^t$ 与 $u^x,u^y,u^z$ 是
+par 文件中的四速度分量。$\Delta E/E$ 是独立 Python 参考在同一区间测得的
+值。}\label{tab:orbits}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+轨道 & 初始 $(x,y,z)$ & $u^t$ & $u^x,u^y,u^z$ & 径向范围 & 参考 $\Delta E/E$ \\
+\midrule
+P0 圆轨道（$r=10$）   & $(10,0,0)$  & $1.53428$ & $(0,\,0.67238,\,0)$ & $r=10$ & $1.2\times10^{-9}$ \\
+P1 倾斜轨道           & $(-13.448,\,1.180,\,0)$ & $1.32221$ & $(-0.01827,\,-0.50381,\,0.1)$ & $[12.86,\,16.88]$ & $5.0\times10^{-9}$ \\
+P2 偏心轨道           & $(15,0,0)$  & $1.27607$ & $(0,\,0.45176,\,0)$ & $[12.03,\,15]$ & $5.3\times10^{-9}$ \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+P0 是半径 $r=10$ 的圆轨道（方位角周期 $T_\phi = 143.4\,M$）；
+P2 是远心点 $r_a = 15$、近心点 $r_p = 12.03$ 的偏心轨道；
+P1 是在 P2 轨道的某一点施加小垂直踢、使其脱离赤道面的轨道。
+图~\ref{fig:orbits3d} 给出 thorn 积分的三条轨道（Exact 模式，
+$T=1000\,M$）：P0 在赤道面内闭合，P1 与 P2 的玫瑰线图案则反映了
+Kerr 时空的相对论近点角进动。
+
+\begin{figure}[h]
+\centering
+\maybefig{../paper/figs/fig_3orbits_3d.png}{0.85\textwidth}
+\caption{表 \ref{tab:orbits} 的三条测试轨道在 Kerr 时空
+（$M=2$，$a=0.5$）中的轨迹，由 thorn 以 Exact 模式积分
+$T=1000\,M$（100 个快照）。P0：赤道面内半径 $r=10$ 的圆轨道（蓝）；
+P1：对 P2 轨道施加小垂直踢、进动出赤道面的轨道（红）；
+P2：远心点 $r_a=15$、近心点 $r_p=12.03$ 的偏心轨道（绿）。}
+\label{fig:orbits3d}
+\end{figure}
+
+\subsection{$E$、$L_z$ 与范数的守恒}
+
+我们以 \texttt{Exact = yes} 模式同时积分三条轨道，时长
+$T = 1000\,M$（$10^4$ 个 Cactus 步，$\Delta t = 0.1\,M$，
+约七个 P0 方位角周期），网格 $100^3$。图 \ref{fig:conservation}
+给出三条轨道的 $E$ 与 $L_z$ 相对漂移及范数残差
+$|g_{\mu\nu}u^\mu u^\nu + 1|$。相对能量漂移保持在独立参考积分的水平
+（$\le \num{maxdE}$），范数在整个过程中维持在舍入精度水平
+（$\le \num{maxnorm}$），确认带每步归一化的 RKF45 积分器在多个轨道周期
+内准确再现测地线方程。
+
+\begin{figure}[h]
+\centering
+\maybefig{../paper/figs/fig_conservation.pdf}{\textwidth}
+\caption{$T=1000\,M$ 内的守恒性（Exact 模式）：$E$（左）与 $L_z$（中）的
+相对漂移，以及范数残差 $|g_{\mu\nu}u^\mu u^\nu+1|$（右），对应表
+\ref{tab:orbits} 的三条轨道。所有量均守恒到
+$\lesssim 10^{-\num{consexp}}$ 水平。}
+\label{fig:conservation}
+\end{figure}
+
+\subsection{插值模式的网格收敛}\label{sec:convergence}
+
+为定量刻画默认 \texttt{local27} 采样器的精度，我们在 \texttt{Exact = no}
+模式下追踪圆轨道 P0（$M=2$、$a=0.5$、$r=10$，方位角周期
+$T_\phi \simeq 143.4\,M$），积分略多一个完整方位角周期
+（$t = 150$），网格分别取 $50^3$、$100^3$、$200^3$
+（$\Delta x = 1.0$、$0.5$、$0.25$），并把最终粒子位置与独立的
+Python RK4 精确度规参考积分（步长 $0.02\,M$）对比。图 \ref{fig:convergence}
+给出轨道轨迹与最终位置误差随网格间距的变化：误差在两次细化中由
+$2.3\times10^{-2}$ 降到 $4.4\times10^{-4}$、$9.5\times10^{-6}$（缩小因子
+$52$ 与 $46$），实测局部收敛阶为 \num{convorder}；精确度规 run 与参考
+的偏差为 $\num{exacterr}$，正是两个独立积分器相互差异的水平。
+\texttt{local27} 所用的四次拟合在空间上为形式五阶精度；该轨道上实测的
+\num{convorder} 阶与这一形式阶一致，我们按实测值报告。
+
+\begin{figure}[H]
+\centering
+\maybefig{../paper/figs/fig_convergence.pdf}{\textwidth}
+\caption{P0 圆轨道（$M=2$、$a=0.5$、$r=10$；$t = 0\ldots 150$，
+略多一个完整周期）的网格收敛。左：插值 run
+（$\Delta x = 1.0, 0.5, 0.25$）与精确度规 run 在 $x$--$y$ 平面的轨迹，
+与独立 Python 参考（实线）对比。右：最终位置误差对网格间距
+（标记），带实测 \num{convorder} 阶参考线（点线）与精确度规误差水平
+（点状水平线）。}
+\label{fig:convergence}
+\end{figure}
+
+表 \ref{tab:kx100} 给出各网格采样器相对同一轨道 \texttt{Exact = yes}
+轨迹的最大位置误差。
+
+\begin{table}[h]
+\centering
+\caption{相对 \texttt{Exact = yes} 轨迹的最大位置误差：P0 圆轨道
+（$M=2$、$a=0.5$、$r=10$）置于 $100^3$ 网格（$\Delta x = 0.5\,M$）的
+静止 Kerr--Schild 场上，$\Delta t = 0.1\,M$，单进程，粒子从 $t=0$
+开始。}\label{tab:kx100}
+\begin{tabular}{lccc}
+\toprule
+度规求值 & $t = 2\,M$ & $t = 10\,M$ & $t = 20\,M$ \\
+\midrule
+\texttt{l27}     & $3.74\times10^{-6}$ & $4.42\times10^{-5}$ & $9.97\times10^{-5}$ \\
+\texttt{aei}     & $3.68\times10^{-7}$ & $6.29\times10^{-6}$ & $2.97\times10^{-5}$ \\
+\texttt{local27} & $1.60\times10^{-7}$ & $2.56\times10^{-7}$ & $1.97\times10^{-7}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{进动轨道上的网格采样器比较}\label{sec:sampler-compare}
+
+为了在更接近生产使用的轨道上比较网格采样器，我们追踪 $100$ 个
+粒子：它们都同处一条束缚赤道 Kerr 椭圆上（$M=2$、$a=0.5$，近心点
+$r_p = 16$，远心点 $r_a = 64$，$E = 0.9761517$，$L_z = 8.1632196$），
+沿轨道散布；度规是写在 $144^3$ 基网格（$\Delta x = 1$）上、带三层
+嵌套细化盒（$\Delta x = 0.5$、$0.25$、$0.125$，半径至 $36$、$18$、
+$9$）的静态 Kerr--Schild 场。该椭圆每个径向周期（$T_r = 1349.7$）
+进动 $117.5^\circ$（$0.6528\pi$），因此整个运行期间（$t = 0 \ldots
+3200\,M$，约 $2.37$ 个径向周期）轨道都留在计算域之内
+（$16 \le r \le 64$，域半宽 $72$）；粒子状态每 $10$ 个时间单位
+dump 一次，粒子
+离开其网格 patch 的安全区域或 ODE 步失败即计为丢失（thorn 的
+drop 策略）。六个 run 分别是 \texttt{Exact = yes}（参考，单进程
+20 OpenMP 线程）、\texttt{metric\_interp = aei} 与
+\texttt{metric\_interp = carpet}（各单进程 20 线程；两者求值同一个
+AEI 四阶逐点 Lagrange 插值器，仅数据获取路径不同）、以及
+\texttt{metric\_interp = local27} 的三种配置：默认四进程模式（四进程、
+每进程 20 线程）、显式 \texttt{local27} 四进程模式（四进程、每进程
+20 线程）与单进程对照（单进程 20 线程）。
+
+\begin{table}[h]
+\centering
+\caption{Sec.~\ref{sec:sampler-compare} 进动椭圆上网格采样器的比较
+（$100$ 粒子，$t = 0 \ldots 3200\,M$；各 run 均无粒子丢失）。
+$\max|\Delta x|$：整个运行中逐粒子相对 \texttt{exact} 参考的最大坐标
+偏差。$\Delta E$、$\Delta L_z$：守恒量相对初值的绝对偏差最大值与均值。
+"p0"：粒子 0 在运行结束时的径向位置。}\label{tab:samplers}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llccccccl}
+\toprule
+度规求值 & run & 掉粒 & 存活 & $\max|\Delta x|$（对参考） & $\max|\Delta E|$ / 均值 & $\max|\Delta L_z|$ / 均值 & p0 \\
+\midrule
+exact（参考）      & 1 进程 20 线程      & 0   & 100 & --- & --- & --- & $r=32.47$（存活） \\
+aei                & 1 进程 20 线程      & 0   & 100 & $2.09\times10^{-2}$ & $1.14\times10^{-6}$ / $1.38\times10^{-7}$  & $6.53\times10^{-5}$ / $1.97\times10^{-5}$  & $r=32.47$（存活） \\
+carpet             & 1 进程              & 0   & 100 &（与 \texttt{aei} 相同） &（与 \texttt{aei} 相同） &（与 \texttt{aei} 相同） & $r=32.47$（存活） \\
+local27（显式）    & 4 进程 每进程 20 线程 & 0   & 100 & $2.43\times10^{-1}$ & $1.32\times10^{-5}$ / $2.26\times10^{-6}$  & $6.16\times10^{-4}$ / $2.87\times10^{-4}$  & $r=32.38$（存活） \\
+local27（默认）    & 4 进程 每进程 20 线程 & 0   & 100 &（与显式相同） &（与显式相同） &（与显式相同） & $r=32.38$（存活） \\
+local27（对照）    & 1 进程 20 线程      & 0   & 100 & $2.28\times10^{-1}$ & $1.07\times10^{-5}$ / $2.01\times10^{-6}$  & $6.92\times10^{-4}$ / $3.44\times10^{-4}$  & $r=32.44$（存活） \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\maybefig{../paper/figs/fig_interp_compare.png}{0.9\textwidth}
+\caption{Sec.~\ref{sec:sampler-compare} 进动椭圆比较中粒子 0 在
+$x$--$y$ 平面的轨迹：精确参考（黑）、两个 \texttt{local27} 四进程 run
+（蓝实线与灰虚线，彼此 逐位相同）、\texttt{local27} 单进程对照
+（青虚线）、\texttt{aei}（红）与 \texttt{carpet}（绿；在本测试中
+与 \texttt{aei} 逐位相同）。圆圈：远心点（$r=64$）、近心点
+（$r=16$）与切除球（$r=4$，虚线）。}
+\label{fig:interp-compare}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\maybefig{../paper/figs/fig_interp_compare_p0.png}{\textwidth}
+\caption{表 \ref{tab:samplers} 各 run 中粒子 0 的径向坐标 $r(t)$。
+虚线：参考椭圆的近心点（$r=16$）与远心点（$r=64$）。}
+\label{fig:interp-compare-p0}
+\end{figure}
+
+六个 run 中均无粒子丢失：全部 $100$ 个粒子完成了整个
+$t = 0 \ldots 3200$ 运行，没有离开其网格 patch 的安全区域，也没有
+ODE 步失败。相对精确度规参考的偏差把各采样器清晰分开（表
+\ref{tab:samplers}、图 \ref{fig:interp-compare-p0}）：两个 AEI 四阶
+run（\texttt{aei}、\texttt{carpet}；彼此逐位相同）跟踪参考到
+$2.1\times10^{-2}$，两种 \texttt{local27} 配置都落在
+$2.3$--$2.4\times10^{-1}$ 之内。每个 run 中的主导误差都是网格对精确
+Kerr--Schild 背景自身的相干离散误差，三个采样器都在
+$10^{-2}\ldots10^{-1}$ 水平上复现它；节点精确的 \texttt{local27}
+四次拟合把该背景误差带得比 AEI 四阶插值更远
+（$2.3\times10^{-1}$ 对 $2.1\times10^{-2}$）。四进程与单进程
+\texttt{local27} 现在的差异已不超过这一背景误差：在同一网格上，1 与
+4 进程在 $t = 3200\,M$ 的坐标差不超过 $2.0\times10^{-1}$，且两者的
+$t = 0$ 帧逐位相同。
+
+在 Sec.~\ref{sec:impl} 所述那些修复之前，同样的 1 对 4 进程比较是
+$O(1)$——$x$ 方向 $2.35$——而且原因不是精度损失，而是采到了另一个
+度规：owner map 过去按「到所属 rank 发布盒的距离」同时选定 refinement
+层与 rank，而 level 0 的 interior box 正好终止于 rank 面（gap 为 0），
+细层的 claim box 却内缩 7 格，于是位于 $z = 0$ 平面（正是这个
+$2\times2$ 分解放置 rank 面之处）的粒子在四进程下被采到
+$\Delta x = 1$，单进程下被采到 $\Delta x = 1/2$。改为先选层——用该层
+所有 rank 的 patch 范围并集（与单进程 \texttt{pick\_level} 同一判
+据）——$t = 0$ 的分歧被完全消除。
+
+剩下的是分块（chunking）伪影而非物理差异：在 AMR 且
+\texttt{Geodesic::step} $\gg \Delta t$ 时，chunk 边界落在 rank 面上；
+单进程没有内部面，因此 RKF45 的分段方式与重新判定 owner 层的时刻都不
+同，残差随坐标时间近似线性增长（$t = 10$ 时 $7.9\times10^{-6}$，
+$t = 1600$ 时 $6.0\times10^{-2}$，$t = 3200$ 时
+$1.6\times10^{-1}$）。测试套件里较短的那个 AMR 用例
+（\texttt{extra/ellipse\_orbit\_amr.par}，四层，$t = 25.6$）中，1、2、
+4 进程的 dump 仍然逐位相同。在没有内部面的单级网格上，同样的比较处于
+roundoff 水平：\texttt{conv100\_local27} 在 1、2、4 rank 下符合到
+$1.1\times10^{-8}$，且那里的偏差有界、随轨道振荡而不增长
+（Sec.~\ref{sec:impl}）。这在生产使用中没有不利影响：在
+\texttt{GRHydro} 演化或任何由网格承载的时空中，网格场\emph{本身}就是
+真实度规，单进程 run 表明追踪器能忠实跟随它。
+
+\paragraph{运行说明。}
+默认模式的四进程 run 与显式 \texttt{local27} 四进程 run 彼此
+逐位相同（同一模式、不同 par 写法），证实了
+Sec.~\ref{sec:samplers} 的默认路径。\texttt{aei} 与
+\texttt{carpet} 两行取单进程运行。两个后端在同一网格上也能以四进程
+运行且不丢粒子：它们的 $t = 0$ 帧与单进程逐位相同，全部 $100$ 个粒子
+都存活到 $t = 3200\,M$；但上面所述的分块伪影并不只针对拟合采样器——
+四进程与单进程 \texttt{aei} 在整个运行中相差 $9.5\times10^{-2}$
+（两者相对精确参考分别是 $2.1\times10^{-2}$ 与
+$8.5\times10^{-2}$）——因此表中引用的是单进程的 \texttt{aei} 与
+\texttt{carpet} run，它们相对参考的偏差更小、定义也更干净。真正必须
+单进程运行的是 \texttt{l27} 路径（Sec.~\ref{sec:samplers}）。
+
+\subsection{AMR 网格上的测地线轨道}\label{sec:amr-orbits}
+
+网格模式采样器从包含粒子的 refinement 层读取度规，因此无需修改即可
+用于 Carpet 的 AMR 网格。我们在与单级参考 \texttt{conv100.par} 相同
+的圆轨道上验证这一点（Kerr--Schild，$M=2$，$a=0.5$，粒子位于
+$r=10$ 赤道圆轨道上，积分到 $t=150.1$，约 $1.05$ 个轨道周期，
+$T\simeq 143$），现改在三层分辨率的 AMR 网格上演化：$50^3$ 底网格
+（$\Delta x=1$），原点为中心的 refinement 盒两次加密（factor 2，
+第一层半宽 $16$ 格，其内 $8$ 格），最细层 $\Delta x=1/4$。轨道粒子
+全程位于第一 refinement 层（$\Delta x=1/2$）——与 $100^3$ 单级参考的
+局部分辨率相同——在盒对角方向附近进入第二层（$\Delta x=1/4$）。粒子
+积分器其余不变（RKF45、与参考 run 相同的 seed 与初值），因此两套设置
+之间
+的差别只有网格结构以及 driver 的 4:1 子环（subcycling）。
+
+\begin{table}[h]
+\centering
+\caption{AMR（3 层）vs 单级参考（conv100）：在
+$t=0.1,10.1,\ldots,150.1$ 共 16 个 dump 时刻上取最大值的笛卡尔位置
+差 $\max_i|\Delta x^i|$、径向差 $|\Delta r|$ 与轨道相位差
+$|\Delta\phi|$。参考运行没有设置 \texttt{metric\_interp}，用的是默认
+采样器 \texttt{local27}；每一行是该采样器从单级网格到 AMR 的差别，
+不构成对采样器精度的排序。}\label{tab:amr-orbits}
+\begin{tabular}{lccc}
+\toprule
+采样器 & $\max_i|\Delta x^i|$ & $\max|\Delta r|$ & $\max|\Delta\phi|$ (rad) \\
+\midrule
+local27         & $1.2\times10^{-1}$ & $4.3\times10^{-2}$ & $1.3\times10^{-2}$ \\
+aei             & $1.4\times10^{-1}$ & $5.0\times10^{-2}$ & $1.6\times10^{-2}$ \\
+carpet          & $3.4\times10^{-1}$ & $2.3\times10^{-1}$ & $4.2\times10^{-2}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+三种采样器在整个积分过程中都保持粒子处于稳定轨道（无发散、无丢粒）：
+\texttt{local27} 与 \texttt{aei} 相对单级参考的半径偏差 $\le5\times10^{-2}$
+（$0.5\%$）、相位偏差 $\le1.7\times10^{-2}$ rad（$\sim1^\circ$），
+\texttt{carpet} 的半径漂移最大，$2.3\times10^{-1}$（$2.3\%$）。参考 run
+（\texttt{conv100.par}）没有设置 \texttt{metric\_interp}，用的是默认的
+\texttt{local27}：因此 \texttt{local27} 那一行只反映网格结构的影响，
+\texttt{aei} 与 \texttt{carpet} 两行还叠加了采样器的改变，这张表不构成对采样器
+精度的排序（精度比较见 Sec.~\ref{sec:sampler-compare}）。网格稳定后的第一个
+dump（$t=10.1$）三种偏差已是小 $t$ 量级（位置 $\lesssim5\times10^{-3}$），没有
+与 refinement 相关的瞬态：逐点采样器在 AMR 网格上（包括跨层边界处）能正确解析度
+规，测地线方程可以在 Carpet AMR 演化（含 4:1 subcycling）中直接积分，积分器无需
+修改。
+
+\subsection{双穿孔并合度规背景下的稳健性}\label{sec:gw150914}
+
+前面的校核都在单黑洞 Kerr--Schild 度规上做，主导误差来自网格离散。生产使用
+的场景是双黑洞度规，其测地线结构本身有观测意义\citep{chernov2024}。这里用
+\texttt{GW150914} 双黑洞（LIGO 首次直接探测到的引力波信号
+\citep{abbott2016gw150914}；分量质量 $36$ 与 $29\,M_\odot$，par 中存为
+$m_+=36/65$、$m_-=29/65$，归一到总质量 $M=1$）的双穿孔初值，由
+\texttt{TwoPunctures} 按其自旋与冲击参数构建（\texttt{par\_b}=5，穿刺点在
+$x=+4.46$ 与 $-5.54$），计算域 $\pm10.5$，用 \texttt{ML\_BSSN}（8 阶 SBP
+差分 $+$ MoL RK4、1+log 切片、$\Gamma$-driver 移位）演化。该背景没有解析参考
+轨道，因此这一节的重点是稳定性门槛、分辨率与步长的代价，而不是绝对精度。
+
+需要说明：\texttt{TwoPunctures} 的初值本身不是并合度规。\texttt{ML\_BSSN}
+演化后场会弛豫，与冻结初值几何明显不同，所以我们把时变演化背景作为主要检验，
+冻结初值只作次级校核。
+
+统一协议：$r=8$ 赤道面 $100$ 粒子环（方位间隔 $3.6^\circ$，强向心近环，粒子
+0 在 $(8,0,0)$，$u^t=1.774$、$u^x=-0.960$、$u^y=0.863$），在 $t=1.60$ 释放
+（比初始瞬态之后释放，可避免 junk 辐射干扰丢失统计），每 $0.05$ 坐标时输出
+一次，积分到 $t=14.05$；$4$ 个 MPI 进程 $\times\,21$ 线程。双黑洞有两个穿刺点，以原点为中心的割除球没有
+意义、反而可能干扰计算，因此现行规格取 \texttt{excised\_radius}$=0$；下表里较早
+的几个 run 仍留着 $2.0$，但该球从未触发：丢失粒子离原点最近 $4.24$（它们落入的是
+$x=+4.46$ 与 $-5.54$ 处的穿刺点），任何粒子全程最小半径 $2.33$--$2.38$，所以各
+run 的存活数仍然可比。
+
+\paragraph{分辨率与时间步。}
+表 \ref{tab:tpgrid} 汇总了同一协议下的六个演化背景 run 与四档粗网格试探。
+"背景结局"一列记录背景场自身能否积分到 $t=14.05$。
+
+\begin{table}[h]
+\centering
+\caption{$r=8$ 环、$100$ 粒子、$t=1.60$ 释放、每 $0.05$ 坐标时 dump、积分到
+$t=14.05$（均匀档 $\Delta t=0.00625$ 即 $2248$ 步，AMR 档最细层
+$\Delta t=0.0125$ 即 $1124$ 步）。\emph{墙钟}：单个 run 的实际用时（$4\times21$
+线程）；\emph{滞后}：网格坐标时与粒子自身积分坐标时之差
+的中位数（$t=14.05$；粗网格试探取存活率降到 $50\%$ 之前的最后一帧）；\emph{存活}：
+run 结束时未坠入穿刺点的粒子数。}
+\label{tab:tpgrid}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llcccc}
+\toprule
+网格 & $\Delta x$ & $\Delta t$ & 墙钟 (s) & 滞后 & 存活 / 背景结局 \\
+\midrule
+AMR $1/8$ 底 $+\,1/16$ 盒（$r=8$） & $0.125/0.0625$ & $0.025/0.0125$ & $51{,}818$ & $+0.013$ & $72$ / 稳定 \\
+\quad 同网格，\texttt{aei} 采样 & 同上 & 同上 & $54{,}782$ & $+0.033$ & $76$ / 稳定 \\
+均匀 $1.8/16$（$187^3$） & $0.1123$ & $0.00625$ & $28{,}545$ & $0$ & $74$ / 稳定 \\
+\quad 同网格，\texttt{aei} 采样 & 同上 & 同上 & $25{,}014$ & $0$ & $81$ / 稳定 \\
+均匀 $1.5/16$（$224^3$） & $0.09375$ & $0.00625$ & $47{,}340$ & $0$ & $74$ / 稳定 \\
+\quad 同网格，\texttt{aei} 采样 & 同上 & 同上 & $44{,}673$ & $0$ & $78$ / 稳定 \\
+\midrule
+均匀 $1/4$（$74^3$） & $0.25$ & $0.05$ & --- & $+0.155$ & 环在 $11.60$ 前全部丢光 \\
+均匀 $1/8$（$148^3$） & $0.125$ & $0.025$ & --- & $+0.049$ & 环在 $11.60$ 前全部丢光 \\
+均匀 $1/8$（$168^3$） & $0.125$ & $0.0125$ & --- & $0$ & 背景在 $t=10.85$ 发散（shift $\sim10^{246}$） \\
+均匀 $1/8$（$168^3$） & $0.125$ & $0.00625$ & --- & $0$ & 背景在 $t=10.65$ 发散（shift $\sim10^{18}$） \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+三点结论。\emph{其一，卡人的是背景的分辨率，不是粒子。} $\Delta x=0.125$ 的
+背景在 $t=10.8625$ 的 shift 还是正常的 $(-0.091,-0.032,-5\times10^{-4})$，一步
+之后（$\Delta t=0.0125$）变成 $\sim10^{246}$：无前兆、无 \texttt{NaN}，是穿刺点
+处的网格尺度模被放大；把 $\Delta t$ 减半只把发散时刻移动约 $0.2\,M$。门槛落在
+$\Delta x=0.125$（失败）与 $0.1123$（成功）之间，与测地线积分器无关。
+\emph{其二，粒子时钟的滞后是 $\Delta t$ 效应。} 固定 $\Delta x$ 时滞后大致随
+$\Delta t$ 同步下降（$\Delta t=0.05$ 时 $+0.155$、$0.025$ 时 $+0.049$、$0.0125$
+及以下为 $0$），AMR 档为 $+0.013$/$+0.033$。机制是每个 Cactus 步内的固有时子步数
+触到 \texttt{max\_iter\_cap} 上限时，粒子没能推进到目标坐标时；网格越粗、插值误差
+越大，RKF45 的内部步长越小，越容易触发。
+\emph{其三，在固定 $\Delta x\,\Delta t$ 的约束下，缩小 $\Delta t$ 远比缩小
+$\Delta x$ 便宜：}同样体积下步数线性增加，而单元数按 $8$ 倍增加。因此背景不出
+\texttt{NaN} 时应优先加密时间步。
+
+\paragraph{粒子时钟与采样器一致性。}
+dump 里现在直接写一列网格坐标时（\texttt{cctk\_time}），可以核对上述滞后。比较
+两个 run 时必须先把两条轨迹插值到同一个坐标时再作差：按 dump 序号配对会把滞后
+当成沿轨位置差，AMR \texttt{aei} 行在 $t=14.05$ 的中位数位置差从 $0.0043$ 虚高到
+$0.0159$（$3.7$ 倍）、rms 中位数从 $0.0039$ 虚高到 $0.0063$；均匀网格滞后为零，
+两种配对方式逐位相同。表 \ref{tab:tpdiff} 给出插值配对后的结果，参考
+解取均匀 $1.5/16$ 的 \texttt{local27} run。
+
+\begin{table}[h]
+\centering
+\caption{以均匀 $1.5/16$ 的 \texttt{local27} run 为参考，两条世界线先插值到共同
+坐标时（$0.05$ 网格）再作差。可信区：粒子离原点 $>3$ 且离两个穿刺点都 $>1$。
+$d_{\mathrm{pos}}$：指定坐标时上两个 run 都在可信区内的粒子的中位数位置差；
+\emph{rms\_med}/\emph{rms\_max}：逐粒子在可信时段上 rms 位置差的中位数与最大值；
+$d\tau$：各粒子最后一个可信快照上的 $|\Delta\tau|$ 中位数；
+$\Delta t_{\mathrm{drop}}$：在两个 run 中都被捕获的粒子的坠入时刻差中位数；
+$n_{\mathrm{cap}}$：在两个 run 中都被捕获的粒子数；存活：该 run 结束时的粒子数。
+统计集为全部 $100$ 个粒子剔除两个混沌离群者（\#53、\#54）后的 $98$ 个；剔除只改变
+rms\_max（$2.9$--$7.5$ 倍），中位数量在第四位上不变。}
+\label{tab:tpdiff}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccccc}
+\toprule
+run & $d_{\mathrm{pos}}$ @$t=6/10/14$ & rms\_med & rms\_max & $d\tau$ & $\Delta t_{\mathrm{drop}}$ & $n_{\mathrm{cap}}$ & 存活 \\
+\midrule
+AMR $1/8+1/16$，\texttt{local27} & $0.0041/0.0041/0.0050$ & $0.0040$ & $0.0109$ & $0.0052$ & $0.30$ & $26$ & $72$ \\
+AMR $1/8+1/16$，\texttt{aei}     & $0.0040/0.0037/0.0043$ & $0.0039$ & $0.0099$ & $0.0046$ & $0.20$ & $24$ & $76$ \\
+均匀 $1.8/16$，\texttt{local27}  & $0.0000/0.0005/0.0018$ & $0.0009$ & $0.0207$ & $0.0008$ & $0.25$ & $25$ & $74$ \\
+均匀 $1.8/16$，\texttt{aei}      & $0.0001/0.0007/0.0018$ & $0.0009$ & $0.0207$ & $0.0008$ & $1.25$ & $19$ & $81$ \\
+均匀 $1.5/16$，\texttt{aei}      & $0.0000/0.0002/0.0003$ & $0.0001$ & $0.0010$ & $0.0002$ & $0.45$ & $22$ & $78$ \\
+均匀 $1.5/16$，\texttt{local27}（参考） & $0$ & $0$ & $0$ & $0$ & $0$ & $0$ & $74$ \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+在同一 $1.5/16$ 网格上换采样器（\texttt{local27}$\to$\texttt{aei}），$t=14.05$
+的位置差中位数 $3.2\times10^{-4}$、$90$ 分位 $8.6\times10^{-4}$、最差
+$8.2\times10^{-3}$；从 $1.8/16$ 到 $1.5/16$ 换分辨率则是
+$1.8\times10^{-3}$/$1.8\times10^{-2}$/$5.1\times10^{-1}$。即采样器选择的影响比
+分辨率小一到三个量级。
+
+\paragraph{存活数不是质量指标。}
+存活率受背景与采样器共同影响，不能用来排序精度：$1.8/16$ 的
+\texttt{local27} run 里，$26$ 个丢失粒子最后一次有坐标时离穿刺点
+$0.15$--$0.36$（中位 $0.28$），其它 run 为 $0.08$--$0.50$，而存活粒子最近也到
+$0.24$--$0.26$；同一 $1.5/16$ 网格上换采样器，坠入时刻的中位差就有 $0.45$，与
+整档分辨率之差（$0.25$）同量级。图 \ref{fig:ring-u1516-local27} 与
+\ref{fig:ring-u1516-aei} 给出最细档上两种采样器的轨迹，形态一致。
+
+\begin{figure}[H]
+\centering
+\maybefig{../paper/figs/fig_ring_u1516_local27.png}{0.92\textwidth}
+\caption{均匀 $1.5/16$（$224^3$，$\Delta x=0.09375$，$\Delta t=0.00625$）演化
+背景上的 $r=8$ 环，\texttt{local27} 采样，$t=1.60\ldots14.05$（$250$ 个快照，
+颜色 = 粒子编号），$\times$ 为 \texttt{PunctureTracker} 定位的穿刺点。$100$ 个
+粒子中 $74$ 个在 $t=14.05$ 存活。}
+\label{fig:ring-u1516-local27}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\maybefig{../paper/figs/fig_ring_u1516_aei.png}{0.92\textwidth}
+\caption{同一背景与同一初始环，改用 \texttt{aei} 逐点采样器：$t=14.05$ 时 $78$
+个粒子存活，轨迹形态与图 \ref{fig:ring-u1516-local27} 一致，逐粒子位置差中位数
+$3.2\times10^{-4}$。}
+\label{fig:ring-u1516-aei}
+\end{figure}
+
+\paragraph{AMR 的代价。}
+多一级细化按体积是 $16$ 倍，"底网格 $+\,1/N$ 盒"覆盖的网格点数是底网格的
+$(1+16f)$ 倍，$f$ 为盒占全域的体积比；这只是点数估算，不是实测吞吐。罩住
+$r=8$ 环的盒 $f=0.44$，即 $8.1$ 倍，按这个估算相比全域加密也只省 $2.1$ 倍；
+实测墙钟在这个 $f$ 下确实没有省：AMR run 用 $51{,}818$ s，均匀 $1.5/16$ 用
+$47{,}340$ s（多 $9\%$），\texttt{aei} 那一对是 $54{,}782$ s 对 $44{,}673$ s
+（多 $23\%$）。按同一估算，只有 $f\lesssim0.055$（盒半宽约 $4$，加速 $1.9$ 倍）
+时 AMR 才划算。更关键的是，
+真正受限的是背景属性：只罩住粒子的细化盒并不能让粗背景稳定。因此粒子不集中在
+很小区域时，均匀网格加合适的 $\Delta t$ 是更简单也更便宜的选择；粒子确实集中时
+AMR 仍有优势。作为 AMR 路径上的功能验证，我们也跑过一个 $7$ 层静止盒的多 patch
+网格（$2048$ 个最细层步，$t\simeq0\ldots4.4$）：$100$ 个粒子在
+\texttt{local27} 与 \texttt{aei} 下全程有限、零丢粒，两种后端位置一致到
+$1.0\times10^{-1}$（该网格的离散水平），说明跨层边界处的度规采样是正确的。
+
+\paragraph{冻结初值校核。}
+在冻结的原始初值上（纯几何绕行校核，不代表并合本身），远环（$r=10$，顺行切向
+速度 $0.32$、向心 $0.10$）在三种后端（\texttt{local27}、\texttt{aei}、
+\texttt{carpet}，后两者经 \texttt{AEILocalInterp}/\texttt{LocalInterp} 接口采样
+且逐位一致）下都完成了整个 $80$ 单位时长的运行且零 \texttt{NaN}，\texttt{local27} 与
+\texttt{aei}/\texttt{carpet} 全程位置一致到 $\sim6\times10^{-4}$；$r=8$ 近环从
+$t=6$ 起出现确定性的 \texttt{NaN} 丢失（\texttt{loss\_policy = drop}），到
+$t=20$ 恰好丢失 $100$ 个中的 $50$ 个，三种后端的丢失模式几乎相同：\texttt{aei}
+与 \texttt{carpet} 逐位一致，\texttt{local27} 仅在 $50$ 个丢失粒子中有两个不同。
+每次丢失都是对强场/割除区的物理穿越，而非积分器的数值失败：在 Kerr 背景上这类
+轨道即坠轨测地线，其终态有解析结果可依据\citep{dyson2023}。全部六个冻结 run 都
+是 thorn 自动验证套件（\texttt{test/test.ccl}）的一部分；\texttt{NaNChecker}
+感知的比较器把近环的确定性丢失模式变成了回归测试。
+
+\paragraph{冻结初值上的分辨率扫描。}
+由于双穿孔背景没有解析参考，我们在三个单级网格分辨率下重复 $r=8$ 近环 run，保持
+单元数固定为 $144^3$ 并同步缩小计算域（$\pm72$、$\pm36$、$\pm18$，即
+$\Delta x=1$、$0.5$、$0.25$），使三个 run 用相同数目的单元分辨穿孔区域；三个 run
+的积分参数完全相同，只有网格分辨率不同。在这份冻结数据上 \texttt{aei} 与
+\texttt{carpet} 在每个分辨率下都逐位相同（Sec.~\ref{sec:sampler-compare} 已表明
+二者是同一计算），因此合并为一列。表 \ref{tab:tpconv} 给出相邻分辨率对之间、在两
+个 run 中都存活的粒子于相同快照时刻的位置与速度差的中位数。我们报告中位数而非
+最大值：穿孔附近的混沌轨迹发散主导最大值，使其表观阶失去意义。$100$ 个粒子中有
+$58$--$59$ 个在三个分辨率下于不同快照时刻落入割除区，这是穿孔附近的轨迹层面敏感
+性，不是格式层面的失败。四阶逐点 Lagrange 采样器
+（\texttt{aei}/\texttt{carpet}）的观测阶稳定在其设计阶 $4$；\texttt{local27} 的
+观测阶随分辨率上升（$3.3\to7.0$），而它的四次张量积拟合形式阶为 $5$
+（Sec.~\ref{sec:convergence}），因此这一列给出的是趋势，不是单一阶数。
+
+\begin{table}[h]
+\centering
+\caption{冻结 \texttt{GW150914} 双穿孔初值上的分辨率扫描：$r=8$ 环、$100$ 粒子、
+$T=20\,M$，固定 $144^3$ 单元下 $\Delta x=1/0.5/0.25$。
+$p_{\mathrm{med}}$：$\Delta x=0.5$ 与 $0.25$ 分辨率对之间的中位数位置差，相对
+$\Delta x=1$ 与 $0.5$ 分辨率对之间的同一量的观测阶，统计每对 run 中都存活的
+粒子；$p_v$：$t=20$ 时速度差的同样观测阶。分桶行：最小半径始终高于 $4$
+（\emph{far}）或跌破 $4$（\emph{near}）粒子的中位数位置差，括号内为观测阶
+$p$。\texttt{aei} 与 \texttt{carpet} 在三个分辨率下逐位一致，合并为一列。}
+\label{tab:tpconv}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llcccc}
+\toprule
+采样器 & 量 & $t=2$ & $t=10$ & $t=20$ & $p_v$（$t=20$） \\
+\midrule
+\texttt{aei}/\texttt{carpet} & $p_{\mathrm{med}}$ & 4.22 & 4.14 & 4.33 & 5.61 \\
+\texttt{local27}             & $p_{\mathrm{med}}$ & 3.26 & 4.75 & 6.95 & 5.75 \\
+\midrule
+\texttt{aei}/\texttt{carpet} & far（$n=85$）  & --- & $8.2\times10^{-5}$（$4.08$） & $1.1\times10^{-3}$（$4.66$） & --- \\
+\texttt{aei}/\texttt{carpet} & near（$n=15$） & --- & $2.6\times10^{-3}$（$3.95$） & $7.6\times10^{-3}$（$4.08$） & --- \\
+\texttt{local27}             & far（$n=86$）  & --- & $7.6\times10^{-5}$（$5.36$） & $4.5\times10^{-4}$（$6.07$） & --- \\
+\texttt{local27}             & near（$n=14$） & --- & $9.0\times10^{-2}$（$1.83$） & $3.4\times10^{-3}$（$8.09$） & --- \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+
+
+\section{强扩展}\label{sec:scaling}
+
+\begin{figure}[H]
+\centering
+\maybefig{../paper/figs/fig_scaling.pdf}{\textwidth}
+\caption{$10^4$ 粒子、$50^3$ 网格、512 步、\texttt{l27} 采样器的强扩展。
+左：墙钟时间对 OpenMP 线程数。右：加速比（实线为理想值），
+各点标注并行效率。}
+\label{fig:scaling}
+\end{figure}
+
+积分循环的逐粒子独立性（Sec.~\ref{sec:impl}）应当直接转化为并行加速。
+我们配置 $10^4$ 个粒子（表 \ref{tab:orbits} 的三条轨道加上 $9997$ 个
+位于安全盒内、位置随机、初速为零的粒子，固定随机种子），$50^3$ 网格，
+\texttt{Exact = no}，512 步，在一台双路节点（44 物理核，超线程共 88 逻辑线程）
+上运行，只改变 \texttt{OMP\_NUM\_THREADS}（1 到 88）。图 \ref{fig:scaling} 给出
+墙钟时间与并行效率。加速比随线程数增长至 32 线程（$8.3\times$）后趋于平台，
+88 线程时加速比为 $9.2\times$（效率 \num{scaleeff}\%）。分相计时
+（Cactus \texttt{TimerReport}）将平台归因于两个因素：其一，周围的 Cactus
+框架开销（度规簿记、边界条件、NaN 检查）每步约 40 ms，与线程数基本无关
+（单线程时共 19.0 s，88 线程时 22.9 s）——约占单线程步（$\sim$1.45 s）的
+3\%，却占 88 线程步（$\sim$0.15 s）的约 29\%；其二，
+并行粒子区域本身呈次线性扩展：每步从 $\sim$1.41 s 降到 $\sim$0.104 s，
+88 线程下仅 $13.7\times$，与 44 个物理核（超线程）、跨 NUMA 模板读取及
+OpenMP 调度开销一致。
+
+作为生产环境下的补充测量，我们把追踪器嵌入完整的 \texttt{GRHydro}
+演化\citep{font2008}，分别使用 $5000$ 和 $10^4$ 个粒子；每个 run 都与另外三个并发
+实例共享这台 88 线程节点，即每个实例仅约 22 线程可用。粒子积分
+（\texttt{TimerReport} 中的 \texttt{geodesics\_integrate}）在
+$5000$ 粒子 run 中耗时 $49.7$ s（总墙钟时间 $2860.5$ s 的 $1.7\%$），
+在 $10^4$ 粒子 run 中耗时 $84.1$ s（$2749.1$ s 的 $\num{hydrofrac}\%$）：
+主要开销仍是水动力重构（$\sim\!27\%$）与 Riemann 求解（$\sim\!10\%$），
+且粒子数翻倍时积分耗时仅增长 $1.7$ 倍。由于这些比例是在并发实例的
+资源争抢下测得的，独占运行时占比只会更小——因此，在演化过程中同步
+追踪测试粒子的开销相对演化本身基本可以忽略。
+
+\section{结论与可用性}\label{sec:concl}
+
+我们提出了 \texttt{Geodesic}，一个在 Kerr--Schild 直角坐标下积分测试粒子
+测地线的 \texttt{Einstein Toolkit} thorn。该 thorn 支持精确解析 Kerr--Schild 度规（与网格无关，经符号化验证在
+机器精度以上即为真空解），以及一个网格模式：由单个参数选取四种局部
+采样器（\texttt{l27}、\texttt{local27}、\texttt{aei}、\texttt{carpet}），
+各自内置时间处理。网格模式不假设度规的任何特定解析形式；对静态网格
+$\partial_t g_{\mu\nu}=0$ 自动检测，对时变网格时间导数由存储的
+\texttt{ADMBase} 时间层恢复（Sec.~\ref{sec:metric}）：当
+\texttt{Exact = no} 时，thorn 追踪的是网格所携带的任意时空中的测地线，
+无论静态还是演化（Sec.~\ref{sec:metric}）——例如
+Sec.~\ref{sec:gw150914} 的 \texttt{GW150914} 双穿孔双黑洞背景。多进程运行以 owner-computes 方案把粒子
+分配到各 MPI rank，使复制的粒子状态在每个 rank 上 逐位相同；支持最多 16 层加密的 AMR
+网格与 MultiPatch 多块系统（Sec.~\ref{sec:impl}）。在该模式中每个粒子都是独立的计算单元，OpenMP 并行化的粒子循环
+扩展到 $10^4$ 粒子，在双路 44 核（超线程 88 线程）节点上达到
+$9.2\times$ 加速比（效率 \num{scaleeff}\%）——即该循环无粒子间通信，
+但受内存与跨插槽带宽而非负载限制（Sec.~\ref{sec:scaling}）。与独立参考实现的对比显示，
+$E$、$L_z$ 与范数在 $10^3\,M$ 内守恒到
+$\sim 10^{-\num{consexp}}$，默认采样器实测 \num{convorder} 阶局部收敛；在
+$100$ 粒子的进动轨道上，AEI 四阶路径与精确度规参考一致到 $2.1\times10^{-2}$，
+\texttt{local27} 为 $2.3$--$2.4\times10^{-1}$，同一网格上 1 与 4 进程
+符合到 $2.0\times10^{-1}$（Sec.~\ref{sec:sampler-compare}）；3 层 AMR
+网格上的轨道与单级参考的半径偏差为
+$4.3\times10^{-2}$ 到 $2.3\times10^{-1}$（Sec.~\ref{sec:amr-orbits}）。在
+\texttt{GW150914} 双穿孔并合背景上，只要背景本身稳定，测地线就能积分到
+$t=14.05\,M$，代价主要由背景分辨率决定，$\Delta t$ 是更便宜的旋钮
+（Sec.~\ref{sec:gw150914}）。
+
+thorn 以 GPLv2+ 许可证发布，随文提供本文所用的全部配置文件，本文的源文件与
+图也在同一仓库（\texttt{paper/} 与 \texttt{paper\_zh/}），仓库地址为
+\url{https://github.com/wylyhzh/Geodesic}。该仓库
+\texttt{doc/par/} 共有 46 份参数文件，其中 32 份就是上文引用的那些运行：
+Sec.~\ref{sec:convergence} 的守恒与网格收敛运行、Sec.~\ref{sec:sampler-compare}
+的采样器比较、Sec.~\ref{sec:amr-orbits} 的 AMR 轨道、Sec.~\ref{sec:gw150914} 的
+\texttt{GW150914} 运行与 Sec.~\ref{sec:scaling} 的扩展性运行；其
+\texttt{README.md} 给出了它们与各章节的对应关系。其余 14 份里，11 份是为保留
+参数来历而存档的探索性扫描（正文未引用），3 份是 CarpetX 冒烟测试。
+Sec.~\ref{sec:gw150914} 引用的那项 $7$ 层静止盒功能验证是在生产脚本里跑的，
+脚本未签入仓库。该 thorn 同时驱动
+Einstein Toolkit 的两个网格驱动 \texttt{Carpet}（上文所有结果都用它）与
+\texttt{CarpetX}；因为 \texttt{CarpetX::decode\_mode} 默认是 local 模式，
+否则会把粒子循环每个 tile 调用一次，我们为 \texttt{CarpetX} 显式提供
+\texttt{OPTIONS: GLOBAL} 调度项。
+
+\section*{人工智能辅助声明}
+
+本文在准备过程中使用了人工智能助手（大语言模型），用于代码调试、
+文稿起草与修改以及图表生成。所有仿真、数据与结果均由作者独立完成，
+论文中的每个数字均经作者亲自核对，作者对本文内容负全部责任。
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

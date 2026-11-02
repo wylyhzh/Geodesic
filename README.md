@@ -6,7 +6,14 @@ A parallel test-particle geodesic tracker thorn for the
 - **Paper:** Yuhua Li, *Geodesic: a parallel test-particle geodesic tracker
   for the Einstein Toolkit* (2026; submitted to arXiv, gr-qc cross-listed
   with astro-ph.HE — the identifier will be filled in here once arXiv
-  announces it).  The parameter files for the runs the paper quotes numbers
+  announces it).  The manuscript and its figures are in [paper/](paper/)
+  (English: `pdflatex main && bibtex main && pdflatex main && pdflatex main`)
+  and [paper_zh/](paper_zh/) (Chinese: `xelatex main_zh && bibtex main_zh &&
+  xelatex main_zh && xelatex main_zh` -- ctexart, so XeLaTeX is required, and
+  it reads the figures from `../paper/figs/`); the built PDFs are
+  `paper/main.pdf` and `paper_zh/main_zh.pdf`.  They sit outside `doc/` on
+  purpose: `make Geodesic-ThornDocHTML` converts every PDF under `doc/` to
+  EPS.  The parameter files for the runs the paper quotes numbers
   from are in [doc/par/](doc/par/) (32 of the 46 files there; the rest are
   exploratory scans and CarpetX smoke tests, see the map below); comments on
   the manuscript are welcome by mail.

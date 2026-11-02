@@ -1,0 +1,1211 @@
+% main.tex -- primary category gr-qc, cross-list astro-ph.HE
+% "Geodesic: a parallel test-particle geodesic tracker for the Einstein Toolkit"
+% Compile: pdflatex main && bibtex main && pdflatex main && pdflatex main
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{natbib}
+\usepackage{float}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+
+\setlength{\textwidth}{16.5cm}
+\setlength{\textheight}{22.5cm}
+\setlength{\oddsidemargin}{-0.2cm}
+\setlength{\evensidemargin}{-0.2cm}
+\setlength{\topmargin}{-1.2cm}
+
+% figures: hard error if a file is missing (no silent placeholder)
+\newcommand{\maybefig}[2]{\includegraphics[width=#2]{#1}}
+
+% data values (single source of truth; filled after the verification runs)
+\newcommand{\num}[1]{\csname gnum#1\endcsname}
+\newcommand{\gnumconsexp}{9}
+% math values: used only inside $...$ at the call sites
+\newcommand{\gnummaxdE}{2.8\times10^{-10}}
+\newcommand{\gnummaxnorm}{8.9\times10^{-16}}
+\newcommand{\gnumexacterr}{1.7\times10^{-6}}
+\newcommand{\gnumconvorder}{5.6}
+\newcommand{\gnumscaleeff}{10.4}
+\newcommand{\gnumhydrofrac}{3.1}
+
+\title{Geodesic: a parallel test-particle geodesic tracker for the Einstein Toolkit}
+
+\author{Yuhua Li\thanks{liyhts@yeah.net} \\
+% The author is retired, so no institutional affiliation is given
+{\small Independent researcher}}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We present \texttt{Geodesic}, a new thorn for the Einstein Toolkit that
+integrates test particles on geodesics of a spacetime in Kerr--Schild
+Cartesian coordinates.  The thorn provides two modes of metric
+evaluation: an exact analytic Kerr--Schild metric, independent of the
+computational grid and verified symbolically to be a vacuum solution,
+and a grid mode that reads the metric from the simulation through one
+of four local samplers selected by a single parameter (\texttt{l27},
+\texttt{local27}, \texttt{aei}, \texttt{carpet}).  Each particle is an
+independent unit of work, so the particle loop scales to $10^4$
+particles, reaching a measured $9.2\times$ speedup on the 88 logical
+threads of a 44-core node; the same independence underlies an
+owner-computes MPI mode with the replicated state bit-identical on
+every rank, and the samplers run unchanged on Carpet AMR meshes.  The
+geodesic equation is integrated with an adaptive
+Runge--Kutta--Fehlberg (RKF45) scheme and a per-step renormalization of
+the four-velocity.  We verify the thorn by (i) conservation of the
+energy $E$, the axial angular momentum $L_z$ and the norm to
+$\sim 10^{-\num{consexp}}$ over $T=1000\,M$ on three bound orbits;
+(ii) grid convergence of the default sampler with a measured local
+order of \num{convorder}; (iii) a comparison of the grid samplers on a
+precessing orbit of $100$ particles; (iv) stable orbits on a 3-level
+AMR mesh; and (v) robustness on the two-puncture \texttt{GW150914}
+background: geodesics integrate stably on the \texttt{ML\_BSSN}-evolved
+(time-dependent) merger spacetime through $t = 14.05\,M$, with the stability
+thresholds and costs of background resolution and timestep quantified; on the
+frozen initial data the strong-field drops of a near-ring orbit are
+deterministic and essentially back-end-independent, and a three-resolution scan
+gives the observed-order trend of each sampler.  Embedded in a full \texttt{GRHydro}
+evolution, the integration of $10^4$ particles adds only a few percent
+to the total wall time.  The thorn is released under the GPLv2+ license
+together with the configuration files used in this work.
+\end{abstract}
+
+\section{Introduction}
+
+Test-particle geodesics are a basic diagnostic in numerical relativity and
+in modelling of accretion flows around black holes \citep{poisson2004}:
+they provide reference
+orbits against which self-consistent hydrodynamic and electromagnetic
+solutions can be compared \citep{bz1977}, they define the orbital structure used to
+interpret line profiles and disk precession \citep{bardeen1973,gralla2020}, and they serve as a
+validation tool for the spacetime produced by a simulation
+\citep{kerr1963,bardeen1972,wilkins1972}.
+General-purpose geodesic integrators for 3+1-split spacetimes have been
+developed for test-particle diagnostics in GRMHD simulations
+\citep{bacchini2018,bacchini2019}; dedicated packages compute light
+propagation and optical observables on numerical-relativity output
+\citep{grasso2022} and polarized ray tracing on prescribed metrics
+\citep{aimar2024}; timelike and plunging Kerr geodesics are available
+analytically or through public packages \citep{park2024,dyson2023}; and in
+self-force work the particle worldline is advanced together with the field
+on the numerical grid \citep{vretinaris2026}.  None of these, however, is a
+test-particle geodesic tracker inside the Cactus schedule: the verification
+studies of \citet{bacchini2018,bacchini2019} target fixed or given metrics,
+and none of these codes addresses particle tracking on an evolved spacetime
+resolved on an AMR mesh distributed across MPI ranks.  The standard
+frameworks for
+general-relativistic simulations of compact objects, the Cactus code
+framework \citep{cactusweb} and its extension, the Einstein Toolkit
+\citep{loeffler2012}, do not ship a geodesic tracker for test particles in
+Kerr--Schild coordinates, which is the coordinate system used by most
+Kerr initial-data and spacetime-evolution thorns.  Users who need geodesics
+today must either write their own integrator or post-process the evolved
+metric fields, and in both cases the cost of a global interpolation of the
+metric at every particle position prevents the straightforward parallel
+scaling that the problem structure allows.
+
+\texttt{Geodesic} is a thorn for the Einstein Toolkit that supplies this
+functionality.
+Its design goals are (i) to support both an exact analytic Kerr--Schild
+metric and a metric interpolated from the simulation grid, so that the same
+particle set can be tracked on the analytic background or on an evolved
+spacetime; (ii) to keep the per-particle work completely local, so that the
+particle loop can be parallelized with OpenMP without any inter-particle
+communication; and (iii) to be a clean, auditable reference implementation
+of the geodesic equation in Kerr--Schild Cartesian coordinates, verified
+against an independent implementation.
+
+The second goal is a statement about data dependencies, not about achieved
+efficiency: the loop has no inter-particle communication, but its measured
+OpenMP scaling is limited by memory and cross-socket bandwidth rather than
+by load balance, and we report that number rather than an idealised one
+(Sec.~\ref{sec:scaling}).  A parallelization that co-locates particles with
+the grid data they read would be expected to do better; we have not
+implemented one.
+
+The main contributions of this paper are:
+\begin{enumerate}
+\item a thorn that integrates the geodesic equation in Kerr--Schild
+  Cartesian coordinates with an adaptive RKF45 scheme and a per-step
+  four-velocity renormalization;
+\item an exact analytic Kerr--Schild metric whose vacuum character is
+  verified symbolically (Sec.~\ref{sec:exactmetric});
+\item four local grid-metric samplers selected by one parameter
+  (\texttt{l27}, \texttt{local27}, \texttt{aei}, \texttt{carpet};
+  Sec.~\ref{sec:samplers}), in which every particle is an independent
+  unit of work, validated by a strong-scaling run with $10^4$ particles
+  (Sec.~\ref{sec:scaling});
+\item a verification suite: conservation of $E$, $L_z$ and the norm over
+  $T=1000\,M$ for three distinct bound orbits, a grid-convergence study
+  showing a measured local convergence order of \num{convorder}
+  for the default sampler, a four-way comparison
+  of the exact metric against the grid samplers on a precessing orbit of
+  $100$ particles, and a robustness run on the two-puncture GW150914
+  merger background (Sec.~\ref{sec:gw150914}).
+\end{enumerate}
+
+The remainder of the paper is organized as follows: Sec.~\ref{sec:method}
+describes the geodesic equation in the 3+1 formulation and the
+initialization of the particle four-velocity; Sec.~\ref{sec:metric} the
+exact mode and the four grid-metric samplers; Sec.~\ref{sec:impl} the
+implementation, including
+the OpenMP and MPI parallelization, the AMR level handling and the
+particle-lifecycle management;
+Sec.~\ref{sec:verification} the verification results; Sec.~\ref{sec:scaling}
+the strong-scaling results; and Sec.~\ref{sec:concl} concludes.
+
+\section{Method}\label{sec:method}
+
+\subsection{Geodesic equation}
+
+We work in Kerr--Schild Cartesian coordinates $(t,x,y,z)$ with spin axis
+along $+z$, in which the Kerr metric of mass $M$ and dimensionless spin
+$a$ takes the form \citep{kerrschild1965}
+\begin{equation}
+g_{\mu\nu} = \eta_{\mu\nu} + \frac{2Mr^3}{D}\,l_\mu l_\nu ,
+\qquad
+l_\mu = \left(1,\, \frac{a y + r x}{Q},\, \frac{r y - a x}{Q},\, \frac{z}{r}\right),
+\label{eq:metric-form}
+\end{equation}
+with $\eta_{\mu\nu}=\mathrm{diag}(-1,1,1,1)$,
+$Q = r^2 + a^2$, $D = r^4 + a^2z^2$, and $r$ the Kerr radial coordinate
+defined by $r^2 = (x^2+y^2+z^2-a^2 + \sqrt{(x^2+y^2+z^2-a^2)^2 + 4a^2z^2})/2$.
+The vector $l_\mu$ is null, $g_{\mu\nu}l^\mu l^\nu = 0$, and the metric is a
+vacuum solution, $R_{\mu\nu} = 0$ (Sec.~\ref{sec:exactmetric}).
+
+The four-velocity $u^\mu = \mathrm{d}x^\mu/\mathrm{d}\tau$ of a massive
+test particle obeys the geodesic equation
+\begin{equation}
+\frac{\mathrm{d}u^\mu}{\mathrm{d}\tau} =
+-\Gamma^\mu_{\alpha\beta}\,u^\alpha u^\beta ,
+\qquad
+g_{\mu\nu}u^\mu u^\nu = -1 ,
+\label{eq:geo}
+\end{equation}
+where $\Gamma^\mu_{\alpha\beta}$ are the Christoffel symbols of $g_{\mu\nu}$.
+Because the metric is stationary and axisymmetric, two quantities are
+conserved along the geodesic: the specific energy
+$E = -u_t$ (Killing vector $\partial_t$) and the axial angular momentum
+$L_z = -y\,u_x + x\,u_y$ (Killing vector $-y\partial_x + x\partial_y$),
+with the covariant components $u_\mu = g_{\mu\nu}u^\nu$.  Both
+are used as verification monitors.
+
+\subsection{Integration in proper time}
+
+The thorn integrates Eq.~(\ref{eq:geo}) in proper time $\tau$ with an
+adaptive fifth-order Runge--Kutta--Fehlberg scheme (RKF45,
+\citealt{fehlberg1969}; the \texttt{rkf45} driver of the GNU Scientific
+Library~\citep{gsl}), with an absolute error tolerance of $10^{-8}$ and
+zero relative tolerance.  Each Cactus time step advances the particle until
+its coordinate time reaches $t + \Delta t$: the proper-time increment is
+predicted so that $t$ lands on the target, and any overshoot is removed by
+a linear back-interpolation, so that all particles share the Cactus time
+axis.  The number of proper-time sub-steps within one Cactus step is
+bounded by a per-particle cap (\texttt{max\_iter\_cap}, default 2000), so
+that a particle whose proper-time step has collapsed (as near a horizon)
+cannot stall the evolution.  At the end of every Cactus time step the
+thorn renormalizes the
+four-velocity so that $g_{\mu\nu}u^\mu u^\nu = -1$ holds to roundoff,
+which removes the secular drift of the norm that pure adaptive integrators
+accumulate.  The spatial components $u^i$ produced by the ODE step are kept
+as they are, and the constraint is solved for $u^t$ as a quadratic,
+\begin{equation}
+g_{00}\,(u^t)^2 + 2\,g_{0i}\,u^i\,u^t + \left(1 + \gamma_{ij}u^i u^j\right) = 0,
+\label{eq:renorm}
+\end{equation}
+selecting the future-directed root.  Outside the ergosphere
+($g_{00}<0$) the two roots have opposite signs and the unique positive
+root is unambiguous; inside the ergosphere the same $u^i$ can
+in fact correspond to two future-directed solutions (a geometric effect
+of frame dragging), and the root is chosen by continuity, i.e.\ the one
+closest to the $u^t$ produced by the ODE step before renormalization.
+
+\subsection{Initialization of the four-velocity}
+
+The particle initial conditions are specified in the par file as a position
+$(x,y,z)$ and the contravariant four-velocity components
+$u^\mu=(u^t,u^x,u^y,u^z)$ in Kerr--Schild coordinates.  At the first time
+step the thorn evaluates the metric at the initial position and checks the
+normalization $g_{\mu\nu}u^\mu u^\nu = -1$.  If it holds to a tolerance of
+$10^{-6}$, the input is used unchanged and the log says so; otherwise $u^t$
+is re-solved from Eq.~(\ref{eq:renorm}) with $u^i$ held fixed, and the
+correction (before/after values) is written to the log.  The check is
+therefore idempotent: feeding the values logged at initialization back into
+the par file changes nothing.  The $10^{-6}$ tolerance is loose on purpose;
+the per-step renormalization described above restores the constraint to
+roundoff on the first step regardless.  All orbits used in this paper are
+generated by first integrating the exact-metric geodesic equation with an
+independent Python implementation (RK4, $\Delta t = 0.02\,M$) and then
+writing the resulting exact four-velocity directly into the par file; the
+initial data are listed in Table~\ref{tab:orbits}.
+
+\section{Metric evaluation}\label{sec:metric}
+
+\subsection{Exact Kerr--Schild mode}\label{sec:exactmetric}
+
+With \texttt{Exact = yes} the thorn evaluates the Kerr--Schild metric and
+its coordinate derivatives analytically at the particle position
+(Eq.~(\ref{eq:metric-form})), so that the result is independent of the computational grid.
+The analytic Christoffel symbols are obtained from the analytic first
+derivatives of the metric; no finite differences enter the evolution.  As a
+self-consistency check we verify the vacuum character of the implemented
+metric symbolically with SymPy~\citep{sympy}: the components of the
+thorn's metric are checked term-by-term against the Kerr--Schild form
+Eq.~(\ref{eq:metric-form}) (which also proves $l_\mu$ is null), and the
+Ricci tensor $R_{\mu\nu}$ is assembled from the analytic metric and its
+analytic inverse $g^{\mu\nu} = \eta^{\mu\nu} - H\,l^\mu l^\nu$ and evaluated
+at five generic points to 40-digit precision, giving
+$\max|R_{\mu\nu}| < 10^{-170}$, i.e.\ the implemented metric is a vacuum
+solution to beyond machine precision.
+
+\subsection{Grid-metric samplers}\label{sec:samplers}
+
+With \texttt{Exact = no} the metric is taken from the simulation grid: the
+thorn reads the \texttt{ADMBase} lapse, shift and spatial metric (declared
+with schedule \texttt{READS} clauses), assembles the covariant metric
+$g_{\mu\nu}$ at the stencil grid points surrounding the particle, and
+obtains the spatial metric derivatives there by central finite
+differences (sixth order in the stencil-based samplers).  The
+Christoffel symbols also require the time derivative
+$\partial_t g_{\mu\nu}$; how it --- and the metric value at the particle's
+coordinate time --- is obtained from the stored \texttt{ADMBase} time
+levels is fixed per sampler below.  A stationary metric is detected
+automatically (the oldest two stored levels agree to relative $10^{-12}$
+on a subsample), in which case $\partial_t g_{\mu\nu} = 0$ exactly and the
+time differencing is skipped.  Within one particle step the connection is
+frozen at the grid's current time, so for a time-dependent metric the
+particle step is capped at the grid time step; time-dependent runs
+therefore need the \texttt{ADMBase} fields at three time levels
+(\texttt{Carpet::init\_fill\_timelevels = yes}).  How the metric and the
+Christoffel symbols are sampled at the (generally off-grid) particle
+position is selected by the parameter \texttt{metric\_interp}; the four
+choices are described below.  All four samplers are local: the
+computation for one particle reads only the grid cells around it and
+writes no data used by any other particle.
+
+\paragraph{l27.}
+The simplest sampler: for a given particle the thorn identifies the 27
+grid points of the 3$\times$3$\times$3 cell stencil surrounding it and,
+for each metric component and each Christoffel symbol, fits the unique
+polynomial that is at most quadratic in each coordinate and interpolates
+the 27 stencil values --- a 27-term tensor-product Lagrange interpolant
+\citep{berrut2004}.  The fit is a single matrix--vector product with a
+precomputed 27$\times$27 inverse Vandermonde matrix, and fields that are
+constant on the stencil collapse to their constant value without the
+product.  The nodal Christoffel symbols are computed from the sixth-order
+finite-difference metric derivatives, and $\partial_t g_{\mu\nu}$ from a
+second-order backward difference $(3L_0-4L_1+L_2)/(2\,\Delta t)$ over the
+three stored time levels (zero for a stationary metric); the metric values
+are taken from the current time level only.  The fit is cached per
+particle: it is built once per Cactus time step (and re-evaluated within
+the step only if the particle crosses into an adjacent stencil cell), and
+every subsequent adaptive RKF45 substep and stage evaluates the cached
+polynomials alone --- within a step the right-hand side touches neither
+the grid nor the finite differences.  The fit is node-exact on the 27
+stencil nodes and, for smooth fields, locally third-order accurate,
+$\mathcal{O}(\Delta x^3)$, while the finite-difference error of the
+stencil values is $\mathcal{O}(\Delta x^6)$ and does not limit the
+convergence.  A degenerate or non-finite fit drops the particle via the
+loss policy (Sec.~\ref{sec:impl}); there is no fallback interpolant in
+this mode.  The sampling points are clipped to the cells interior to the
+local processor box, so the stencil never reaches the ghost region and the
+sampler is safe under MPI domain decomposition; in a multi-process run a
+particle sitting on, or within a few cells of, a rank face has its stencil
+centre clipped away from it, so the one-sided 27-point fit fails its
+validity check and the particle is dropped at the first step (the other
+back-ends are unaffected) --- with the default $2\times2$ ($y,z$)
+decomposition of a 4-rank unigrid run every equatorial particle lies on
+the $z=0$ rank face, which is why the testsuite runs \texttt{l27}
+single-process.
+
+\paragraph{local27 (default).}
+A self-contained variant of \texttt{l27} with a wider stencil and a
+higher-degree fit: for each of the three stored time
+levels the thorn fits, for each metric component and each nodal
+Christoffel symbol, the 125-node ($5\times5\times5$) quartic
+tensor-product polynomial through the stencil surrounding the particle
+(three separable $5\times5$ inverse-Vandermonde transforms, the
+$125\times125$ analogue of the \texttt{l27} matrix), and blends the three
+level fits with a three-node (quadratic) Lagrange interpolation in the
+particle's coordinate time.  The fit is node-exact on all 125 grid nodes
+and formally fifth-order accurate in space.  It uses no external
+interpolator thorn.  The
+fits are cached per particle as in \texttt{l27}.  Two degradation paths
+keep the sampler well defined on AMR meshes and in strong curvature: when
+a past time level is not yet filled (the first step, or a freshly grown
+refinement region) the time blend degrades to a two-level linear blend or
+to the current level only; and when the nodal Christoffel samples are
+non-finite (a sixth-order finite-difference window touching the excised
+or singular region) the Christoffel symbols are instead assembled
+analytically from the metric fits and their spatial derivatives.
+
+\paragraph{aei (fourth-order pointwise).}
+\texttt{metric\_interp = aei} evaluates, at the particle position, a
+fourth-order pointwise Lagrange interpolant of the ten 3+1 fields (lapse,
+three shifts, six spatial-metric components) and of their first spatial
+derivatives, using the \texttt{AEILocalInterp} thorn
+\citep{aeithornguide}; the metric and its Christoffel symbols are then
+composed pointwise from these sampled values.  The two most recent stored
+time levels are blended linearly in the particle's coordinate time, and
+$\partial_t g_{\mu\nu}$ is the first-order difference
+$(L_0-L_1)/\Delta t$.  Unlike \texttt{l27} and \texttt{local27}, no
+per-particle fit is cached: the interpolant is re-evaluated at every
+RKF45 stage.
+
+\paragraph{carpet.}
+\texttt{metric\_interp = carpet} is a pointwise sampler with the same
+fourth-order \texttt{AEILocalInterp} spatial molecule as \texttt{aei},
+evaluated on the current time level; the time derivative is the
+second-order three-point difference $(3L_0-4L_1+L_2)/(2\,\Delta t)$ of the
+full 4-metric, the convention of the \texttt{CarpetInterp} driver
+\citep{carpethornguide} after which the sampler is named.  Like
+\texttt{aei}, it runs unchanged under OpenMP and the owner-computes MPI
+mode.
+
+\section{Implementation}\label{sec:impl}
+
+\texttt{Geodesic} is written in C as a Cactus/Einstein Toolkit thorn.
+The particle state
+$(t,x,y,z,u^t,u^x,u^y,u^z)$ is stored in Cactus interface arrays
+\texttt{particle\_tt}, \texttt{particle\_tx}\ldots, and the integration loop
+is a plain C loop over the particles, wrapped in an OpenMP
+\texttt{parallel for} with \texttt{schedule(dynamic,1)}:
+\begin{verbatim}
+#pragma omp parallel for schedule(dynamic,1)
+for (mi = 0; mi < particle_n_total; mi++) {
+    /* per-particle RKF45 step on the locally evaluated metric */
+}
+\end{verbatim}
+There is no shared state inside the loop: each thread evaluates the metric
+for its own particle (either analytically, Sec.~\ref{sec:exactmetric}, or
+from the grid with one of the local samplers of Sec.~\ref{sec:samplers})
+and advances its own Runge--Kutta state.  The only synchronization within
+one rank is the OpenMP barrier at the
+end of the parallel region; in multi-process runs it is followed by the
+MPI state exchanges described below.
+
+\paragraph{MPI and AMR.}
+The particle arrays are declared \texttt{DISTRIB=CONSTANT} (replicated on
+every rank) and are checkpointable, so the particle state survives a
+restart.  In a multi-process grid run the domain is partitioned among the
+ranks and each rank integrates the particles owned by its local patch
+(interior-box ownership with a claim margin).  A fast particle can cross
+a rank face within a single Cactus step, so in this mode the step is
+integrated in coordinate-time chunks: the chunk length is chosen such
+that every live particle stays strictly inside its owner's interior box,
+and at each chunk boundary the full state is exchanged and the owner map
+is recomputed, so that a particle that has crossed into a neighbour's
+box is picked up by that rank for the next chunk.  Every rank derives
+the identical chunk boundaries from the identical replicated state, so
+agreeing on the chunking needs no extra communication.  After the last
+chunk and the loss policy, an \texttt{MPI\_Allgather} exchanges the
+per-particle state, so the replicated arrays are bit-identical on every
+rank.  The centred stencil is made available across rank faces
+explicitly: each rank keeps a halo-padded copy of the ten
+\texttt{ADMBase} fields (all three time levels) of its own patch, five
+cells wide, filled by an all-pairs MPI exchange at the start of each
+integration batch.  The exchange covers edges and corners as well as
+faces: the three directions are exchanged in turn, and for each
+direction already handled the transverse range of the later ones is
+widened by the halo width, so a cell lying in the halo band of two or
+three directions at once is filled as well.  Exchanging faces only
+leaves those cells uninitialised, and a node Christoffel built from a
+window containing one silently falls back to the analytic assembly,
+which is what made the trajectory depend on the rank count.  The
+chunk-boundary constraint is likewise applied even to a face the
+particle sits exactly on (the distance to the face is floored at
+\texttt{FACE\_EPS}); otherwise such a particle takes one unbounded
+chunk and flies across the neighbouring subdomain before being dropped.
+The fit-history flags travel with the particle state at each chunk
+boundary, so a particle handed to a new owner refits rather than
+reusing its predecessor's cached polynomials.  For the grid-fit sampler
+the scheme is therefore rank-count invariant to roundoff: the same par
+file run at 1, 2 and 4 ranks gives particle dumps that agree to
+$1.1\times10^{-8}$ in the worst column and exactly at two ranks,
+including for particles whose stencil straddles a rank face.  Exact
+agreement is not expected: the chunk boundaries follow the
+decomposition, so a particle is handed to its new owner at a different
+point along its path and the floating-point summation order changes.
+The testsuite enforces the agreement: the four-process test
+\texttt{conv100\_local27} and its single-process twin
+\texttt{conv100\_local27\_1p} are both compared against one and the
+same reference dump, and the thorn also ships a 1-, 2- and 4-rank
+agreement script with a $10^{-6}$ tolerance,
+\texttt{test/check\_mpi\_identity.sh}.
+The pointwise samplers instead interpolate from the rank's own patch
+through \texttt{CCTK\_InterpLocalUniform}, whose stencil is clamped at
+the patch boundary; there the same par file at one and at four ranks
+agrees to about $3\times10^{-13}$ relative rather than bit-for-bit, and
+no bit-identity is claimed for those back-ends.  It currently
+supports up to four ranks (a $2\times2$ decomposition in $y$ and $z$, one
+patch per rank per level).  In multi-process \texttt{Exact} runs the
+analytic metric is valid everywhere, so rank~0 integrates all particles
+and writes the dump.  The integration is scheduled at
+\texttt{CCTK\_POSTSTEP} in Carpet's level mode: each call acquires the
+calling level's grid pointers and geometry into a per-level descriptor,
+and the particles are integrated once per call batch --- under Carpet's
+time subcycling, on the finest-level call, with the step given by the
+elapsed coordinate time --- so the integrator works unchanged in an AMR
+evolution.  Each particle is integrated on the finest refinement level
+whose safe region contains it (up to 16 levels,
+\texttt{geodesic\_amr\_levels}, default 3), and MultiPatch
+(Thornburg~\citep{thornburg2004}) block systems are supported: a
+particle that crosses a block boundary has its position and spatial
+velocity transformed by the block Jacobians.
+
+\paragraph{Particle lifecycle.}  What happens to a particle that leaves
+the computational domain or whose four-velocity fails the normalization
+check (no future-directed root of Eq.~(\ref{eq:renorm})) is selected at
+run time with \texttt{particle\_loss\_policy}: \texttt{drop} (the
+default) marks the particle state as NaN and stops tracking it,
+\texttt{flag} freezes it at its last valid state, and \texttt{respawn}
+re-places it at a uniformly random position inside the safe box, the grid
+domain inset by seven cells, subject to the rejections
+$r < \mathrm{excised\_radius}+1.5$ (inside the exclusion sphere),
+$r > \mathrm{initial\_radius}$ (outside the initial particle shell), and
+$|z| < \mathrm{particle\_middle\_sp}$ (within
+\texttt{particle\_middle\_sp} of the midplane, default $1.0$), with
+$u^i = 0$ and a $u^t$ placeholder; the per-step
+re-solve of
+Eq.~(\ref{eq:renorm}) then normalizes the four-velocity on the next step.
+Every loss is reported to the log with the particle index.  The scaling
+run of Sec.~\ref{sec:scaling} uses \texttt{respawn}, which keeps the
+particle count constant over long runs and prevents a single lost
+particle from poisoning the statistics.
+
+\paragraph{Diagnostics.}  With \texttt{particle\_dump\_every = k > 0} the
+thorn writes the full particle state\\
+$(t,x,y,z,u^t,u^x,u^y,u^z,\tau)$ to the file named by the parameter
+\texttt{particle\_dump\_file} (default
+\texttt{geodesic\_particles.txt}): the file begins with the initial state
+($t=0$) recorded before the first integration step, followed by one
+block of rows every $k$ iterations (rank~0 only); this file is the data
+source for all verification figures below.
+\texttt{rverbose = yes} prints the particle state at every evaluation of
+the ODE right-hand side to the log for debugging.
+
+\section{Verification}\label{sec:verification}
+
+\subsection{Test orbits}
+
+All verification runs use $M=2$, $a=0.5$ (the values of the \texttt{KerrSchild}
+initial data \citep{moreno2002}) and a 3+1 grid with Cartesian cells of size $\Delta x$.  Three
+bound orbits are used (Table~\ref{tab:orbits}), each generated and validated
+independently in Python before the thorn run:
+
+\begin{table}[h]
+\centering
+\caption{Test orbits used for verification ($M=2$, $a=0.5$).  $u^t$ and
+$u^x,u^y,u^z$ are the four-velocity components in the par file.
+$\Delta E/E$ is the value measured by the independent Python reference over
+the same interval.}\label{tab:orbits}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+orbit & initial $(x,y,z)$ & $u^t$ & $u^x,u^y,u^z$ & radial range & ref. $\Delta E/E$ \\
+\midrule
+P0 circular ($r=10$)   & $(10,0,0)$  & $1.53428$ & $(0,\,0.67238,\,0)$ & $r=10$ & $1.2\times10^{-9}$ \\
+P1 tilted              & $(-13.448,\,1.180,\,0)$ & $1.32221$ & $(-0.01827,\,-0.50381,\,0.1)$ & $[12.86,\,16.88]$ & $5.0\times10^{-9}$ \\
+P2 eccentric           & $(15,0,0)$  & $1.27607$ & $(0,\,0.45176,\,0)$ & $[12.03,\,15]$ & $5.3\times10^{-9}$ \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+P0 is a circular orbit of radius $r=10$ (azimuthal period
+$T_\phi = 143.4\,M$); P2 is an eccentric orbit with apocenter $r_a = 15$
+and pericenter $r_p = 12.03$; P1 is P2's orbit given a small vertical kick
+at one point, tilting it out of the equatorial plane.
+Figure~\ref{fig:orbits3d} shows the three orbits as integrated by the thorn
+(Exact mode, $T=1000\,M$): P0 closes on itself in the equatorial plane,
+while the rosette patterns of P1 and P2 reflect the relativistic periastron
+advance of the Kerr spacetime.
+
+\begin{figure}[h]
+\centering
+\maybefig{figs/fig_3orbits_3d.png}{0.85\textwidth}
+\caption{The three test orbits of Table~\ref{tab:orbits} in the Kerr
+spacetime ($M=2$, $a=0.5$), integrated by the thorn in Exact mode over
+$T=1000\,M$ (100 snapshots).  P0, a circular orbit of radius $r=10$ in the
+equatorial plane (blue); P1, P2's orbit given a small vertical kick,
+precessing out of the plane (red); P2, an eccentric orbit with
+$r_a = 15$, $r_p = 12.03$ (green).}
+\label{fig:orbits3d}
+\end{figure}
+
+\subsection{Conservation of $E$, $L_z$ and the norm}
+
+We integrate the three orbits simultaneously with \texttt{Exact = yes} for
+$T = 1000\,M$ ($10^4$ Cactus steps of $\Delta t = 0.1\,M$, i.e.\ about seven
+azimuthal periods of P0), on a $100^3$ grid.  Figure~\ref{fig:conservation}
+shows the relative drift of $E$ and $L_z$ and the norm residual
+$|g_{\mu\nu}u^\mu u^\nu + 1|$ for all three orbits.  The relative energy
+drift stays at the level of the independent reference integration
+($\le \num{maxdE}$) and the norm is held at the roundoff level
+($\le \num{maxnorm}$) throughout, confirming that the RKF45 integrator with
+per-step renormalization reproduces the geodesic equation accurately over
+many orbital periods.
+
+\begin{figure}[h]
+\centering
+\maybefig{figs/fig_conservation.pdf}{\textwidth}
+\caption{Conservation over $T=1000\,M$ (Exact mode): relative drift of the
+energy $E$ (left) and axial angular momentum $L_z$ (middle), and the norm
+residual $|g_{\mu\nu}u^\mu u^\nu+1|$ (right), for the three orbits of
+Table~\ref{tab:orbits}.  All quantities are conserved at the
+$\lesssim 10^{-\num{consexp}}$ level.}
+\label{fig:conservation}
+\end{figure}
+
+\subsection{Grid convergence of the interpolation mode}\label{sec:convergence}
+
+To quantify the accuracy of the default \texttt{local27} sampler, we track
+the P0 circular orbit ($M = 2$, $a = 0.5$, $r = 10$, azimuthal period
+$T_\phi \simeq 143.4\,M$) for just over one full azimuthal period
+($t = 150$) on grids of $50^3$, $100^3$ and $200^3$ cells
+($\Delta x = 1.0$, $0.5$, $0.25$) with \texttt{Exact = no}, and compare
+the final particle position with an independent Python RK4 integration of
+the exact metric (step $0.02\,M$).  Figure~\ref{fig:convergence} shows
+the orbit traces and the final-position error versus grid spacing: the
+error decreases from $2.3\times10^{-2}$ to $4.4\times10^{-4}$ and
+$9.5\times10^{-6}$ on the two refinements (factors of $52$ and $46$), a
+measured local convergence order of \num{convorder}, and the exact-metric
+run agrees with the reference to $\num{exacterr}$, which is the level at
+which two independent integrators differ.  The quartic fit used by
+\texttt{local27} is formally fifth-order accurate in space; the measured
+rate of \num{convorder} on this orbit is consistent with that formal
+order, and we report the measured rate as such.
+
+\begin{figure}[H]
+\centering
+\maybefig{figs/fig_convergence.pdf}{\textwidth}
+\caption{Grid convergence of the P0 circular orbit
+($M = 2$, $a = 0.5$, $r = 10$; $t = 0\ldots 150$, just over one full
+period).  Left:
+orbit traces in the $x$--$y$ plane for the interpolation runs
+($\Delta x = 1.0, 0.5, 0.25$) and the exact-metric run, compared with the
+independent Python reference (solid).  Right: final-position error versus
+grid spacing (markers), with a reference line of the measured order
+\num{convorder} (dotted) and the exact-metric error level (dotted
+horizontal line).}
+\label{fig:convergence}
+\end{figure}
+
+Table~\ref{tab:kx100} gives the maximum position error of each grid
+sampler against the \texttt{Exact = yes} trajectory of the same orbit.
+
+\begin{table}[h]
+\centering
+\caption{Maximum position error against the \texttt{Exact = yes}
+trajectory: P0 circular orbit ($M = 2$, $a = 0.5$, $r = 10$) on the
+static Kerr--Schild field of a $100^3$ grid ($\Delta x = 0.5\,M$),
+$\Delta t = 0.1\,M$, single process, particle started at $t = 0$.}\label{tab:kx100}
+\begin{tabular}{lccc}
+\toprule
+metric evaluation & $t = 2\,M$ & $t = 10\,M$ & $t = 20\,M$ \\
+\midrule
+\texttt{l27}     & $3.74\times10^{-6}$ & $4.42\times10^{-5}$ & $9.97\times10^{-5}$ \\
+\texttt{aei}     & $3.68\times10^{-7}$ & $6.29\times10^{-6}$ & $2.97\times10^{-5}$ \\
+\texttt{local27} & $1.60\times10^{-7}$ & $2.56\times10^{-7}$ & $1.97\times10^{-7}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Comparison of the grid samplers on a precessing orbit}\label{sec:sampler-compare}
+
+To compare the grid samplers on an orbit closer to production use,
+we track $100$ particles that all move on the same bound equatorial Kerr
+ellipse ($M=2$, $a=0.5$, pericentre $r_p = 16$, apocentre $r_a = 64$,
+$E = 0.9761517$, $L_z = 8.1632196$), spread over the orbit, on the static
+Kerr--Schild field written onto a $144^3$ base grid ($\Delta x = 1$) with
+three nested refinement boxes ($\Delta x = 0.5$, $0.25$, $0.125$ out to
+radii $36$, $18$, $9$).  The ellipse precesses by $117.5^\circ$
+($0.6528\pi$) per radial period ($T_r = 1349.7$), so the orbit stays
+inside the computational domain ($16 \le r \le 64$; domain half-size
+$72$) for the whole run, $t = 0 \ldots 3200\,M$ (about $2.37$ radial
+periods); the particle state is dumped every $10$ time units, and a
+particle is counted as lost
+when it leaves the safe region of its grid patch or fails an ODE step
+(the thorn's drop policy).  The six runs are \texttt{Exact = yes}
+(reference, single process, 20 OpenMP threads),
+\texttt{metric\_interp = aei} and \texttt{metric\_interp = carpet}
+(each single process, 20 threads; both evaluate the same AEI order-4
+pointwise Lagrange interpolant and differ only in the
+data-acquisition path), and \texttt{metric\_interp = local27} in three
+configurations: the default four-process mode (four processes, 20
+threads each), the explicit \texttt{local27} four-process mode (four
+processes, 20 threads each), and a single-process control (one process,
+20 threads).
+
+\begin{table}[h]
+\centering
+\caption{Comparison of the grid samplers on the precessing
+ellipse of Sec.~\ref{sec:sampler-compare} ($100$ particles,
+$t = 0 \ldots 3200\,M$; no particle lost in any run).
+$\max|\Delta x|$: largest per-particle coordinate deviation from the
+\texttt{exact} reference, over the run.
+$\Delta E$, $\Delta L_z$: maximum and mean absolute deviation of the
+conserved quantities from their initial values, over the run.
+"p0": radial position of particle 0 at the end of the run.}\label{tab:samplers}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llccccccl}
+\toprule
+metric evaluation & run & lost & survivors & $\max|\Delta x|$ vs ref & $\max|\Delta E|$ / mean & $\max|\Delta L_z|$ / mean & p0 \\
+\midrule
+exact (reference)  & 1 process, 20 threads     & 0 & 100 & --- & --- & --- & $r=32.47$ (alive) \\
+aei                & 1 process, 20 threads     & 0 & 100 & $2.09\times10^{-2}$ & $1.14\times10^{-6}$ / $1.38\times10^{-7}$  & $6.53\times10^{-5}$ / $1.97\times10^{-5}$  & $r=32.47$ (alive) \\
+carpet             & 1 process                 & 0 & 100 & (identical to \texttt{aei}) & (identical to \texttt{aei}) & (identical to \texttt{aei}) & $r=32.47$ (alive) \\
+local27 (explicit) & 4 processes, 20 threads ea. & 0 & 100 & $2.43\times10^{-1}$ & $1.32\times10^{-5}$ / $2.26\times10^{-6}$  & $6.16\times10^{-4}$ / $2.87\times10^{-4}$  & $r=32.38$ (alive) \\
+local27 (default)  & 4 processes, 20 threads ea. & 0 & 100 & (identical to explicit) & (identical to explicit) & (identical to explicit) & $r=32.38$ (alive) \\
+local27 (control)  & 1 process, 20 threads     & 0 & 100 & $2.28\times10^{-1}$ & $1.07\times10^{-5}$ / $2.01\times10^{-6}$  & $6.92\times10^{-4}$ / $3.44\times10^{-4}$  & $r=32.44$ (alive) \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\maybefig{figs/fig_interp_compare.png}{0.9\textwidth}
+\caption{Particle 0 of the precessing-ellipse comparison
+(Sec.~\ref{sec:sampler-compare}) in the $x$--$y$ plane: exact reference
+(black), the two \texttt{local27} four-process runs (blue solid and gray
+dashed, bit-identical to each other), the \texttt{local27}
+single-process control (teal dashed), \texttt{aei} (red) and
+\texttt{carpet} (green; bit-identical to \texttt{aei} in this test).
+Circles: apocentre ($r=64$), pericentre ($r=16$) and the excision
+sphere ($r=4$, dashed).}\label{fig:interp-compare}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\maybefig{figs/fig_interp_compare_p0.png}{\textwidth}
+\caption{Radial coordinate $r(t)$ of particle 0 for the runs of
+Table~\ref{tab:samplers}.  Dashed: pericentre ($r=16$) and apocentre
+($r=64$) of the reference ellipse.}
+\label{fig:interp-compare-p0}
+\end{figure}
+
+No particle is lost in any of the six runs: all $100$ particles
+complete the full $t = 0 \ldots 3200$ run without leaving the safe
+region of their grid patch or failing an ODE step.  The deviation from
+the exact-metric reference separates the samplers cleanly
+(Table~\ref{tab:samplers},
+Figure~\ref{fig:interp-compare-p0}): the two AEI order-4 runs
+(\texttt{aei}, \texttt{carpet}; bit-identical to each other) track the
+reference to $2.1\times10^{-2}$, and both \texttt{local27}
+configurations stay within $2.3$--$2.4\times10^{-1}$.  In every run the
+dominant error is the grid's own coherent discretization of the exact
+Kerr--Schild background, which the three samplers reproduce at the
+$10^{-2}\ldots10^{-1}$ level; the node-exact \texttt{local27} quartic
+fit carries that background error further than the AEI order-4
+interpolant ($2.3\times10^{-1}$ against $2.1\times10^{-2}$).  The
+four-process and single-process \texttt{local27} runs now differ by no
+more than this background error: on this mesh one and four processes
+agree to $2.0\times10^{-1}$ in the coordinates at $t = 3200\,M$, and
+their $t = 0$ frames are bit-identical.
+
+Before the fixes described in Sec.~\ref{sec:impl} the same
+one-versus-four-process comparison was $O(1)$ --- $2.35$ in $x$ --- and
+the cause was not lost precision but a different metric: the owner map
+used to pick a refinement level together with an owning rank by distance
+to that rank's published box, a level-0 interior box ends exactly at the
+rank face (zero gap) while a refined level's claim box is inset by seven
+cells, so particles on the $z = 0$ plane --- where this $2\times2$
+decomposition puts its faces --- were sampled at $\Delta x = 1$ with four
+processes and at $\Delta x = 1/2$ with one.  Selecting the level first,
+from the union of the patch extents of all ranks on that level (the same
+criterion \texttt{pick\_level} applies in a single process), removes the
+discrepancy at $t = 0$ entirely.
+
+What remains is a chunking artefact rather than a physical one.  Under
+AMR with \texttt{Geodesic::step} $\gg \Delta t$ the chunk boundaries fall
+on rank faces; a single process has no internal faces, so the RKF45
+segmentation and the points at which the owner level is re-evaluated
+differ, and the residual grows roughly linearly with coordinate time
+($7.9\times10^{-6}$ at $t = 10$, $6.0\times10^{-2}$ at $t = 1600$,
+$1.6\times10^{-1}$ at $t = 3200$).  At the shorter AMR integration of the
+testsuite (\texttt{extra/ellipse\_orbit\_amr.par}, four levels,
+$t = 25.6$) the one-, two- and four-process dumps are still
+bit-identical.  On a unigrid mesh, where no internal
+faces exist, the same comparison is at roundoff level:
+\texttt{conv100\_local27} agrees to $1.1\times10^{-8}$ across 1, 2 and 4
+ranks, and there the deviation is bounded and oscillates with the orbit
+instead of growing (Sec.~\ref{sec:impl}).  This has no adverse
+consequence in production use: in a full \texttt{GRHydro} evolution, or
+any grid-carried spacetime, the grid field \emph{is} the true metric,
+and the single-process runs show that the tracker follows it faithfully.
+
+\paragraph{Run notes.}
+The default-mode four-process run and the explicit \texttt{local27}
+four-process run are bit-identical to each other (identical mode,
+different par spelling), confirming the default path of
+Sec.~\ref{sec:samplers}.  The \texttt{aei} and \texttt{carpet} rows are
+taken from single-process runs.  Both back-ends also run at four
+processes on this mesh, and do so without loss: their $t = 0$ frames are
+bit-identical to the single-process ones and all $100$ particles survive
+to $t = 3200\,M$, but the chunking artefact described above is not
+specific to the fitted sampler --- four- and single-process
+\texttt{aei} separate by $9.5\times10^{-2}$ over the run, against
+$2.1\times10^{-2}$ (single process) and $8.5\times10^{-2}$ (four
+processes) from the exact reference ---
+so the table quotes the single-process \texttt{aei} and \texttt{carpet}
+runs, whose deviation from the reference is the smaller and more cleanly
+defined one.  It is the \texttt{l27} path that must be run
+single-process (Sec.~\ref{sec:samplers}).
+
+\subsection{Geodesic orbits on an AMR mesh}\label{sec:amr-orbits}
+
+The grid-mode samplers read the metric from the refinement level that
+contains the particle, which makes them usable on Carpet's AMR meshes
+without modification.  We verify this on the same circular orbit as the
+unigrid reference \texttt{conv100.par} (Kerr--Schild, $M=2$, $a=0.5$,
+particle on the $r=10$ equatorial circle, integrated to $t=150.1$,
+$\sim 1.05$ orbital periods, $T\simeq 143$), now evolved on an AMR mesh
+with three levels of resolution: a $50^3$ base grid ($\Delta x=1$)
+refined twice (factor 2) by a box centred on the origin (half-width $16$
+cells on the first refinement level, then $8$), so that the finest level
+has $\Delta x=1/4$.  The orbiting particle lies on the first refinement
+level ($\Delta x=1/2$) for its whole path --- the same local resolution
+as the $100^3$ unigrid reference --- and crosses onto the second level
+($\Delta x=1/4$) near the box diagonals.  The particle integrator is
+otherwise unchanged (RKF45, same seed and initial data as the reference
+run), so the only differences between the two set-ups are the grid
+structure and the driver's 4:1 subcycling.
+
+\begin{table}[h]
+\centering
+\caption{AMR (3 levels) vs.\ unigrid reference (conv100): maxima over
+the 16 dump times $t=0.1,10.1,\ldots,150.1$ of the Cartesian position
+difference $\max_i|\Delta x^i|$, the radial difference $|\Delta r|$, and
+the orbital phase difference $|\Delta\phi|$.  The reference run leaves
+\texttt{metric\_interp} unset and so uses the default \texttt{local27};
+each row is that sampler's AMR-to-unigrid difference, not a ranking of
+sampler accuracy.}\label{tab:amr-orbits}
+\begin{tabular}{lccc}
+\toprule
+sampler & $\max_i|\Delta x^i|$ & $\max|\Delta r|$ & $\max|\Delta\phi|$ (rad) \\
+\midrule
+local27           & $1.2\times10^{-1}$ & $4.3\times10^{-2}$ & $1.3\times10^{-2}$ \\
+aei               & $1.4\times10^{-1}$ & $5.0\times10^{-2}$ & $1.6\times10^{-2}$ \\
+carpet            & $3.4\times10^{-1}$ & $2.3\times10^{-1}$ & $4.2\times10^{-2}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All three samplers keep the particle on a stable orbit throughout the
+integration (no blow-up, no lost particle).  \texttt{local27} and \texttt{aei}
+stay within $5\times10^{-2}$ ($0.5\%$) of the reference in radius and
+$1.7\times10^{-2}$ rad ($\sim1^\circ$) in phase; \texttt{carpet} drifts most
+on this mesh, $2.3\times10^{-1}$ ($2.3\%$) in radius.  The reference run
+(\texttt{conv100.par}) leaves \texttt{metric\_interp} unset and so uses the
+default \texttt{local27}: the \texttt{local27} row measures the effect of the
+mesh alone, while the \texttt{aei} and \texttt{carpet} rows include a sampler
+change as well, so this table does not rank the samplers by accuracy (the accuracy
+comparison is Sec.~\ref{sec:sampler-compare}).  At the first dump after the mesh
+settles ($t=10.1$) all three deviations are already at their small-$t$ level
+($\lesssim5\times10^{-3}$ in position): no transient is associated with the
+refinement, the pointwise samplers resolve the metric correctly across level
+boundaries, and the geodesic equation integrates in a Carpet AMR evolution (with
+its 4:1 subcycling) without modifying the integrator.
+
+\subsection{Robustness on a two-puncture merger background}\label{sec:gw150914}
+
+The checks above all use a single-black-hole Kerr--Schild field, where the
+dominant error source is the grid's own discretization.  A closer production use
+case is the field of a binary black hole, whose geodesic structure is itself of
+observational interest \citep{chernov2024}.  We therefore place the tracker on
+the two-puncture initial data of the \texttt{GW150914} binary (the first
+directly detected gravitational-wave signal \citep{abbott2016gw150914};
+component masses $36$ and $29\,M_\odot$, stored in the par files as
+$m_+ = 36/65$ and $m_- = 29/65$, i.e.\ normalized to total mass $M = 1$), built
+by \texttt{TwoPunctures} with the GW150914 spin and kick parameters
+(\texttt{par\_b} = 5, punctures at $x = +4.46$ and $-5.54$), on a Cartesian
+domain of $\pm10.5$, evolved with \texttt{ML\_BSSN} (8th-order SBP differences
+$+$ MoL RK4, 1+log slicing, $\Gamma$-driver shift).  There is no analytic
+reference orbit on this background, so this section is about stability
+thresholds and the cost of resolution and timestep, not about absolute
+accuracy.
+
+An important caveat: the raw \texttt{TwoPunctures} initial data is not the
+merger metric itself.  Once the field is evolved with \texttt{ML\_BSSN}, it
+relaxes and differs significantly from the frozen initial geometry.  We
+therefore make the time-dependent, \texttt{ML\_BSSN}-evolved background the main
+robustness test, and treat the frozen initial data only as a secondary check.
+
+Common protocol: a $100$-particle equatorial ring at $r = 8$ (azimuthal spacing
+$3.6^\circ$, strong inward velocity; particle 0 sits at $(8,0,0)$ with
+$u^t = 1.774$, $u^x = -0.960$, $u^y = 0.863$), released at $t = 1.60$ (after the
+initial junk transient, which otherwise changes the drop statistics), dumped
+every $0.05$ in coordinate time, integrated to $t = 14.05$; $4$ MPI processes
+$\times\,21$ threads.  A binary has two punctures, so an excision sphere
+centered on the origin is meaningless and can interfere with the computation: the
+current protocol sets \texttt{excised\_radius}$ = 0$.  The older runs in the
+table below still carry $2.0$, but that sphere never fired --- dropped particles
+get no closer than $4.24$ to the origin (they fall into the punctures at
+$x = +4.46$ and $-5.54$) and the smallest radius reached by any particle is
+$2.33$--$2.38$ --- so the survival counts remain comparable.
+
+\paragraph{Resolution and timestep.}
+Table~\ref{tab:tpgrid} collects six evolved-background runs under this protocol
+plus four coarse-grid probes.  The ``background outcome'' column records whether
+the background field itself integrates through $t = 14.05$.
+
+\begin{table}[h]
+\centering
+\caption{$r = 8$ ring, $100$ particles, released at $t = 1.60$, dumped every
+$0.05$ in coordinate time, integrated to $t = 14.05$ ($2248$ steps at
+$\Delta t = 0.00625$ on the unigrid runs, $1124$ finest-level steps at
+$\Delta t = 0.0125$ on the AMR run).  \emph{wall}: measured wall-clock time of
+one run ($4\times21$ threads); \emph{lag}: median of (grid time
+$-$ the particle's own integrated coordinate time) at $t = 14.05$, or at the last
+frame with $\ge50\%$ of the particles alive for the coarse probes;
+\emph{alive}: particles not inside a puncture at the end of the run.}
+\label{tab:tpgrid}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llcccc}
+\toprule
+grid & $\Delta x$ & $\Delta t$ & wall (s) & lag & alive / background outcome \\
+\midrule
+AMR $1/8$ base $+\,1/16$ box ($r=8$) & $0.125/0.0625$ & $0.025/0.0125$ & $51{,}818$ & $+0.013$ & $72$ / stable \\
+\quad same grid, \texttt{aei} sampler & as above & as above & $54{,}782$ & $+0.033$ & $76$ / stable \\
+unigrid $1.8/16$ ($187^3$) & $0.1123$ & $0.00625$ & $28{,}545$ & $0$ & $74$ / stable \\
+\quad same grid, \texttt{aei} sampler & as above & as above & $25{,}014$ & $0$ & $81$ / stable \\
+unigrid $1.5/16$ ($224^3$) & $0.09375$ & $0.00625$ & $47{,}340$ & $0$ & $74$ / stable \\
+\quad same grid, \texttt{aei} sampler & as above & as above & $44{,}673$ & $0$ & $78$ / stable \\
+\midrule
+unigrid $1/4$ ($74^3$) & $0.25$ & $0.05$ & --- & $+0.155$ & ring lost before $11.60$ \\
+unigrid $1/8$ ($148^3$) & $0.125$ & $0.025$ & --- & $+0.049$ & ring lost before $11.60$ \\
+unigrid $1/8$ ($168^3$) & $0.125$ & $0.0125$ & --- & $0$ & background blows up at $t=10.85$ (shift $\sim10^{246}$) \\
+unigrid $1/8$ ($168^3$) & $0.125$ & $0.00625$ & --- & $0$ & background blows up at $t=10.65$ (shift $\sim10^{18}$) \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+Three conclusions.  \emph{First, what limits the run is the resolution of the
+background, not the particles.}  On the $\Delta x = 0.125$ grid the shift at
+$t = 10.8625$ is still regular, $(-0.091, -0.032, -5\times10^{-4})$, and one
+timestep later ($\Delta t = 0.0125$) it is $\sim10^{246}$: no precursor, no
+\texttt{NaN}, a grid-scale mode at the punctures being amplified.  Halving
+$\Delta t$ moves the blow-up by only $\sim0.2\,M$.  The threshold lies between
+$\Delta x = 0.125$ (fails) and $0.1123$ (succeeds), and has nothing to do with
+the geodesic integrator.  \emph{Second, the particle-clock lag is a
+$\Delta t$ effect.}  At fixed $\Delta x$ it falls roughly in proportion to
+$\Delta t$ ($+0.155$ at $0.05$, $+0.049$ at $0.025$, $0$ at $0.0125$ and below),
+and it is $+0.013$/$+0.033$ on the AMR runs.  The mechanism is the
+\texttt{max\_iter\_cap} bound on the proper-time substeps inside one Cactus
+step: when it binds, the particle never reaches the target coordinate time, and a
+coarser grid (larger interpolation error) pushes RKF45 to smaller internal steps,
+making the bound more likely to bind.
+\emph{Third, under a fixed $\Delta x\,\Delta t$ constraint, shrinking
+$\Delta t$ is far cheaper than shrinking $\Delta x$:} the step count grows
+linearly while the cell count grows by a factor of $8$ at the same volume.  As
+long as the background produces no \texttt{NaN}, refining the timestep is the
+preferred knob.
+
+\paragraph{Particle clock and sampler consistency.}
+The dump now carries the grid coordinate time (\texttt{cctk\_time}) as a column,
+so the lag above can be checked directly.  When two runs are compared, both
+trajectories must first be interpolated to a common coordinate time: pairing by
+dump index turns the lag into an along-track offset: on the AMR \texttt{aei} row
+the median position difference at $t = 14.05$ inflates from $0.0043$ to $0.0159$
+($3.7\times$) and the rms median from $0.0039$ to $0.0063$; on unigrid runs the
+lag is zero and the two pairings agree bit for bit.
+Table~\ref{tab:tpdiff} gives the interpolated comparison, with the unigrid
+$1.5/16$ \texttt{local27} run as reference.
+
+\begin{table}[h]
+\centering
+\caption{Relative to the unigrid $1.5/16$ \texttt{local27} run:
+$d_{\mathrm{pos}}$ is the median position difference at the stated coordinate
+times over particles inside the trusted region in both runs;
+\emph{rms\_med}/\emph{rms\_max} are the median and maximum over particles of
+the rms position difference accumulated over the trusted part of the trajectory;
+$d\tau$ is the median $|\Delta\tau|$ at each particle's last trusted frame;
+$\Delta t_{\mathrm{drop}}$ is the median difference in drop time over particles
+captured in both runs, and $n_{\mathrm{cap}}$ is that number; alive is the count
+at the end of the run.  The trusted region is $r > 3$ from the origin and more
+than $1$ from either puncture, so nothing is measured after a particle has fallen
+in.  The sample is all $100$ particles minus two chaotic outliers (\#53, \#54),
+i.e.\ $98$; removing them changes only rms\_max (by $2.9$--$7.5\times$), the
+median quantities being unchanged in the fourth decimal place.}
+\label{tab:tpdiff}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccccc}
+\toprule
+run & $d_{\mathrm{pos}}$ @$t=6/10/14$ & rms\_med & rms\_max & $d\tau$ & $\Delta t_{\mathrm{drop}}$ & $n_{\mathrm{cap}}$ & alive \\
+\midrule
+AMR $1/8+1/16$, \texttt{local27} & $0.0041/0.0041/0.0050$ & $0.0040$ & $0.0109$ & $0.0052$ & $0.30$ & $26$ & $72$ \\
+AMR $1/8+1/16$, \texttt{aei}     & $0.0040/0.0037/0.0043$ & $0.0039$ & $0.0099$ & $0.0046$ & $0.20$ & $24$ & $76$ \\
+unigrid $1.8/16$, \texttt{local27} & $0.0000/0.0005/0.0018$ & $0.0009$ & $0.0207$ & $0.0008$ & $0.25$ & $25$ & $74$ \\
+unigrid $1.8/16$, \texttt{aei}      & $0.0001/0.0007/0.0018$ & $0.0009$ & $0.0207$ & $0.0008$ & $1.25$ & $19$ & $81$ \\
+unigrid $1.5/16$, \texttt{aei}      & $0.0000/0.0002/0.0003$ & $0.0001$ & $0.0010$ & $0.0002$ & $0.45$ & $22$ & $78$ \\
+unigrid $1.5/16$, \texttt{local27} (reference) & $0$ & $0$ & $0$ & $0$ & $0$ & $0$ & $74$ \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+Switching sampler on the same $1.5/16$ grid
+(\texttt{local27}$\to$\texttt{aei}) changes positions at $t = 14.05$ by a median
+of $3.2\times10^{-4}$, a 90th percentile of $8.6\times10^{-4}$ and a worst case
+of $8.2\times10^{-3}$; switching resolution from $1.8/16$ to $1.5/16$ gives
+$1.8\times10^{-3}$, $1.8\times10^{-2}$ and $5.1\times10^{-1}$.  The choice of
+sampler therefore matters one to three orders of magnitude less than the
+resolution.
+
+\paragraph{Survival is not a quality metric.}
+The survival count depends on the background and on the sampler, so it cannot
+rank accuracy: in the $1.8/16$ \texttt{local27} run the $26$ dropped particles
+were $0.15$--$0.36$ from a puncture (median $0.28$) at their last finite
+snapshot, other runs give $0.08$--$0.50$, and particles that survive get as close
+as $0.24$--$0.26$; on the same $1.5/16$ grid, changing sampler alone moves the
+median drop time by $0.45$, the same size as the difference between resolution
+levels ($0.25$).  Figures~\ref{fig:ring-u1516-local27} and
+\ref{fig:ring-u1516-aei} show the trajectories on the finest grid for both
+samplers, and their morphology is the same.
+
+\begin{figure}[H]
+\centering
+\maybefig{figs/fig_ring_u1516_local27.png}{0.92\textwidth}
+\caption{$r = 8$ ring on the unigrid $1.5/16$ background ($224^3$,
+$\Delta x = 0.09375$, $\Delta t = 0.00625$), \texttt{local27} sampler,
+$t = 1.60 \ldots 14.05$ ($250$ snapshots, colour = particle index); $\times$
+marks the punctures located by \texttt{PunctureTracker}.  $74$ of the $100$
+particles are alive at $t = 14.05$.}
+\label{fig:ring-u1516-local27}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\maybefig{figs/fig_ring_u1516_aei.png}{0.92\textwidth}
+\caption{Same background and same initial ring, with the pointwise
+\texttt{aei} sampler: $78$ particles alive at $t = 14.05$, trajectory morphology
+identical to Fig.~\ref{fig:ring-u1516-local27}, median per-particle position
+difference $3.2\times10^{-4}$.}
+\label{fig:ring-u1516-aei}
+\end{figure}
+
+\paragraph{What AMR costs.}
+Each extra refinement level costs a factor of $16$ in volume, so a ``base grid
+$+\,1/N$ box'' covers $(1 + 16f)$ times the grid points of the base grid, where
+$f$ is the box volume as a fraction of the domain; this is a point-count
+estimate, not a measured throughput.  A box covering the $r = 8$ ring has
+$f = 0.44$, i.e.\ $8.1\times$, so the estimate predicts only a $2.1\times$
+saving over refining the whole domain, and the measured wall times show no
+saving at that $f$: the AMR run takes $51{,}818$ s against $47{,}340$ s for the
+unigrid $1.5/16$ run ($+9\%$), and $54{,}782$ s against $44{,}673$ s for the
+\texttt{aei} pair ($+23\%$).  On the same estimate AMR pays off only for
+$f \lesssim 0.055$ (a box of half-width about $4$, a $1.9\times$ speedup).
+More importantly, the binding constraint is
+a property of the background: a refinement box around the particles does not
+make a coarse background stable.  When the particles are not confined to a small
+region of the domain, a unigrid with a suitable $\Delta t$ is both simpler and
+cheaper; when they are, AMR still has an advantage.  As a functional check of
+the AMR path we also ran a multi-patch mesh with seven static-box levels for
+$2048$ finest-level steps ($t \simeq 0 \ldots 4.4$): all $100$ particles remain
+finite throughout, with zero drops, on both \texttt{local27} and \texttt{aei},
+which agree to $1.0\times10^{-1}$ in position (the discretization level of that
+grid), showing that metric sampling across refinement boundaries is correct.
+
+\paragraph{Frozen initial-data check.}
+On the frozen raw initial data (a pure geometry-routing/stability check, not
+representative of the merger), the far ring ($r = 10$, prograde tangential
+velocity $0.32$, inward radial $0.10$) completes the full $80$-unit run on all
+three back-ends (\texttt{local27}, \texttt{aei}, \texttt{carpet}; the latter two
+sample through the \texttt{AEILocalInterp}/\texttt{LocalInterp} interface and
+are bit-identical to each other) with zero \texttt{NaN} states, and the \texttt{local27}
+trajectory agrees with the \texttt{aei}/\texttt{carpet} ones to within
+$\sim6\times10^{-4}$ in position; on the $r = 8$ near ring, deterministic
+\texttt{NaN} drops (\texttt{loss\_policy = drop}) set in from $t = 6$ and reach
+exactly $50$ of the $100$ particles by $t = 20$, with an almost identical drop
+pattern on all three back-ends: \texttt{aei} and \texttt{carpet} agree bit for
+bit, and \texttt{local27} differs in only two of the fifty dropped particles.
+Every drop is a physical excursion into the strong-field/excised region rather
+than a numerical failure of the integrator: on a Kerr background these orbits
+are the plunging geodesics whose end states are known analytically
+\citep{dyson2023}.  All six frozen runs (near and far ring, three back-ends
+each) are part of the thorn's automatic validation suite
+(\texttt{test/test.ccl}); the \texttt{NaNChecker}-aware test comparator turns
+the deterministic drop pattern of the near runs into a regression test.
+
+\paragraph{Resolution scan on the frozen data.}
+Because the two-puncture background has no analytic reference, we repeat the
+near-ring run at three unigrid resolutions with the cell count held fixed at
+$144^3$ and the domain shrunk in step ($\pm72$, $\pm36$, $\pm18$, i.e.\
+$\Delta x = 1$, $0.5$, $0.25$), so all three runs resolve the puncture region
+with the same number of cells; the integration parameters are identical in the
+three runs, only the grid resolution changes.  On this frozen data
+\texttt{aei} and \texttt{carpet} are bit-identical at every resolution
+(Sec.~\ref{sec:sampler-compare} already showed the two to be the same
+computation), so they are reported as one column.  Table~\ref{tab:tpconv}
+reports the median position and velocity difference at identical snapshot times
+between consecutive resolutions, over the particles alive in both runs of each
+pair.  We report medians rather than maxima: chaotic trajectory divergence near
+the punctures dominates the maximum and makes its apparent order meaningless.
+$58$--$59$ of the $100$ particles fall into the excision region at different
+snapshot times in the three resolutions; this is trajectory-level sensitivity to
+the grid scale near the punctures, not a scheme-level failure.  For the order-4
+pointwise Lagrange samplers (\texttt{aei}/\texttt{carpet}) the observed order
+sits at the design order $4$; for \texttt{local27} it rises with resolution
+($3.3\to7.0$) around the formal order $5$ of its quartic tensor-product fit
+(Sec.~\ref{sec:convergence}), so that column is a trend rather than a single
+order.
+
+\begin{table}[h]
+\centering
+\caption{Resolution scan on the frozen \texttt{GW150914} two-puncture initial
+data: $r = 8$ ring, $100$ particles, $T = 20\,M$, $\Delta x = 1 / 0.5 / 0.25$ at
+fixed $144^3$ cells.  $p_{\mathrm{med}}$: observed order of the median position
+difference between the $\Delta x = 0.5$ and $0.25$ runs relative to the
+$\Delta x = 1$ and $0.5$ runs, over particles alive in both runs of each pair;
+$p_v$: same for the velocity difference at $t = 20$.  Bucketed rows: median
+position difference for particles whose minimum radius stays above $4$
+(\emph{far}) or dips below (\emph{near}), with the observed order $p$ in
+parentheses.  \texttt{aei} and \texttt{carpet} are bit-identical at all three
+resolutions and reported as one column.}
+\label{tab:tpconv}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llcccc}
+\toprule
+sampler & quantity & $t=2$ & $t=10$ & $t=20$ & $p_v$ ($t=20$) \\
+\midrule
+\texttt{aei}/\texttt{carpet} & $p_{\mathrm{med}}$ & 4.22 & 4.14 & 4.33 & 5.61 \\
+\texttt{local27}             & $p_{\mathrm{med}}$ & 3.26 & 4.75 & 6.95 & 5.75 \\
+\midrule
+\texttt{aei}/\texttt{carpet} & far ($n=85$)  & --- & $8.2\times10^{-5}$ ($4.08$) & $1.1\times10^{-3}$ ($4.66$) & --- \\
+\texttt{aei}/\texttt{carpet} & near ($n=15$) & --- & $2.6\times10^{-3}$ ($3.95$) & $7.6\times10^{-3}$ ($4.08$) & --- \\
+\texttt{local27}             & far ($n=86$)  & --- & $7.6\times10^{-5}$ ($5.36$) & $4.5\times10^{-4}$ ($6.07$) & --- \\
+\texttt{local27}             & near ($n=14$) & --- & $9.0\times10^{-2}$ ($1.83$) & $3.4\times10^{-3}$ ($8.09$) & --- \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+
+
+\section{Strong scaling}\label{sec:scaling}
+
+\begin{figure}[H]
+\centering
+\maybefig{figs/fig_scaling.pdf}{\textwidth}
+\caption{Strong scaling with $10^4$ particles, $50^3$ grid, 512 steps,
+\texttt{l27} sampler.  Left: wall time versus number of OpenMP
+threads.  Right: speedup versus thread count (solid line, ideal) with the
+parallel efficiency annotated at each point.}
+\label{fig:scaling}
+\end{figure}
+
+The per-particle independence of the integration loop
+(Sec.~\ref{sec:impl}) should translate directly into parallel speedup.  We
+run a configuration with $10^4$ particles (the three orbits of
+Table~\ref{tab:orbits} plus $9997$ particles with random positions inside
+the safe box and zero velocity, fixed random seed), $50^3$ grid,
+\texttt{Exact = no}, $512$ steps, on a two-socket node with 44 physical
+cores (88 logical threads via hyperthreading), varying only
+\texttt{OMP\_NUM\_THREADS} from 1 to 88.  Figure~\ref{fig:scaling} shows the
+wall time and the parallel efficiency.  The speedup grows with the thread
+count up to 32 threads ($8.3\times$) and then plateaus at $9.2\times$
+(efficiency \num{scaleeff}\%) at 88 threads.  A per-phase timing breakdown
+(Cactus \texttt{TimerReport}) attributes the plateau to two effects.
+First, the surrounding Cactus framework (metric bookkeeping, boundary
+conditions, NaN checks) consumes $\sim\!40$\,ms per step, nearly independent
+of the thread count ($19.0$\,s total at one thread versus $22.9$\,s at 88):
+about $3\%$ of the $\sim\!1.45$\,s single-thread step but about $29\%$ of
+the $\sim\!0.15$\,s 88-thread step.
+Second, the parallel particle region itself scales sublinearly: it shrinks
+from $\sim\!1.41$\,s to $\sim\!0.104$\,s per step, a speedup of only
+$13.7\times$ on 88 threads, consistent with the 44 physical (hyperthreaded)
+cores, cross-NUMA stencil reads, and OpenMP scheduling overhead.
+
+As a complementary measurement in a production setting, we ran the tracker
+inside full \texttt{GRHydro} evolutions \citep{font2008} with $5000$ and with $10^4$
+particles; each run shared the 88-thread node with three other concurrent
+instances, i.e.\ only $\sim\!22$ threads were available per instance.  The
+particle integration (\texttt{geodesics\_integrate} in the
+\texttt{TimerReport}) consumed $49.7$\,s of $2860.5$\,s total wall time
+($1.7\%$) in the $5000$-particle run and $84.1$\,s of $2749.1$\,s
+($\num{hydrofrac}\%$) in the $10^4$-particle run: the dominant costs remain
+the hydrodynamic reconstruction ($\sim\!27\%$) and the Riemann solves
+($\sim\!10\%$), and doubling the particle count grows the integration cost
+by a factor of only $1.7$.  Because these fractions were measured under
+contention from the co-running instances, the overhead in a dedicated run
+is smaller still: tracking test particles alongside an evolution is
+essentially free compared to the evolution itself.
+
+\section{Conclusion and availability}\label{sec:concl}
+
+We have presented \texttt{Geodesic}, an Einstein Toolkit thorn that
+integrates test-particle geodesics in Kerr--Schild Cartesian coordinates.
+The thorn supports an exact analytic Kerr--Schild metric (grid-independent,
+verified to be a vacuum solution to beyond machine precision) and a grid
+mode
+with four local samplers selected by one parameter (\texttt{l27},
+\texttt{local27}, \texttt{aei}, \texttt{carpet}), each with its time
+handling built in.  The grid mode
+assumes no particular analytic form of the metric; for stationary grids
+$\partial_t g_{\mu\nu} = 0$ is detected automatically, and for
+time-dependent grids the time derivative is recovered from the stored
+\texttt{ADMBase} time levels (Sec.~\ref{sec:metric}): with
+\texttt{Exact = no}, the thorn tracks geodesics in whatever spacetime
+the grid carries, stationary or evolving (Sec.~\ref{sec:metric}) ---
+for example the two-puncture \texttt{GW150914} binary background of
+Sec.~\ref{sec:gw150914}.  Multi-process runs distribute the particles
+over MPI ranks with an owner-computes scheme that keeps the replicated
+state bit-identical on every rank; AMR meshes with up to 16 refinement
+levels and MultiPatch block systems are supported (Sec.~\ref{sec:impl}).  In that mode each particle is an
+independent unit of work, and an OpenMP parallelization of the particle loop
+scales to $10^4$ particles, reaching a speedup of
+$9.2\times$ (\num{scaleeff}\% efficiency) on the 88 logical threads of a
+two-socket, 44-core hyperthreaded node --- i.e.\ the loop is
+communication-free but bandwidth-limited, not load-limited
+(Sec.~\ref{sec:scaling}).  Verification against an
+independent reference implementation shows conservation of $E$, $L_z$ and the
+norm to $\sim10^{-\num{consexp}}$ over $10^3\,M$, and a measured local
+convergence order of \num{convorder} for the default sampler.  On a precessing
+orbit of $100$ particles the AEI order-4 path agrees with the exact-metric
+reference at $2.1\times10^{-2}$ and \texttt{local27} at
+$2.3$--$2.4\times10^{-1}$, with one and four processes agreeing to
+$2.0\times10^{-1}$ on that mesh
+(Sec.~\ref{sec:sampler-compare}); on a 3-level AMR mesh the grid samplers
+reproduce the unigrid reference to $4.3\times10^{-2}$--$2.3\times10^{-1}$ in
+radius (Sec.~\ref{sec:amr-orbits}).  On the \texttt{GW150914} two-puncture
+merger background geodesics integrate through $t = 14.05\,M$ whenever the
+background itself is stable, and the cost is set mainly by the resolution of the
+background, $\Delta t$ being the cheaper knob (Sec.~\ref{sec:gw150914}).
+
+The thorn is released under the GPLv2+ license together with the
+configuration files used in this work and with the source of this manuscript
+and its figures (\texttt{paper/} and \texttt{paper\_zh/}), at
+\url{https://github.com/wylyhzh/Geodesic}.  Of the 46 parameter files in \texttt{doc/par/} of that
+repository, 32 are the runs quoted above: the conservation and
+grid-convergence runs of Secs.~\ref{sec:convergence}, the sampler
+comparison of Sec.~\ref{sec:sampler-compare}, the AMR orbits of
+Sec.~\ref{sec:amr-orbits}, the \texttt{GW150914} runs of
+Sec.~\ref{sec:gw150914} and the scaling run of Sec.~\ref{sec:scaling};
+they are mapped to sections in that repository's \texttt{README.md}.  The
+other 14 are 11 exploratory scans kept for provenance (not quoted here)
+and 3 CarpetX smoke tests.  One supporting check quoted in
+Sec.~\ref{sec:gw150914} --- the seven-level static-box functional check
+--- was run from a production script that is not checked in.  The thorn drives both mesh drivers in the
+Einstein Toolkit, \texttt{Carpet} (used for every result above) and
+\texttt{CarpetX}, for which it provides explicit \texttt{OPTIONS: GLOBAL}
+schedule entries because \texttt{CarpetX::decode\_mode} defaults to local
+mode and would otherwise call the particle loop once per tile.
+
+\section*{Statement on AI assistance}
+
+During the preparation of this paper the author used AI assistants
+(large language models) for debugging the code, drafting and revising
+the text, and producing the figures.  All simulations, data and results
+are the author's own; every number in the paper was checked by the
+author, who takes full responsibility for its content.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

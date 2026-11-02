@@ -34,3 +34,13 @@ doc/documentation.pdf
 # ThornDocHTML figure-conversion artifacts
 # (any PDF under doc/ gets converted to EPS by make -ThornDocHTML)
 doc/*.eps
+
+# manuscript LaTeX build artifacts (the .bbl files are kept in-tree)
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.blg
+paper_zh/*.aux
+paper_zh/*.log
+paper_zh/*.out
+paper_zh/*.blg

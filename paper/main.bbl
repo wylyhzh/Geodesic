@@ -1,0 +1,221 @@
+\begin{thebibliography}{28}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Aimar et~al.(2024)Aimar, Paumard, Vincent, Gourgoulhon, and
+  Perrin]{aimar2024}
+N.~Aimar, T.~Paumard, F.~H. Vincent, E.~Gourgoulhon, and G.~Perrin.
+\newblock {GYOTO} 2.0: a polarized relativistic ray-tracing code.
+\newblock \emph{Classical and Quantum Gravity}, 41\penalty0 (9):\penalty0
+  095010, 2024.
+\newblock \doi{10.1088/1361-6382/ad351d}.
+
+\bibitem[Bacchini et~al.(2018)Bacchini, Ripperda, Chen, and
+  Sironi]{bacchini2018}
+F.~Bacchini, B.~Ripperda, A.~Y. Chen, and L.~Sironi.
+\newblock Generalized, energy-conserving numerical simulations of particles in
+  general relativity. {I}. {T}ime-like and null geodesics.
+\newblock \emph{The Astrophysical Journal Supplement Series}, 237\penalty0
+  (1):\penalty0 6, 2018.
+\newblock \doi{10.3847/1538-4365/aac9ca}.
+
+\bibitem[Bacchini et~al.(2019)Bacchini, Ripperda, Porth, and
+  Sironi]{bacchini2019}
+F.~Bacchini, B.~Ripperda, O.~Porth, and L.~Sironi.
+\newblock Generalized, energy-conserving numerical simulations of particles in
+  general relativity. {II}. {T}est particles in electromagnetic fields and
+  {GRMHD}.
+\newblock \emph{The Astrophysical Journal Supplement Series}, 240\penalty0
+  (2):\penalty0 40, 2019.
+\newblock \doi{10.3847/1538-4365/aafcb3}.
+
+\bibitem[Bardeen(1973)]{bardeen1973}
+James~M. Bardeen.
+\newblock Timelike and {N}ull {G}eodesics in the {K}err {M}etric.
+\newblock In Charles DeWitt and Brian~S. DeWitt, editors, \emph{Black {H}oles
+  ({L}es {A}stres {O}cclus)}, pages 215--239. Gordon and Breach, New York,
+  1973.
+
+\bibitem[Bardeen et~al.(1972)Bardeen, Press, and Teukolsky]{bardeen1972}
+James~M. Bardeen, William~H. Press, and Saul~A. Teukolsky.
+\newblock Rotating black holes: Locally nonrotating frames, energy extraction,
+  and scalar synchrotron radiation.
+\newblock \emph{The Astrophysical Journal}, 178:\penalty0 347--370, 1972.
+\newblock \doi{10.1086/151796}.
+
+\bibitem[Berrut and Trefethen(2004)]{berrut2004}
+Jean-Paul Berrut and Lloyd~N. Trefethen.
+\newblock Barycentric {L}agrange {I}nterpolation.
+\newblock \emph{SIAM Review}, 46\penalty0 (3):\penalty0 501--517, 2004.
+\newblock \doi{10.1137/s0036144502417715}.
+
+\bibitem[Blandford and Znajek(1977)]{bz1977}
+R.~D. Blandford and R.~L. Znajek.
+\newblock Electromagnetic extraction of energy from {K}err black holes.
+\newblock \emph{Monthly Notices of the Royal Astronomical Society},
+  179\penalty0 (3):\penalty0 433--456, 1977.
+\newblock \doi{10.1093/mnras/179.3.433}.
+
+\bibitem[{Cactus Code}(2024)]{cactusweb}
+{Cactus Code}.
+\newblock The {C}actus computational framework.
+\newblock \url{http://www.cactuscode.org/}, 2024.
+\newblock Accessed: 2026-09-06.
+
+\bibitem[Chernov(2024)]{chernov2024}
+S.~V. Chernov.
+\newblock Shadows and photon rings of binary black holes.
+\newblock \emph{Gravitation and Cosmology}, 30\penalty0 (2):\penalty0 165--171,
+  2024.
+\newblock \doi{10.1134/S0202289324700063}.
+
+\bibitem[Dyson and van~de Meent(2023)]{dyson2023}
+Conor Dyson and Maarten van~de Meent.
+\newblock Kerr-fully diving into the abyss: analytic solutions to plunging
+  geodesics in {K}err.
+\newblock \emph{Classical and Quantum Gravity}, 40\penalty0 (19):\penalty0
+  195026, 2023.
+\newblock \doi{10.1088/1361-6382/acf552}.
+
+\bibitem[{Einstein Toolkit}(2026{\natexlab{a}})]{aeithornguide}
+{Einstein Toolkit}.
+\newblock {AEILocalInterp} thorn documentation, {E}instein {T}oolkit thorn
+  guide.
+\newblock
+  \url{https://einsteintoolkit.org/thornguide/Numerical/AEILocalInterp/documentation.html},
+  2026{\natexlab{a}}.
+\newblock Accessed: 2026-09-15.
+
+\bibitem[{Einstein Toolkit}(2026{\natexlab{b}})]{carpethornguide}
+{Einstein Toolkit}.
+\newblock {CarpetInterp} thorn documentation, {E}instein {T}oolkit thorn guide.
+\newblock
+  \url{https://einsteintoolkit.org/thornguide/Carpet/CarpetInterp/documentation.html},
+  2026{\natexlab{b}}.
+\newblock Accessed: 2026-09-15.
+
+\bibitem[Fehlberg(1969)]{fehlberg1969}
+E.~Fehlberg.
+\newblock Klassische {R}unge-{K}utta-{F}ormeln f{\"u}nfter und siebenter
+  {O}rdnung mit {S}chrittweiten-{K}ontrolle.
+\newblock \emph{Computing}, 4\penalty0 (2):\penalty0 93--106, 1969.
+\newblock \doi{10.1007/BF02234758}.
+
+\bibitem[Font(2008)]{font2008}
+Jos{\'e}~A. Font.
+\newblock Numerical {H}ydrodynamics and {M}agnetohydrodynamics in {G}eneral
+  {R}elativity.
+\newblock \emph{Living Reviews in Relativity}, 11:\penalty0 7, 2008.
+\newblock \doi{10.12942/lrr-2008-7}.
+
+\bibitem[{GNU Scientific Library}(2026)]{gsl}
+{GNU Scientific Library}.
+\newblock {GNU Scientific Library}.
+\newblock \url{https://www.gnu.org/software/gsl/}, 2026.
+\newblock Accessed: 2026-10-14.
+
+\bibitem[Gralla and Lupsasca(2020)]{gralla2020}
+Samuel~E. Gralla and Alexandru Lupsasca.
+\newblock Null geodesics of the {K}err exterior.
+\newblock \emph{Physical Review D}, 101\penalty0 (4):\penalty0 044032, 2020.
+\newblock \doi{10.1103/PhysRevD.101.044032}.
+
+\bibitem[Grasso(2022)]{grasso2022}
+Michele Grasso.
+\newblock {BiGONLight}: light propagation with bilocal operators in numerical
+  relativity.
+\newblock \emph{Classical and Quantum Gravity}, 39\penalty0 (1):\penalty0
+  015011, 2022.
+\newblock \doi{10.1088/1361-6382/ac35aa}.
+
+\bibitem[Kerr(1963)]{kerr1963}
+R.~P. Kerr.
+\newblock Gravitational field of a spinning mass as an example of algebraically
+  special metrics.
+\newblock \emph{Physical Review Letters}, 11\penalty0 (23):\penalty0 237--238,
+  1963.
+\newblock \doi{10.1103/PhysRevLett.11.237}.
+
+\bibitem[Kerr and Schild(1965)]{kerrschild1965}
+R.~P. Kerr and A.~Schild.
+\newblock Some {A}lgebraically {D}egenerate {S}olutions of {E}instein's
+  {G}ravitational {F}ield {E}quations.
+\newblock \emph{Proceedings of Symposia in Applied Mathematics}, 17:\penalty0
+  199--209, 1965.
+\newblock \doi{10.1090/psapm/017/0216846}.
+
+\bibitem[{LIGO Scientific Collaboration} and {Virgo
+  Collaboration}(2016)]{abbott2016gw150914}
+{LIGO Scientific Collaboration} and {Virgo Collaboration}.
+\newblock {GW150914: Observation of gravitational waves from a binary black
+  hole merger}.
+\newblock \emph{Physical Review Letters}, 116\penalty0 (6):\penalty0 061102,
+  2016.
+\newblock \doi{10.1103/PhysRevLett.116.061102}.
+\newblock URL \url{https://arxiv.org/abs/1602.03837}.
+
+\bibitem[L{\"o}ffler et~al.(2012)L{\"o}ffler, Faber, Bentivegna, Bode, Diener,
+  Haas, Hinder, Mundim, Ott, Schnetter, et~al.]{loeffler2012}
+F.~L{\"o}ffler, J.~Faber, E.~Bentivegna, T.~Bode, P.~Diener, R.~Haas,
+  I.~Hinder, B.~C. Mundim, C.~D. Ott, E.~Schnetter, et~al.
+\newblock The {E}instein {T}oolkit: a community computational infrastructure
+  for relativistic astrophysics.
+\newblock \emph{Classical and Quantum Gravity}, 29\penalty0 (11):\penalty0
+  115001, 2012.
+\newblock \doi{10.1088/0264-9381/29/11/115001}.
+
+\bibitem[Meurer et~al.(2017)Meurer, Smith, Paprocki, Certik, Kirpichev,
+  Rocklin, Kumar, Ivanov, Moore, Singh, and Rathnayake]{sympy}
+A.~Meurer, C.~P. Smith, M.~Paprocki, O.~Certik, S.~B. Kirpichev, M.~Rocklin,
+  A.~Kumar, S.~Ivanov, J.~K. Moore, S.~Singh, and T.~Rathnayake.
+\newblock {S}ym{P}y: symbolic computing in {P}ython.
+\newblock \emph{PeerJ Computer Science}, 3:\penalty0 e103, 2017.
+\newblock \doi{10.7287/peerj-cs.103}.
+
+\bibitem[Moreno et~al.(2002)Moreno, N{\'u}\~{n}ez, and Sarbach]{moreno2002}
+Claudia Moreno, Dar{\'i}o N{\'u}\~{n}ez, and Olivier Sarbach.
+\newblock {K}err--{S}child-type initial data for black holes with angular
+  momenta.
+\newblock \emph{Classical and Quantum Gravity}, 19\penalty0 (23):\penalty0
+  6059--6073, 2002.
+\newblock \doi{10.1088/0264-9381/19/23/312}.
+
+\bibitem[Park and Nasipak(2024)]{park2024}
+Seyong Park and Zachary Nasipak.
+\newblock {KerrGeoPy}: a {Python} package for computing timelike geodesics in
+  {K}err spacetime.
+\newblock \emph{Journal of Open Source Software}, 9\penalty0 (98):\penalty0
+  6587, 2024.
+\newblock \doi{10.21105/joss.06587}.
+
+\bibitem[Poisson(2004)]{poisson2004}
+Eric Poisson.
+\newblock The {M}otion of {P}oint {P}articles in {C}urved {S}pacetime.
+\newblock \emph{Living Reviews in Relativity}, 7:\penalty0 6, 2004.
+\newblock \doi{10.12942/lrr-2004-6}.
+
+\bibitem[Thornburg(2004)]{thornburg2004}
+J.~Thornburg.
+\newblock Black-hole excision with multiple grid patches.
+\newblock \emph{Classical and Quantum Gravity}, 21\penalty0 (15):\penalty0
+  3665--3691, 2004.
+\newblock \doi{10.1088/0264-9381/21/15/004}.
+\newblock URL \url{https://arxiv.org/abs/gr-qc/0404059}.
+
+\bibitem[Vretinaris et~al.(2026)Vretinaris, Schnetter, and
+  Krishnan]{vretinaris2026}
+Stamatis Vretinaris, Erik Schnetter, and Badri Krishnan.
+\newblock Numerical self-force calculations for scalar particles, formulated in
+  the lab frame.
+\newblock \url{https://arxiv.org/abs/2606.06487}, 2026.
+
+\bibitem[Wilkins(1972)]{wilkins1972}
+D.~C. Wilkins.
+\newblock Bound geodesics in the {K}err metric.
+\newblock \emph{Physical Review D}, 5\penalty0 (4):\penalty0 814--822, 1972.
+\newblock \doi{10.1103/PhysRevD.5.814}.
+
+\end{thebibliography}
