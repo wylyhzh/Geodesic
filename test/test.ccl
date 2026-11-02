@@ -91,8 +91,9 @@
 # chunk boundaries follow the decomposition, so a particle is handed to a
 # new owner at a different point along its path and the floating-point
 # summation order changes: circ_orbit_grid_2p differs from the
-# single-rank circ_orbit_grid by 9.1e-3 in x and 1.13e-2 in y at
-# t = 3200.  Two rank-dependent mechanisms behind the earlier, much
+# single-rank circ_orbit_grid by at most 4.6e-2 in x and 7.0e-2 in y
+# over the whole trajectory (4.6e-2 and 6.6e-2 at the final sample,
+# t = 3200).  Two rank-dependent mechanisms behind the earlier, much
 # larger disagreement are now fixed: the halo exchange covers edges and
 # corners as well as faces (a node Christoffel whose finite-difference
 # window touched an unfilled edge cell used to fall back silently to the

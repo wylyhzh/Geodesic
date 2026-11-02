@@ -1,5 +1,5 @@
 # =============================================================================
-# tp_ring_u1516_100p_x250: uniform h=1.5/16 = 0.09375 (224^3, +/-10.5), no
+# tp_ring_u1516_100p: uniform h=1.5/16 = 0.09375 (224^3, +/-10.5), no
 # refinement -- an intermediate rung between the uniform h=1/8 pair
 # (tp_ring_u18_100p_x250 / _aei_x250) and a uniform h=1/16 run, which would cost
 # 8x this run's per-iteration time (336^3) and about 70 h wall.  dx = 21/224 is
@@ -931,7 +931,7 @@ Geodesic::particle_xv[99]        = -0.903583222968941
 Geodesic::particle_yv[99]        = 0.921183136085745
 Geodesic::particle_zv[99]        = 0
 Geodesic::particle_dump_every    = 8
-Geodesic::particle_dump_file     = "tp_ring_u1516_100p_x250/geodesic_particles.txt"
+Geodesic::particle_dump_file     = "tp_ring_u1516_100p/geodesic_particles.txt"
 Geodesic::particle_loss_policy   = "drop"
 
 # --- checkpoint (2026-10-23): ~28 GB per set uncompressed at ~20M points.

@@ -1,5 +1,5 @@
 # =============================================================================
-# tp_ring_u1516_100p_x250: uniform h=1.5/16 = 0.09375 (224^3, +/-10.5), no
+# tp_ring_u1516_100p_aei: uniform h=1.5/16 = 0.09375 (224^3, +/-10.5), no
 # refinement -- an intermediate rung between the uniform h=1/8 pair
 # (tp_ring_u18_100p_x250 / _aei_x250) and a uniform h=1/16 run, which would cost
 # 8x this run's per-iteration time (336^3) and about 70 h wall.  dx = 21/224 is
@@ -10,7 +10,7 @@
 # uniform run, never as a refinement box inside one of the others.
 # Same GW150914 TwoPunctures background evolved with ML_BSSN (8th-order
 # SBP, MoL-rk4), same 100-particle ring IC at r=8, same particle_start_time=1.6,
-# same local27 sampler.
+# aei sampler (Geodesic::metric_interp = "aei", via AEILocalInterp).
 # dt=0.00625 -- deliberately the particle cadence the AMR twins actually had:
 # tp_ring_h18_amr_r8 asks for 0.025, but Carpet halves dt once a refined level
 # exists and Geodesic integrates particles on that level, so those datasets ran at

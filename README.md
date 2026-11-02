@@ -6,9 +6,10 @@ A parallel test-particle geodesic tracker thorn for the
 - **Paper:** Yuhua Li, *Geodesic: a parallel test-particle geodesic tracker
   for the Einstein Toolkit* (2026; submitted to arXiv, gr-qc cross-listed
   with astro-ph.HE — the identifier will be filled in here once arXiv
-  announces it).  The parameter files that reproduce every number in the
-  paper are in [doc/par/](doc/par/); comments on the manuscript are
-  welcome by mail.
+  announces it).  The parameter files for the runs the paper quotes numbers
+  from are in [doc/par/](doc/par/) (32 of the 46 files there; the rest are
+  exploratory scans and CarpetX smoke tests, see the map below); comments on
+  the manuscript are welcome by mail.
 - **Licence:** GPLv2+ (see [COPYING](COPYING))
 - **Maintainer:** Yuhua Li <liyhts@yeah.net>
 
@@ -221,15 +222,14 @@ Kerr--Schild formulas used by `Exact = yes` are built in.  Activate
   dumps within a 1e-6 tolerance -- measured exactly 0 at 2 and at 4
   ranks on both `extra/conv100_local27.par` and the 4-level AMR
   `extra/ellipse_orbit_amr.par`).  The testsuite's 2-rank test
-  (`test/circ_orbit_mpi`) and the 4-rank `conv100` / TwoPunctures
-  tests are part of the default test set (see Tests below).
+  (`test/circ_orbit_mpi`) is part of the default test set (see Tests
+  below); the 4-rank `conv100` and TwoPunctures checks live in
+  `test/extra/` and are run by hand.
   Ownership is decided with a claim margin of 4 cells around each rank's box;
   the environment variable `GEODESIC_OWNER_MARGIN` overrides it without a
   rebuild (keep it well below the ~7-8 cell gap between the safe region and
   the patch edge, otherwise a claimed particle's stencil reads fall outside
-  the patch).  `GEODESIC_HALO_DEBUG`, set to anything, prints the per-rank
-  halo geometry (`lsh`, bounds, ghost zones, box extents) to stderr before
-  each exchange.
+  the patch).
 - Under the CarpetX driver the multi-process mode is
   different: CarpetX's interpolator is an MPI collective (it redistributes
   the interpolation points over the octree and exchanges the results with
@@ -299,9 +299,13 @@ A complete, tested parameter file (Kerr--Schild metric `M = 2`,
 equatorial circular orbit, `Exact = yes`) is provided in
 [par/example.par](par/example.par).
 
-The parameter files that produced every number in the paper live in
-[doc/par/](doc/par/), so all reported results can be reproduced
-directly.  `par/` itself keeps only the example file above.
+The parameter files for the runs the paper quotes numbers from live in
+[doc/par/](doc/par/): 32 of the 46 files there are mapped to paper sections in
+the table below, the other 14 are 11 exploratory scans kept for provenance and
+3 CarpetX smoke tests (listed after the table).  A few supporting numbers in
+the paper were produced by production scripts that are not checked in --
+notably the seven-level static-box functional check in the cost/lag discussion.
+`par/` itself keeps only the example file above.
 
 | File | Paper section |
 |---|---|
@@ -351,10 +355,10 @@ that provides the ADMBase grid fields.
 
 | Parameter | Meaning |
 |---|---|
-| `particle_n` | number of fixed particles (initial data from the parfile, max 1000); 0 disables |
-| `particle_n_total` | total number of particles (max 10000); the remainder beyond `particle_n` are randomly placed with zero velocity |
-| `particle_x/y/z[0..999]` | initial positions of the first `particle_n` particles |
-| `particle_tv/xv/yv/zv[0..999]` | initial 4-velocity `u^mu` (see above) |
+| `particle_n` | number of fixed particles (initial data from the parfile, max 100); 0 disables |
+| `particle_n_total` | total number of particles (no hard cap; 10^4 is the largest run we report); the remainder beyond `particle_n` are randomly placed with zero velocity |
+| `particle_x/y/z[0..99]` | initial positions of the first `particle_n` particles |
+| `particle_tv/xv/yv/zv[0..99]` | initial 4-velocity `u^mu` (see above) |
 | `step` | coordinate-time advance per Cactus iteration; 0 uses `cctk_delta_time` |
 | `max_iter_cap` | max ODE tau-steps per particle per Cactus iteration (default 2000) |
 | `Exact` | metric source: `no` = grid, `yes` = analytic Kerr--Schild |
@@ -439,8 +443,9 @@ Nine of the ten share one grid: 50^3 KerrSchild over [-25,25]^3 (dx = 1,
 while the grid advances 3.2 M; one of them adds a static CarpetRegrid2
 box.  The tenth runs on the CarpetX driver instead of Carpet, on flat
 ADMBaseX data instead of Kerr.  Measured on this node with
-`OMP_NUM_THREADS=1` and the Cactus driver (`RunTest.pl`): **10 tests, 10
-passed, 29.7 s of wall clock, slowest single test 7.2 s**
+`OMP_NUM_THREADS=1` and the Cactus driver (`RunTest.pl`, revision
+2026.11.02-1): **10 tests, 10 passed, 29.1 s of wall clock, slowest single
+test 7.2 s**
 (`circ_orbit_amr_small`), which is inside the Einstein Toolkit review
 limits (under 10 s per test, under 2 min for the whole component).  Peak
 memory: 422 MB for the heaviest test (`circ_orbit_amr_small`, measured
@@ -686,14 +691,21 @@ comparisons between runs.  For the pre-2026.10.28 dumps without
 (t_first + 0.05 * frame index), which is exact because `particle_dump_every`
 is fixed.
 
-| grid | dx | dt (particle) | point-steps | wall (s) | point-steps/s | median lag at 14.05 | alive at 14.05 | background |
-|---|---|---|---|---|---|---|---|---|
-| AMR 1/8 base + 1/16 box r=8, local27 | 0.125 / 0.0625 | 0.025 / 0.0125 | 2.18e10 | 51,818 | 4.2e5 | +0.013 | 72/100 | stable |
-| AMR 1/8 base + 1/16 box r=8, aei | 0.125 / 0.0625 | 0.025 / 0.0125 | 2.18e10 | 54,782 | 4.0e5 | +0.033 | 76/100 | stable |
-| uniform 1.8/16 (187^3), local27 | 0.1123 | 0.00625 | 1.47e10 | 28,545 | 5.2e5 | 0.000 | 74/100 | stable |
-| uniform 1.8/16 (187^3), aei | 0.1123 | 0.00625 | 1.47e10 | 25,014 | 5.9e5 | 0.000 | 81/100 | stable |
-| uniform 1.5/16 (224^3), local27 | 0.09375 | 0.00625 | 2.53e10 | 47,340 | 5.4e5 | 0.000 | 74/100 | stable |
-| uniform 1.5/16 (224^3), aei | 0.09375 | 0.00625 | 2.53e10 | 44,673 | 5.7e5 | 0.000 | 78/100 | stable |
+| grid | dx | dt (particle) | wall (s) | median lag at 14.05 | alive at 14.05 | background |
+|---|---|---|---|---|---|---|
+| AMR 1/8 base + 1/16 box r=8, local27 | 0.125 / 0.0625 | 0.025 / 0.0125 | 51,818 | +0.013 | 72/100 | stable |
+| AMR 1/8 base + 1/16 box r=8, aei | 0.125 / 0.0625 | 0.025 / 0.0125 | 54,782 | +0.033 | 76/100 | stable |
+| uniform 1.8/16 (187^3), local27 | 0.1123 | 0.00625 | 28,545 | 0.000 | 74/100 | stable |
+| uniform 1.8/16 (187^3), aei | 0.1123 | 0.00625 | 25,014 | 0.000 | 81/100 | stable |
+| uniform 1.5/16 (224^3), local27 | 0.09375 | 0.00625 | 47,340 | 0.000 | 74/100 | stable |
+| uniform 1.5/16 (224^3), aei | 0.09375 | 0.00625 | 44,673 | 0.000 | 78/100 | stable |
+
+Wall time is the only cost measure reported for the AMR rows: a unigrid's grid
+point count is grid size x steps (187^3 x 2248 = 1.47e10, 224^3 x 2248 =
+2.53e10), but the point count of a mesh-refined run across its two levels is
+not something we recomputed, so no point-step or throughput figure is quoted
+for the AMR runs.  The wall times show no AMR saving at f = 0.44: +9% (local27)
+and +23% (aei) over the uniform 1.5/16 runs.
 
 Footnote: the AMR and 1.5/16 runs still use `excised_radius = 2.0` (the
 uniform 1.8/16 run uses 0.0, the correct value for a binary).  That sphere is a
@@ -766,9 +778,10 @@ What this says:
 
    The r = 8 ring forces the box to cover f = 0.44, so the box already costs
    8.1x -- less than half of refining everywhere and therefore worth almost
-   nothing once the fixed AMR overheads are counted: AMR ran 22-31% worse per
-   point-step (4.2e5 / 4.0e5 vs 5.4e5 / 5.7e5), spent 12-23% of wall in
-   Carpet syncs, and left a residual lag (0.013-0.033) that the uniform runs
+   nothing once the fixed AMR overheads are counted: measured wall time put the
+   AMR run 9% above the uniform 1.5/16 run with local27 (51,818 s vs 47,340 s)
+   and 23% above it with aei (54,782 s vs 44,673 s), and AMR also
+   left a residual lag (0.013-0.033) that the uniform runs
    do not.  Those overheads are roughly independent of f, so they are fatal at
    f = 0.44 and negligible for a population confined to r <= 4 (f = 0.055,
    1.9x), where AMR is the right choice.  One more caveat specific to this

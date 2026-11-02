@@ -1,12 +1,14 @@
 # =============================================================================
-# tp_local27_ml_unigrid: unigrid 144^3 (dx=0.25, +/-18) + the exact 100-particle
-# strong ring IC of tp_l27r_025.par, but the TwoPunctures GW150914 background
-# is EVOLVED with ML_BSSN (8th-order SBP, MoL-rk4) -- the old run held the
-# metric frozen.  A/B pair for Sec. 5.6: new data vs old frozen data (l1.txt)
-# at identical snapshot times t=1..20.
-# dt=0.05 (dtdx=0.2 <= 0.225 stability limit; old dt=0.1 would exceed it),
-# 400 steps -> t_final=20 (same time span as the old 200-step run).
-# Dump every 20 steps -> 20 snapshots at t=1..20, matching l1.txt.
+# tp_ring_h18_amr_r8: the TwoPunctures GW150914 background EVOLVED with
+# ML_BSSN (8th-order SBP, MoL-rk4) on an AMR mesh: base grid 168^3 over
+# +-10.5 (dx = 1/8) plus one CarpetRegrid2 box of radius 8 at dx = 1/16,
+# i.e. 2 refinement levels.  The exact 100-particle r = 8 equatorial ring IC
+# of tp_l27r_025.par, released at t = 1.60 (particle_start_time, not steps, so
+# the release lands at the same coordinate time as the unigrid rows of the
+# cost/lag table).
+# dt = 0.025 on the base level, 0.0125 on the refined level (subcycling);
+# cctk_itlast counts finest-level iterations, so 1124 steps -> t_final = 14.05.
+# particle_dump_every = 4 finest-level iterations = 0.05 in coordinate time.
 # ghost_size=5 (8th-order SBP needs 5 ghost cells).
 # =============================================================================
 Cactus::cctk_run_title = "tp_ring_h18_amr_r8"

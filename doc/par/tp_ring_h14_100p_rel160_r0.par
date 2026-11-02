@@ -1,12 +1,15 @@
 # =============================================================================
-# tp_local27_ml_unigrid: unigrid 144^3 (dx=0.25, +/-18) + the exact 100-particle
-# strong ring IC of tp_l27r_025.par, but the TwoPunctures GW150914 background
-# is EVOLVED with ML_BSSN (8th-order SBP, MoL-rk4) -- the old run held the
-# metric frozen.  A/B pair for Sec. 5.6: new data vs old frozen data (l1.txt)
-# at identical snapshot times t=1..20.
-# dt=0.05 (dtdx=0.2 <= 0.225 stability limit; old dt=0.1 would exceed it),
-# 400 steps -> t_final=20 (same time span as the old 200-step run).
-# Dump every 20 steps -> 20 snapshots at t=1..20, matching l1.txt.
+# tp_ring_h14_100p_rel160_r0: unigrid 74^3 over +-9.25 (dx = 0.25), single
+# level, on the EVOLVED TwoPunctures GW150914 background (ML_BSSN fdOrder=8,
+# SummationByParts, MoL) -- the old run held the metric frozen.
+# The exact 100-particle r = 8 equatorial ring IC of tp_l27r_025.par, released
+# at t = 1.60 (particle_start_time, not steps).
+# dt = 0.05 (dtdx = 0.2, below the 0.225 ML_BSSN limit), 232 steps ->
+# t_final = 11.60; particle_dump_every = 1 -> one snapshot per 0.05 of
+# coordinate time.  This is the "ring lost before 11.60" row of the cost/lag
+# table.
+# excised_radius = 0.0 (the "_r0" in the name): a binary has two punctures, so
+# an excision sphere centred on the origin is meaningless.
 # ghost_size=5 (8th-order SBP needs 5 ghost cells).
 # =============================================================================
 Cactus::cctk_run_title = "tp_ring_h14_100p_rel160"

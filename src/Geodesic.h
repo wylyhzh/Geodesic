@@ -95,7 +95,7 @@
    and written into the header of every particle dump; bump it whenever
    behaviour changes.  Format: YYYY.MM.DD-<counter>. */
 #ifndef GEODESIC_REVISION
-#define GEODESIC_REVISION "2026.10.29-1"
+#define GEODESIC_REVISION "2026.11.02-1"
 #endif
 
 /* -------------------- Polynomial interpolation order (fixed) -------------------- */
