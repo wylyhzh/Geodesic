@@ -1,0 +1,20 @@
+{
+  "title": "Geodesic: a parallel test-particle geodesic tracker for the Einstein Toolkit",
+  "upload_type": "software",
+  "creators": [
+    {
+      "name": "Li, Yuhua"
+    }
+  ],
+  "license": "GPL-2.0-or-later",
+  "description": "Geodesic is an Einstein Toolkit thorn that integrates timelike test-particle geodesics through the spacetime carried on the Cactus grid. It samples the metric from the grid, integrates with GSL Runge-Kutta, and re-imposes g(u,u) = -1 after each step. It supports Carpet, CarpetRegrid2 AMR, MultiPatch grids, MPI + OpenMP, checkpoint restart, and basic CPU-only CarpetX support. Multi-rank behaviour with the grid samplers is validated at 1, 2 and 4 MPI ranks. The repository contains the thorn source, documentation, the parameter files of the published runs, and the companion paper sources. New-thorn proposal: https://github.com/EinsteinToolkit/tickets/issues/2986",
+  "keywords": [
+    "Einstein Toolkit",
+    "Cactus",
+    "numerical relativity",
+    "geodesic",
+    "test particle",
+    "Carpet",
+    "AMR"
+  ]
+}
