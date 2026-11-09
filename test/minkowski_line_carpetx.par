@@ -1,8 +1,8 @@
 #------------------------------------------------------------------------------
 # Geodesic + CarpetX: Minkowski straight lines, four particles.
 #
-# This is the CarpetX counterpart of the eight KerrSchild tests in this
-# directory, which all run on the Carpet driver.  CarpetX cannot host those:
+# This is the flat-space CarpetX counterpart of the nine KerrSchild tests in
+# this directory, which all run on the Carpet driver.  CarpetX cannot host those:
 # the metric there comes from ADMBaseX, whose initial data is limited to
 # "Cartesian Minkowski" and "linear wave" (ADMBaseX/param.ccl) -- there is no
 # Kerr-Schild initial data for ADMBaseX -- and ADMBase itself cannot be
@@ -39,9 +39,10 @@
 #                               test/check_mpi_identity.sh.
 #
 # Grid: [-10,10]^3 with 64 cells per dimension (dx = 0.3125), one level,
-# dt = dtfac * min(dx) = 0.32 * 0.3125 = 0.1, 32 steps to t = 3.2 -- the same
-# step count and grid dt as the KerrSchild tests above.  Geodesic::step = 0.0
-# advances the particle clock by the elapsed grid time, so the particle
+# dt = dtfac * min(dx) = 0.32 * 0.3125 = 0.1, 32 steps to t = 3.2.  The Kerr
+# tests instead use 32 or 225 steps with a larger particle step.
+# Geodesic::step = 0.0 advances the particle clock by the elapsed grid time,
+# so the particle
 # coordinate time also ends at 3.2 and every particle stays well inside the
 # grid (max radius reached 2 + 0.5 * 3.2 = 3.6).
 #------------------------------------------------------------------------------

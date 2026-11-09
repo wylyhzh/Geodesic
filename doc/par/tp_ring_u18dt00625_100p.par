@@ -20,7 +20,8 @@
 # (tp_ring_u18dt0125_100p) is 16x further away at the same time (4.1e-3).  So
 # the early-time disagreement with 1.5/16 is the time step, not the mesh, and
 # this run asks how far h=1/8 can be trusted once the cadence is matched.
-# Cost: 169^3 x 2248 = 1.09e10 point-steps -> 5.6-6.5 h on 4 ranks x 21 threads.
+# Cost: 169^3 grid points (168^3 cells) x 2248 = 1.09e10 point-steps ->
+#      5.6-6.5 h on 4 ranks x 21 threads.
 # =============================================================================
 Cactus::cctk_run_title = "tp_ring_u18dt00625_100p"
 Cactus::cctk_full_warnings = "no"

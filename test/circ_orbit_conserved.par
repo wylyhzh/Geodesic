@@ -2,7 +2,7 @@
 # Testsuite parfile: Geodesic/circ_orbit_conserved
 #
 # Prograde equatorial circular orbit at radius 11.989 (M = 2, a = 0.5),
-# Exact = yes, one particle, 32 Cactus steps of 100 coordinate-time
+# Exact = yes, one particle, 225 Cactus steps of 5 coordinate-time
 # units.  The full particle state is dumped every iteration to
 # circ_orbit_conserved/geodesic_particles.txt (relative to the test run
 # directory); the testsuite compares it with the reference data in
@@ -15,7 +15,7 @@ Cactus::cctk_run_title = "Geodesic test circ_orbit_conserved"
 Cactus::cctk_full_warnings         = "yes"
 
 Cactus::terminate        = "iteration"
-Cactus::cctk_itlast      =  32
+Cactus::cctk_itlast      =  225
 Time::timestep_method    = "given"
 Time::timestep           =  0.1
 
@@ -120,7 +120,15 @@ Geodesic::initial_radius         = 35.0
 Geodesic::Exact                  = "yes"
 Geodesic::rverbose               = "no"
 Geodesic::gverbose               = "no"
-Geodesic::step                   = 100.0
+# step = 5 rather than 100, and 225 Cactus steps rather than 32: 225 dumps of 5 M
+# each is t = 1125, i.e. 5.98 revolutions (the orbit period measured from the dumps is
+# 188.2 M with Exact = yes, 187.5 M for the l27 sampler), so 37.5 samples per
+# revolution, which is what makes the x-y trace close into a circle
+# (the polyline is 0.35% off a true circle) rather than the aliased star polygon a
+# 32-sample dump (2.2 samples per revolution) draws.  The dump is one block per
+# Cactus iteration, so the Cactus steps are what buy the roundness; 225 is the count
+# that keeps the whole component inside the 2 min review budget.
+Geodesic::step                   = 5.0
 Geodesic::particle_n_total       = 1
 Geodesic::particle_n             = 1
 

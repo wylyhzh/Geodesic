@@ -163,14 +163,16 @@ $L_z = -y\,u_x + x\,u_y$（其中 $u_\mu = g_{\mu\nu}u^\nu$ 为协变分量）�
 thorn 以固有时 $\tau$ 为自变量积分式 (\ref{eq:geo})，用自适应五阶
 Runge--Kutta--Fehlberg 格式（RKF45, \citealt{fehlberg1969}；即 GNU
 Scientific Library~\citep{gsl} 的 \texttt{rkf45} 驱动器），
-绝对误差容差 $10^{-8}$、相对误差容差为零。每个 Cactus 时间步把粒子推进到
+绝对误差容差 $10^{-8}$、相对误差容差为零。每个 Cactus 时间步尝试把粒子推进到
 坐标时间 $t + \Delta t$：先预测使 $t$ 落在目标值上的固有时间增量，
-再用线性回插消除超调，使所有粒子共享 Cactus 时间轴。单个 Cactus 步内
-的固有时子步数受每粒子上限 \texttt{max\_iter\_cap}（默认 2000）约束，
-避免固有时步长坍缩的粒子（如接近视界时）卡住整个演化。
+再用线性回插消除超调。单个 Cactus 步内的固有时子步数受每粒子上限
+\texttt{max\_iter\_cap}（默认 2000）约束，避免固有时步长坍缩的粒子
+（如接近视界时）卡住整个演化。若在到达目标前触及上限，粒子时钟会落后于网格
+时钟并发出警告；dump 中的 \texttt{cctk\_time} 列使该滞后可见。
 每一步之后对四速度重新归一化，
 使 $g_{\mu\nu}u^\mu u^\nu = -1$ 在舍入精度内成立，从而消除纯自适应积分器
-会累积的范数长期漂移。归一化时保持 ODE 步产生的空间分量 $u^i$ 不变，
+会累积的范数长期漂移。对 \texttt{local27}、\texttt{aei}、\texttt{carpet}
+与 CarpetX 采样器，归一化时保持 ODE 步产生的空间分量 $u^i$ 不变，
 将约束作为关于 $u^t$ 的二次方程求解：
 \begin{equation}
 g_{00}\,(u^t)^2 + 2\,g_{0i}\,u^i\,u^t + \left(1 + \gamma_{ij}u^i u^j\right) = 0,
@@ -179,15 +181,17 @@ g_{00}\,(u^t)^2 + 2\,g_{0i}\,u^i\,u^t + \left(1 + \gamma_{ij}u^i u^j\right) = 0,
 取未来指向的根。在 ergosphere 之外（$g_{00}<0$），两根异号，唯一正根无歧义；
 在 ergosphere 之内，同一组 $u^i$ 可能确实对应两个未来指向的解（这是系拖
 的几何效应），此时按连续性选取，即取最接近重新归一化之前 ODE 步产生的
-$u^t$ 的那个根。
+$u^t$ 的那个根。旧式 \texttt{l27} 采样器则改用
+$1/\sqrt{-g_{\mu\nu}u^\mu u^\nu}$ 整体缩放四个分量。
 
 \subsection{四速度的初始化}
 
 粒子初值在 par 文件中以位置 $(x,y,z)$ 和 Kerr--Schild 坐标下的逆变四速度
 分量 $u^\mu$ 给出，其中 $u^\mu=(u^t,u^x,u^y,u^z)$。第一个时间步时，thorn 在初始位置求值
 度规并检查归一化条件 $g_{\mu\nu}u^\mu u^\nu = -1$：若以 $10^{-6}$ 的容差
-满足，则原样使用输入，日志中注明；否则保持 $u^i$ 不变，由式
-(\ref{eq:renorm}) 重新求解 $u^t$，并把修正前后两个值写入日志。该检查是
+满足，则原样使用输入，日志中注明；否则应用与采样器相同的修正并记录日志：
+除 \texttt{l27} 外均保持 $u^i$ 不变、由式 (\ref{eq:renorm}) 重新求解 $u^t$；
+\texttt{l27} 则整体缩放四个分量。该检查是
 幂等的：把日志中记录的初值再填回 par 文件，数值不会改变。$10^{-6}$ 的
 容差是有意放宽松的——上文的每步再归一化在第一步就会把约束恢复到舍入
 精度。本文使用的全部轨道都先用独立的 Python 实现（RK4，
@@ -241,12 +245,16 @@ $10^{-12}$ 一致），此时 $\partial_t g_{\mu\nu} = 0$ 严格成立、时间�
 $\mathcal{O}(\Delta x^3)$，而模板值的差分误差为 $\mathcal{O}(\Delta x^6)$，
 不构成收敛限制。拟合退化或非有限时按丢失策略丢粒（Sec.~\ref{sec:impl}），
 该模式没有后备插值。采样点被裁剪到局部处理器盒子内部的格单元，因此
-模板不会触及鬼格区，该采样器在 MPI 域分解下是安全的；但在多进程运行中，
-若粒子位于 rank 面之上或距其仅数格之内，模板中心会被裁剪得偏离粒子，
-单侧 27 点拟合通过不了有效性检查，粒子会在第一步被丢弃（其他后端不受
-影响）——4-rank 单级网格默认 $2\times2$（$y,z$）分解下，所有赤道粒子都
-落在 $z=0$ 的 rank 面上，这正是测试套件中 \texttt{l27} 以单进程运行的
-原因。
+模板不会触及鬼格区，该采样器在 MPI 域分解下是安全的。这条裁剪只在没有
+halo 时生效：它把模板中心平移到读取窗口能落在盒内的指标范围，被平移推出
+自身模板的粒子按丢失策略丢弃，而不是偏心采样。多进程运行中改由
+Sec.~\ref{sec:impl} 的 halo 交换提供以粒子为中心的窗口，因此既不裁剪也不
+丢粒——测试套件里这个采样器就跑在 2 个 MPI rank 上
+（\texttt{circ\_orbit\_grid\_l27}），其赤道粒子在 1、2、4 个 rank 下的 225
+帧 dump 中始终存在（2026-11-09 实测）。但 \texttt{l27} 没有 rank 数无关性：
+该用例上 4-rank dump 与单 rank 在整段 $t = 0 \ldots 1125\,M$ 上位置相差
+$2.2\times10^{-1}$，而默认 \texttt{local27} 在两个 rank 下是
+$8.7\times10^{-3}$。
 
 \paragraph{local27（默认）。}
 自包含的变体，模板比 \texttt{l27} 更宽、拟合次数更高：对三个存储时间层中的每一层，thorn 对每个度规分量
@@ -322,18 +330,21 @@ rank 数的原因。chunk 边界约束对粒子正好坐落其上的面同样生
 以 \texttt{FACE\_EPS} 为下限）；否则这样的粒子会取一个无界的 chunk，
 一口气飞过相邻子域后才被丢弃。拟合历史标志随粒子状态在每个 chunk 边界
 一起传递，因此移交给新所有者的粒子会重新拟合，而不是沿用前一个所有者的
-缓存多项式。对网格拟合采样器，该方案因此在舍入意义下与 rank 数无关：
-同一个 par 文件在 1、2、4 个 rank 下给出的粒子 dump 在最差一列上符合到
-$1.1\times10^{-8}$，在两个 rank 下则完全相同，包括模板跨越 rank 面的粒子。
-不期望逐位相同：chunk 边界随域分解而变，粒子在路径上的不同点移交给新
-所有者，浮点求和顺序随之改变。测试套件强制这一符合性：
-四进程测试 \texttt{conv100\_local27} 与其单进程孪生
-\texttt{conv100\_local27\_1p} 都与同一份参考 dump 比较；thorn 还附带
-1/2/4 rank 的一致性脚本 \texttt{test/check\_mpi\_identity.sh}（容差 $10^{-6}$）。
-逐点采样器则通过
+缓存多项式。rank 数无关性取决于具体用例，并非普遍的逐位一致保证：
+在较短的单级网格 \texttt{conv100\_local27} 用例上，1、2、4 rank 的 dump
+逐位相同（2026-11-08 重测；上面两条规则更早的版本会在最差一列留下
+$1.1\times10^{-8}$ 的差）。本地回归集将该用例与单进程孪生
+\texttt{conv100\_local27\_1p} 比较；thorn 还附带 1/2/4 rank 的一致性脚本
+\texttt{test/check\_mpi\_identity.sh}（容差 $10^{-6}$）。一般而言，chunk
+边界随域分解而变，粒子可能在路径上的不同点移交给新所有者，浮点求和顺序
+随之改变。在单粒子的 \texttt{circ\_orbit\_grid} 用例上，同样的
+1-vs-2-rank 比较在整段 $t = 0 \ldots 1125\,M$ 积分上仍会漂到 $x$ 方向
+$8.4\times10^{-3}$、$y$ 方向 $8.7\times10^{-3}$。逐点采样器则通过
 \texttt{CCTK\_InterpLocalUniform} 只从本 rank 自己的 patch 插值，其模板在
-patch 边界处被截断；同一个 par 文件在 1 与 4 个 rank 下相对符合到约
-$3\times10^{-13}$ 而非逐位相同，对这些后端不声称逐位一致。目前支持至多四个 rank（$y$、$z$ 方向 $2\times2$ 分解，
+patch 边界处被截断；短单级网格用例相对符合到约 $3\times10^{-13}$，而下文
+较长的四进程 AMR 比较中位置差达 $9.5\times10^{-2}$，因此对这些后端不声称
+逐位一致或普遍的 rank 无关误差界。owner-computes 实现目前支持至多四个 rank
+（$y$、$z$ 方向 $2\times2$ 分解，
 每 rank 每层一个 patch）。多进程 \texttt{Exact} 运行中解析度规处处
 有效，故由 rank~0 积分全部粒子并写 dump。积分调度在
 \texttt{CCTK\_POSTSTEP} 的 Carpet 层模式：每次调用把该层的网格指针与
@@ -359,13 +370,15 @@ $|z| < \mathrm{particle\_middle\_sp}$（默认 $1.0$）三个拒绝条件
 以在长时运行中保持粒子数恒定、防止单个丢失粒子破坏统计。
 
 \paragraph{诊断。}
-当 \texttt{particle\_dump\_every = k > 0} 时，thorn 把完整
-粒子状态 $(t,x,y,z,u^t,u^x,u^y,u^z,\tau)$ 写入参数
-\texttt{particle\_dump\_file} 指定的文件（默认
-\texttt{geodesic\_particles.txt}，位于工作目录）：文件以初始状态
-（$t=0$，在第一步积分之前记录）开头，之后每 $k$ 个迭代追加一组行（仅
-rank~0）；该文件是下文全部验证图的数据来源。\texttt{rverbose = yes}
-会在每次 ODE 右端求值时把粒子状态打印到日志，供调试用。
+当 \texttt{particle\_dump\_every = k > 0} 时，thorn 把每个粒子的十列状态
+$(t,x,y,z,\allowbreak u^t,u^x,u^y,u^z,\allowbreak \tau,\texttt{cctk\_time})$ 写入文件。
+
+文件路径由 \texttt{particle\_dump\_file} 指定，默认为工作目录中的
+\texttt{geodesic\_particles.txt}。视 driver 与粒子释放设置而定，
+第一步积分之前可以写入一组初始状态；之后每 $k$ 个迭代追加一组行（仅 rank~0）。
+2026.10.21-1 及更早版本的文件没有 \texttt{cctk\_time}，只有九列。该文件是下文
+全部验证图的数据来源。\texttt{rverbose = yes} 会在每次 ODE 右端求值时把粒子状态
+打印到日志，供调试用。
 
 \section{验证}\label{sec:verification}
 
@@ -573,10 +586,11 @@ $\Delta x = 1$，单进程下被采到 $\Delta x = 1/2$。改为先选层——�
 $t = 1600$ 时 $6.0\times10^{-2}$，$t = 3200$ 时
 $1.6\times10^{-1}$）。测试套件里较短的那个 AMR 用例
 （\texttt{extra/ellipse\_orbit\_amr.par}，四层，$t = 25.6$）中，1、2、
-4 进程的 dump 仍然逐位相同。在没有内部面的单级网格上，同样的比较处于
-roundoff 水平：\texttt{conv100\_local27} 在 1、2、4 rank 下符合到
-$1.1\times10^{-8}$，且那里的偏差有界、随轨道振荡而不增长
-（Sec.~\ref{sec:impl}）。这在生产使用中没有不利影响：在
+4 进程的 dump 仍然逐位相同。在没有内部面的单级网格上，同样的比较现在
+是精确的：在完整的 200 步 \texttt{conv100\_local27} 用例（$t = 20$）上，
+1、2、4 进程的 dump 在每一列上都相差 $0.0$（\texttt{test/check\_mpi\_identity.sh}，
+2026-11-08 重测）；更早的 chunk 边界规则曾留下 $1.1\times10^{-8}$
+的有界、随轨道周期振荡的残差（Sec.~\ref{sec:impl}）。这在生产使用中没有不利影响：在
 \texttt{GRHydro} 演化或任何由网格承载的时空中，网格场\emph{本身}就是
 真实度规，单进程 run 表明追踪器能忠实跟随它。
 
@@ -590,8 +604,8 @@ Sec.~\ref{sec:samplers} 的默认路径。\texttt{aei} 与
 四进程与单进程 \texttt{aei} 在整个运行中相差 $9.5\times10^{-2}$
 （两者相对精确参考分别是 $2.1\times10^{-2}$ 与
 $8.5\times10^{-2}$）——因此表中引用的是单进程的 \texttt{aei} 与
-\texttt{carpet} run，它们相对参考的偏差更小、定义也更干净。真正必须
-单进程运行的是 \texttt{l27} 路径（Sec.~\ref{sec:samplers}）。
+\texttt{carpet} run，它们相对参考的偏差更小、定义也更干净。\texttt{l27}
+同样支持多进程运行，但其轨迹不具备 rank 数无关性（Sec.~\ref{sec:samplers}）。
 
 \subsection{AMR 网格上的测地线轨道}\label{sec:amr-orbits}
 
@@ -600,13 +614,12 @@ $8.5\times10^{-2}$）——因此表中引用的是单进程的 \texttt{aei} 与
 的圆轨道上验证这一点（Kerr--Schild，$M=2$，$a=0.5$，粒子位于
 $r=10$ 赤道圆轨道上，积分到 $t=150.1$，约 $1.05$ 个轨道周期，
 $T\simeq 143$），现改在三层分辨率的 AMR 网格上演化：$50^3$ 底网格
-（$\Delta x=1$），原点为中心的 refinement 盒两次加密（factor 2，
-第一层半宽 $16$ 格，其内 $8$ 格），最细层 $\Delta x=1/4$。轨道粒子
-全程位于第一 refinement 层（$\Delta x=1/2$）——与 $100^3$ 单级参考的
-局部分辨率相同——在盒对角方向附近进入第二层（$\Delta x=1/4$）。粒子
-积分器其余不变（RKF45、与参考 run 相同的 seed 与初值），因此两套设置
-之间
-的差别只有网格结构以及 driver 的 4:1 子环（subcycling）。
+（$\Delta x=1$），原点为中心、坐标半宽分别为 $16$ 与 $8$ 的 refinement 盒
+两次加密（factor 2），最细层 $\Delta x=1/4$。由于 $r=10>8$，轨道粒子始终
+在最内层盒之外，全程由第一 refinement 层（$\Delta x=1/2$）采样——与 $100^3$
+单级参考的局部分辨率相同。因此该测试检验的是多层网格与 4:1 子环下的运行，
+并不检验跨 refinement 层转换。粒子积分器其余不变（RKF45、与参考 run 相同的
+seed 与初值）。
 
 \begin{table}[h]
 \centering
@@ -636,9 +649,8 @@ carpet          & $3.4\times10^{-1}$ & $2.3\times10^{-1}$ & $4.2\times10^{-2}$ \
 \texttt{aei} 与 \texttt{carpet} 两行还叠加了采样器的改变，这张表不构成对采样器
 精度的排序（精度比较见 Sec.~\ref{sec:sampler-compare}）。网格稳定后的第一个
 dump（$t=10.1$）三种偏差已是小 $t$ 量级（位置 $\lesssim5\times10^{-3}$），没有
-与 refinement 相关的瞬态：逐点采样器在 AMR 网格上（包括跨层边界处）能正确解析度
-规，测地线方程可以在 Carpet AMR 演化（含 4:1 subcycling）中直接积分，积分器无需
-修改。
+与 refinement 相关的瞬态；测地线方程可以在这套 Carpet AMR 网格（含 4:1
+subcycling）中直接积分，积分器无需修改。
 
 \subsection{双穿孔并合度规背景下的稳健性}\label{sec:gw150914}
 
@@ -790,10 +802,7 @@ $47{,}340$ s（多 $9\%$），\texttt{aei} 那一对是 $54{,}782$ s 对 $44{,}6
 时 AMR 才划算。更关键的是，
 真正受限的是背景属性：只罩住粒子的细化盒并不能让粗背景稳定。因此粒子不集中在
 很小区域时，均匀网格加合适的 $\Delta t$ 是更简单也更便宜的选择；粒子确实集中时
-AMR 仍有优势。作为 AMR 路径上的功能验证，我们也跑过一个 $7$ 层静止盒的多 patch
-网格（$2048$ 个最细层步，$t\simeq0\ldots4.4$）：$100$ 个粒子在
-\texttt{local27} 与 \texttt{aei} 下全程有限、零丢粒，两种后端位置一致到
-$1.0\times10^{-1}$（该网格的离散水平），说明跨层边界处的度规采样是正确的。
+AMR 仍有优势。
 
 \paragraph{冻结初值校核。}
 在冻结的原始初值上（纯几何绕行校核，不代表并合本身），远环（$r=10$，顺行切向
@@ -804,16 +813,15 @@ $1.0\times10^{-1}$（该网格的离散水平），说明跨层边界处的度�
 $t=6$ 起出现确定性的 \texttt{NaN} 丢失（\texttt{loss\_policy = drop}），到
 $t=20$ 恰好丢失 $100$ 个中的 $50$ 个，三种后端的丢失模式几乎相同：\texttt{aei}
 与 \texttt{carpet} 逐位一致，\texttt{local27} 仅在 $50$ 个丢失粒子中有两个不同。
-每次丢失都是对强场/割除区的物理穿越，而非积分器的数值失败：在 Kerr 背景上这类
-轨道即坠轨测地线，其终态有解析结果可依据\citep{dyson2023}。全部六个冻结 run 都
-是 thorn 自动验证套件（\texttt{test/test.ccl}）的一部分；\texttt{NaNChecker}
-感知的比较器把近环的确定性丢失模式变成了回归测试。
+这些丢失在轨迹接近穿孔时由强场/割除判据触发；dump 未显示积分器故障，但这份冻结
+双穿孔数据没有解析坠轨参考。全部六个冻结 run 都位于本地回归集
+\texttt{test/extra/}，不属于自动测试套件 \texttt{test/test.ccl}；参考 dump 与
+NaN 感知比较器把近环的确定性丢失模式变成手动回归测试。
 
 \paragraph{冻结初值上的分辨率扫描。}
-由于双穿孔背景没有解析参考，我们在三个单级网格分辨率下重复 $r=8$ 近环 run，保持
-单元数固定为 $144^3$ 并同步缩小计算域（$\pm72$、$\pm36$、$\pm18$，即
-$\Delta x=1$、$0.5$、$0.25$），使三个 run 用相同数目的单元分辨穿孔区域；三个 run
-的积分参数完全相同，只有网格分辨率不同。在这份冻结数据上 \texttt{aei} 与
+由于双穿孔背景没有解析参考，我们重复 $r=8$ 近环 run，保持单元数固定为 $144^3$
+并同步缩小计算域（$\pm72$、$\pm36$、$\pm18$，即 $\Delta x=1$、$0.5$、$0.25$）。
+因此分辨率与计算域范围同时改变；其余积分参数相同。在这份冻结数据上 \texttt{aei} 与
 \texttt{carpet} 在每个分辨率下都逐位相同（Sec.~\ref{sec:sampler-compare} 已表明
 二者是同一计算），因此合并为一列。表 \ref{tab:tpconv} 给出相邻分辨率对之间、在两
 个 run 中都存活的粒子于相同快照时刻的位置与速度差的中位数。我们报告中位数而非
@@ -885,9 +893,8 @@ OpenMP 调度开销一致。
 $5000$ 粒子 run 中耗时 $49.7$ s（总墙钟时间 $2860.5$ s 的 $1.7\%$），
 在 $10^4$ 粒子 run 中耗时 $84.1$ s（$2749.1$ s 的 $\num{hydrofrac}\%$）：
 主要开销仍是水动力重构（$\sim\!27\%$）与 Riemann 求解（$\sim\!10\%$），
-且粒子数翻倍时积分耗时仅增长 $1.7$ 倍。由于这些比例是在并发实例的
-资源争抢下测得的，独占运行时占比只会更小——因此，在演化过程中同步
-追踪测试粒子的开销相对演化本身基本可以忽略。
+且粒子数翻倍时积分耗时仅增长 $1.7$ 倍。这些百分比是在并发实例资源争抢下
+测得的；我们没有测量独占运行的对照，因此不把该开销外推到独占情形。
 
 \section{结论与可用性}\label{sec:concl}
 
@@ -920,14 +927,12 @@ $t=14.05\,M$，代价主要由背景分辨率决定，$\Delta t$ 是更便宜的
 thorn 以 GPLv2+ 许可证发布，随文提供本文所用的全部配置文件，本文的源文件与
 图也在同一仓库（\texttt{paper/} 与 \texttt{paper\_zh/}），仓库地址为
 \url{https://github.com/wylyhzh/Geodesic}。该仓库
-\texttt{doc/par/} 共有 46 份参数文件，其中 32 份就是上文引用的那些运行：
+\texttt{doc/par/} 共有 47 份参数文件，其中 33 份就是上文引用的那些运行：
 Sec.~\ref{sec:convergence} 的守恒与网格收敛运行、Sec.~\ref{sec:sampler-compare}
 的采样器比较、Sec.~\ref{sec:amr-orbits} 的 AMR 轨道、Sec.~\ref{sec:gw150914} 的
 \texttt{GW150914} 运行与 Sec.~\ref{sec:scaling} 的扩展性运行；其
 \texttt{README.md} 给出了它们与各章节的对应关系。其余 14 份里，11 份是为保留
-参数来历而存档的探索性扫描（正文未引用），3 份是 CarpetX 冒烟测试。
-Sec.~\ref{sec:gw150914} 引用的那项 $7$ 层静止盒功能验证是在生产脚本里跑的，
-脚本未签入仓库。该 thorn 同时驱动
+参数来历而存档的探索性扫描（正文未引用），3 份是 CarpetX 冒烟测试。该 thorn 同时驱动
 Einstein Toolkit 的两个网格驱动 \texttt{Carpet}（上文所有结果都用它）与
 \texttt{CarpetX}；因为 \texttt{CarpetX::decode\_mode} 默认是 local 模式，
 否则会把粒子循环每个 tile 调用一次，我们为 \texttt{CarpetX} 显式提供

@@ -15,10 +15,9 @@ the TwoPunctures BBH sets, and the conv100 sampler comparisons at
 How to run them
 ---------------
 
-    cd <Cactus>/arrangements/EinsteinAnalysis/Geodesic/test
-    ./run_tests.sh -all          # uses RunTest.pl on the sim configuration
-
-or one at a time, from a scratch directory:
+`run_tests.sh` runs only the registered tests in `test/`; it does not run
+this directory.  Run these configurations one at a time from a scratch
+directory:
 
     mkdir /tmp/rt && cd /tmp/rt
     OMP_NUM_THREADS=1 mpirun -np 4 \
@@ -39,3 +38,18 @@ matching par.  The conv100 and tp_* references were regenerated on
 2026-10-28 with the 10-column dump (revision 2026.10.28-1 added
 `cctk_time`); the `*.regen.out` and `*.out` files in this directory are
 the console logs of those runs, kept for reference only.
+
+`circ_orbit_dense.par` is the exception: it has no reference dump because
+it is not a regression test.  It is `circ_orbit.par` with
+`Geodesic::step = 4` and `cctk_itlast = 800` instead of 100 and 32, so the
+dump has 800 samples instead of 32.  The reason is a plotting one: 32
+samples spread over 17.06 revolutions is 167.8 deg per frame, and joining
+consecutive samples draws a {32/15} star polygon that looks like a rose.
+The orbit is a circle either way -- `r` stays at 11.989 to within 2.7e-7
+over t = 0..3200 -- and at 4 time units per dump the x-y plot is the
+circle it already is numerically.  Verified 2026-11-08: 800 steps, 803
+dump lines (800 data rows, t = 4..3200), `r` within 2.1e-7 of 11.989,
+~90 s wall at 1 rank x 1 thread.  Since 2026-11-09 eight of the nine
+Kerr testsuite tests take 37.5 samples per revolution themselves (9.6 deg
+per frame) and plot as circles, so this par is only needed to draw the
+dense curve next to the still-sparse `circ_orbit` dump.

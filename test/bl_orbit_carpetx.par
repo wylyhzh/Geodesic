@@ -1,0 +1,216 @@
+#------------------------------------------------------------------------------
+# Testsuite parfile: Geodesic/bl_orbit_carpetx
+#
+# The second CarpetX test, and the first one on a CURVED background.
+# minkowski_line_carpetx.par can only run on flat ADMBaseX data: ADMBaseX's
+# initial_data keyword offers just "none", "Cartesian Minkowski" and "linear
+# wave", and ADMBase (which does have Kerr-Schild) cannot be combined with
+# CarpetX at all -- CarpetX::SetupGlobals asserts that every
+# non-grid-function group is REAL and CONSTANT, while ADMBase declares INT
+# SCALAR groups such as shift_state (CarpetX/src/driver.cxx:1782-1787).
+# SpacetimeX/BrillLindquist is the first initial-data thorn that fits: it
+# INHERITS ADMBaseX, declares only REAL grid functions, and needs only Loop,
+# so it extends ADMBaseX::initial_data with "Brill-Lindquist".
+#
+# The data is conformally flat and time symmetric:
+#     gamma_ij = (1 + m/2r)^4 delta_ij,   K_ij = 0,
+#     alpha    = 1/(1 + m/2r),            beta^i = 0,
+# with the puncture capped by BrillLindquist::min_radius (the grid values
+# reproduce the analytic formula to 4e-16, and the cap gives gamma_xx = 81 at
+# r = 0).  Nothing evolves it, so the metric is stationary and the sampler
+# sees a non-trivial curved field with no time dependence.
+#
+# Four particles at r = 6 with tangential coordinate speed 0.28 (u^i = 0.28,
+# u^t solved from g(u,u) = -1 by particle_start_velocity = "normalize", which
+# under CarpetX keeps u^i and re-solves u^0).  The circular-orbit speed at
+# r = 6 in this metric is 0.237147, so 0.28 is slightly super-circular and
+# r grows from 6.000 to 6.112 over t = 0..20.  Three particles are in the
+# equatorial plane at +x, -x, -y; the fourth starts at +y with velocity along
+# +z and is the only orbit outside the x-y plane.  All four share E and |L|, so
+# spherical symmetry makes r(t) identical: max |r_p - r_p0| = 7.8e-14.
+#
+# What it pins that minkowski_line_carpetx does not:
+#
+#   a curved metric    the CarpetX sampler on gamma_ij = psi^4 delta_ij and
+#                      alpha = 1/psi rather than on delta_ij and 1.
+#   4th-order sampling  the metric interpolation error at the particle
+#                      position falls 2.2e-7 -> 2.3e-8 -> 9.3e-10 for
+#                      dx = 1/4, 1/8, 1/16 (log2 ratios 3.3 and 4.6).
+#   an external check  integrated against analytic Christoffel symbols for
+#                      the same metric, the trajectory agrees to 6.4e-05 in
+#                      position at dx = 1/4 and 6.1e-06 at dx = 1/8 (ratio
+#                      10.5); the reference integration itself conserves
+#                      g(u,u)+1 to 3e-14 and E and |L| to 1e-14.
+#   rank independence  bit-identical at 1, 2 and 4 ranks (0.000e+00 over all
+#                      columns), as for the flat CarpetX test.
+#
+# Grid: [-10,10]^3, 64^3 cells (dx = 0.3125), one level,
+# dt = dtfac * min(dx) = 0.32 * 0.3125 = 0.1, 200 steps to t = 20.  The
+# particle clock advances with the grid (Geodesic::step = 0.0), so the dump
+# has 201 frames of 4 particles.
+#
+# Needs CarpetX, ADMBaseX, ODESolvers and BrillLindquist in the
+# configuration; BrillLindquist is enabled in the EinsteinToolkit SpacetimeX
+# arrangement.
+#------------------------------------------------------------------------------
+Cactus::cctk_run_title = "Geodesic test bl_orbit_carpetx"
+
+Cactus::terminate      = "iteration"
+Cactus::cctk_itlast    = 200
+
+# ODESolvers is required: ADMBaseX schedules its initial-data group inside
+# ODESolvers_Initial only when ODESolvers is active (ADMBaseX/schedule.ccl),
+# so without it the metric/lapse/shift stay at the CarpetX sNaN fill value.
+# Nothing registers an RHS here, so the Brill-Lindquist data is left alone.
+#
+# CartGrid3D and CoordBase are deliberately NOT activated.  In
+# Under the CarpetX driver Geodesic takes the domain from the CarpetX
+# parameters (Geodesic_init.c calls Geodesic_carpetx_domain()), so it needs
+# neither of them, and activating them alongside CarpetX is not harmless: on
+# this node, 2 MPI ranks with OMP_NUM_THREADS=20, a run that activates them
+# aborts or hangs after a warning from CoordBase.c:425 ("Error reading
+# coordinate name") and an assertion inside Cactus's own parameter table
+# (Cactus/util/Table.c:5499, delete_table_entry_by_ptr: tep != NULL).  The
+# same failure happens with Geodesic removed from ActiveThorns, so it is a
+# race between CartGrid3D/CoordBase and OpenMP in the Cactus parameter
+# table, not something Geodesic causes; removing the two thorns from this
+# par avoids it.  A run without them reproduces the reference bit for bit.
+ActiveThorns = "CarpetX ADMBaseX ODESolvers Geodesic IOUtil BrillLindquist"
+
+# Geodesic declares no READS (it fetches fields by name at run time), so there
+# is nothing for the driver to pre-synchronise.  CarpetX insists on one of the
+# presync modes (CarpetX/schedule.cxx); "mixed-error" is the weaker one.
+Cactus::presync_mode = "mixed-error"
+Cactus::cctk_show_schedule = no
+
+#------------------------------------------------------------------------------
+# CarpetX grid
+#------------------------------------------------------------------------------
+
+CarpetX::verbose = no
+CarpetX::poison_undefined_values = yes
+
+CarpetX::xmin = -10.0
+CarpetX::ymin = -10.0
+CarpetX::zmin = -10.0
+CarpetX::xmax = +10.0
+CarpetX::ymax = +10.0
+CarpetX::zmax = +10.0
+
+CarpetX::ncells_x = 64
+CarpetX::ncells_y = 64
+CarpetX::ncells_z = 64
+
+CarpetX::max_num_levels  = 1
+CarpetX::regrid_every    = 0
+CarpetX::ghost_size      = 3
+
+CarpetX::prolongation_type  = "ddf"
+CarpetX::prolongation_order = 5
+CarpetX::interpolation_order = 3
+
+CarpetX::dtfac = 0.32
+
+Driver::periodic_x = no
+Driver::periodic_y = no
+Driver::periodic_z = no
+
+#------------------------------------------------------------------------------
+# Initial data: flat metric, unit lapse, zero shift
+#------------------------------------------------------------------------------
+
+ADMBaseX::initial_data  = "Brill-Lindquist"
+ADMBaseX::initial_lapse = "Brill-Lindquist"
+ADMBaseX::initial_shift = "zero"
+
+#------------------------------------------------------------------------------
+# Geodesic: four particles, grid mode via the CarpetX sampler
+#------------------------------------------------------------------------------
+
+Geodesic::Exact          = "no"
+# No Geodesic::metric_interp here on purpose: under the CarpetX driver
+# Geodesic uses CarpetX's own interpolator automatically -- the keyword only
+# selects a sampler when the Carpet driver is in charge.
+Geodesic::geodesic_amr_levels = 1
+Geodesic::rverbose       = "no"
+
+Geodesic::M = 1.0
+Geodesic::a = 0.0
+
+# no excision / respawn in this test: the particles stay at r <= 3.6
+Geodesic::excised_radius = 0.0
+Geodesic::particle_loss_policy = "flag"
+
+Geodesic::initial_radius   = 8.0
+Geodesic::particle_rand_xmin = -8.0
+Geodesic::particle_rand_xmax = +8.0
+Geodesic::particle_rand_ymin = -8.0
+Geodesic::particle_rand_ymax = +8.0
+Geodesic::particle_rand_zmin = -8.0
+Geodesic::particle_rand_zmax = +8.0
+Geodesic::particle_middle_sp = 0.0
+
+Geodesic::step              = 0.0
+Geodesic::particle_n        = 4
+Geodesic::particle_n_total  = 4
+Geodesic::particle_dump_every = 1
+Geodesic::particle_dump_file = "bl_orbit_carpetx/geodesic_particles.txt"
+
+# u^mu convention (NOT a 3-velocity): for coordinate velocity of speed 0.5,
+# u^t = 1/sqrt(1-0.5^2) = 1.1547005383792515 and u^i = 0.5 u^t along the
+# direction of motion.
+Geodesic::particle_x[0] =  6.0
+Geodesic::particle_y[0] =  0.0
+Geodesic::particle_z[0] =  0.0
+Geodesic::particle_tv[0] = 1.0
+Geodesic::particle_xv[0] = 0.0
+Geodesic::particle_yv[0] = 0.28
+Geodesic::particle_zv[0] = 0.0
+
+Geodesic::particle_x[1] = -6.0
+Geodesic::particle_y[1] =  0.0
+Geodesic::particle_z[1] =  0.0
+Geodesic::particle_tv[1] = 1.0
+Geodesic::particle_xv[1] = 0.0
+Geodesic::particle_yv[1] = 0.28
+Geodesic::particle_zv[1] = 0.0
+
+Geodesic::particle_x[2] =  0.0
+Geodesic::particle_y[2] = -6.0
+Geodesic::particle_z[2] =  0.0
+Geodesic::particle_tv[2] = 1.0
+Geodesic::particle_xv[2] = -0.28
+Geodesic::particle_yv[2] = 0.0
+Geodesic::particle_zv[2] = 0.0
+
+# p3 is deliberately NOT at the origin: the Brill-Lindquist puncture sits there
+# (capped by min_radius), so a particle at r=0 would sit on a point where the
+# conformal factor has been flattened by hand.  It starts at y=+6 with velocity
+# in +z, so it oscillates through the equatorial plane -- the only non-planar
+# orbit in this test.
+Geodesic::particle_x[3] =  0.0
+Geodesic::particle_y[3] =  6.0
+Geodesic::particle_z[3] =  0.0
+Geodesic::particle_tv[3] = 1.0
+Geodesic::particle_xv[3] = 0.0
+Geodesic::particle_yv[3] = 0.0
+Geodesic::particle_zv[3] = 0.28
+
+#------------------------------------------------------------------------------
+# Output
+#------------------------------------------------------------------------------
+
+IO::out_every     = 0
+IO::parfile_write = "no"
+
+CarpetX::out_metadata = no
+CarpetX::out_tsv      = no
+
+# --- Brill-Lindquist black hole on the ADMBaseX grid (SpacetimeX thorn) ---
+# gamma_ij = (1+m/2r)^4 delta_ij, K_ij = 0, alpha = 1/(1+m/2r), beta^i = 0.
+# The puncture at the origin is capped by min_radius (brill-lindquist.cxx: smooth()).
+BrillLindquist::mass       = 1.0
+BrillLindquist::x0         = 0.0
+BrillLindquist::y0         = 0.0
+BrillLindquist::z0         = 0.0
+BrillLindquist::min_radius = 0.25

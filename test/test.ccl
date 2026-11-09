@@ -1,18 +1,31 @@
 # Geodesic thorn testsuite configuration.
 #
-# Ten tests.  Nine of them run on a 50^3 KerrSchild grid over
+# Eleven tests.  Nine of them run on a 50^3 KerrSchild grid over
 # [-25,25]^3 (dx = 1, Driver::ghost_size = 4, Carpet excision of the
-# r < 4 sphere via Geodesic::excised_radius) for 32 Cactus steps of
-# dt = 0.1 with Geodesic::step = 100, i.e. the particle coordinate time
-# advances 3200 M while the grid advances 3.2 M.  One test adds a single
-# CarpetRegrid2 box.  The tenth runs on the CarpetX driver instead of
-# Carpet, on flat space instead of Kerr (ADMBaseX, the only metric CarpetX
-# can hand to Geodesic, has no Kerr-Schild initial data -- see the header
-# of minkowski_line_carpetx.par), with 64^3 cells over [-10,10]^3, the
-# same dt = 0.1 and the same 32 steps.  Each test dumps the full particle
-# state (t x y z u^t u^x u^y u^z tau cctk_time) once per Cactus step,
-# 32-33 rows, and the driver compares it row by row against the reference
-# in the matching directory.
+# r < 4 sphere via Geodesic::excised_radius) with dt = 0.1, and the
+# Geodesic::step = 5 in eight of the nine.  All eight run 225 Cactus steps
+# (particle time 1125 M, grid 22.5 M); circ_orbit_amr_small adds a refined
+# box on top of the same base grid.
+# circ_orbit alone keeps the original 32 steps of Geodesic::step = 100
+# (particle time 3200 M, grid 3.2 M) so that the sparse-dump case stays
+# covered.  The
+# dump cadence is what the plots turn on: 32 samples over 17.06
+# revolutions is 167.8 deg/frame, and joining consecutive samples draws an
+# aliased {32/15} star polygon rather than the circle the orbit is, while
+# 37.5 samples per revolution is 9.6 deg/frame and draws a circle.
+# One test adds a single CarpetRegrid2 box.  The last two run on the CarpetX driver instead of
+# Carpet: minkowski_line_carpetx on flat ADMBaseX data, and
+# bl_orbit_carpetx on Brill-Lindquist initial data from SpacetimeX.
+# (ADMBaseX, the only metric source CarpetX can hand to Geodesic, has no
+# Kerr-Schild initial data, and ADMBase cannot be combined with CarpetX at
+# all -- see the header of minkowski_line_carpetx.par.)  Both use 64^3
+# cells over [-10,10]^3 and dt = 0.1; the flat one runs 32 steps, the
+# Brill-Lindquist one 200.  Each test dumps the full particle
+# state (t x y z u^t u^x u^y u^z tau cctk_time) once per Cactus step
+# (32-33 rows for circ_orbit, 225 for the other Kerr tests, 226 for
+# circ_orbit_amr_small, 804 for bl_orbit_carpetx), and the
+# driver compares it row by row against the reference in the matching
+# directory.
 #
 # What is covered:
 #
@@ -59,7 +72,7 @@
 #                        must be reproducible at fixed rank count.
 #
 #   circ_orbit_amr_small the same orbit on the 50^3 base grid plus one
-#                        static CarpetRegrid2 box of half-width 16
+#                        static CarpetRegrid2 box of half-width 14
 #                        (dx = 0.5), on 2 MPI ranks: exercises the
 #                        per-level grid acquire and pick_level.
 #
@@ -67,9 +80,9 @@
 #                        the CarpetX driver instead of Carpet: four
 #                        particles in four octants on a flat ADMBaseX grid,
 #                        sampled by CarpetX's own interpolator (the driver
-#                        selects it; metric_interp does not apply).  This is the only test
-#                        that exercises the CarpetX code path -- the
-#                        pointwise ADMBaseX sampler, the two GLOBAL-mode
+#                        selects it; metric_interp does not apply).  Together
+#                        with bl_orbit_carpetx it exercises the CarpetX code
+#                        path -- the pointwise ADMBaseX sampler, the two GLOBAL-mode
 #                        entry points Geodesics_init_carpetx /
 #                        Geodesics_integrate_carpetx, and the multi_cx
 #                        replication mode (every rank integrates every
@@ -83,6 +96,31 @@
 #                        configuration; the EinsteinToolkit thornlist has
 #                        them enabled.
 #
+#   bl_orbit_carpetx     the CarpetX sampler again, but on a CURVED
+#                        stationary metric: SpacetimeX/BrillLindquist
+#                        extends ADMBaseX::initial_data with
+#                        "Brill-Lindquist" -- gamma_ij = (1+m/2r)^4 delta_ij,
+#                        K_ij = 0, alpha = 1/(1+m/2r), beta^i = 0, the
+#                        puncture capped at min_radius = 0.25.  It is the
+#                        first initial-data thorn that satisfies
+#                        CarpetX::SetupGlobals (all REAL grid functions,
+#                        only Loop required).  Four particles at r = 6,
+#                        tangential coordinate speed 0.28, slightly
+#                        super-circular (the circular speed there is
+#                        0.237147) so r grows to 6.112 by t = 20; three are
+#                        equatorial, one is in the y-z plane.  All four have
+#                        the same E and |L|, so r(t) must coincide: it does
+#                        to 7.8e-14.  Against a geodesic integrated with the
+#                        analytic Christoffel symbols of the same metric the
+#                        trajectory agrees to 6.4e-05 in position at
+#                        dx = 1/4 and 6.1e-06 at dx = 1/8, and the metric
+#                        sampling error at the particle falls 2.2e-7 ->
+#                        2.3e-8 -> 9.3e-10 for dx = 1/4, 1/8, 1/16, i.e.
+#                        fourth order, matching CarpetX::interpolation_order
+#                        = 3.  Bit-identical at 1, 2 and 4 ranks.  Needs
+#                        BrillLindquist in the configuration in addition to
+#                        CarpetX, ADMBaseX and ODESolvers.
+#
 # KNOWN LIMITATION, and why the grid-sampler references are generated at
 # the rank count the test runs at: with Exact = no the trajectory is NOT
 # bit-identical across different rank counts.  The grid data itself is
@@ -91,9 +129,10 @@
 # chunk boundaries follow the decomposition, so a particle is handed to a
 # new owner at a different point along its path and the floating-point
 # summation order changes: circ_orbit_grid_2p differs from the
-# single-rank circ_orbit_grid by at most 4.6e-2 in x and 7.0e-2 in y
-# over the whole trajectory (4.6e-2 and 6.6e-2 at the final sample,
-# t = 3200).  Two rank-dependent mechanisms behind the earlier, much
+# single-rank circ_orbit_grid by at most 8.4e-3 in x and 8.7e-3 in y
+# over the whole 225-row trajectory (8.4e-3 and 8.7e-3 overall, 5.0e-4
+# and 8.7e-3 at the final sample, t = 1125; measured 2026-11-09 from the
+# reference dumps now in this directory).  Two rank-dependent mechanisms behind the earlier, much
 # larger disagreement are now fixed: the halo exchange covers edges and
 # corners as well as faces (a node Christoffel whose finite-difference
 # window touched an unfilled edge cell used to fall back silently to the
@@ -169,6 +208,12 @@ TEST circ_orbit_amr_small
 }
 
 TEST minkowski_line_carpetx
+{
+  RELTOL 1e-12
+  NPROCS 2
+}
+
+TEST bl_orbit_carpetx
 {
   RELTOL 1e-12
   NPROCS 2

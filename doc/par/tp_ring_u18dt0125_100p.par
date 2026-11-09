@@ -19,8 +19,8 @@
 # puncture #1 had reached 1.3e18 while NaNChecker still saw no NaNs.  verbose=yes
 # writes the shift at both punctures every step so the gauge behaviour of this
 # configuration can be read straight out of the log instead of inferred.
-# Cost: 169^3 x 1124 = 5.4e9 point-steps; at the measured 4.6e5-5.4e5
-# point-steps/s that is 2.8-3.3 h wall on 4 ranks x 21 threads.
+# Cost: 169^3 grid points (168^3 cells) x 1124 = 5.4e9 point-steps; at the
+# measured 4.6e5-5.4e5 point-steps/s that is 2.8-3.3 h wall on 4 ranks x 21 threads.
 # ghost_size=5 (8th-order SBP needs 5 ghost cells).
 # =============================================================================
 Cactus::cctk_run_title = "tp_ring_u18dt0125_100p"

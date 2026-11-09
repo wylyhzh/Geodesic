@@ -2,16 +2,21 @@
 # 
 # Same orbit as circ_orbit_grid (r = 11.989 prograde equatorial circular
 # orbit, M = 2, a = 0.5) on a 50^3 base grid of dx = 1 with one static
-# CarpetRegrid2 box of half-width 16 (dx = 0.5), so the particle lives on
-# the refined grid for the whole run and crosses no level boundary.
-# Exact = no, default local27 sampler, 32 Cactus steps, 2 MPI ranks.
-# The reference data in circ_orbit_amr_small/ is the single-rank dump, so
-# a PASS also checks rank-count independence with refinement.
+# CarpetRegrid2 box of half-width 14 (dx = 0.5), so the particle lives on
+# the refined grid for the whole run and crosses no level boundary.  14 is
+# the smallest half-width that leaves the local27 5x5x5 stencil (2 fine
+# cells = 1 M) inside the box all the way round the r = 11.989 orbit; 16
+# costs 65% more grid steps for a trajectory that is no better (the radial
+# deviation from 11.989 is 4.20e-4 either way).
+# Exact = no, default local27 sampler, 225 Cactus steps, 2 MPI ranks.
+# The reference data in circ_orbit_amr_small/ is generated at the rank count the
+# test runs at (2), because with Exact = no the trajectory is not bit-identical
+# across rank counts; see test.ccl, "KNOWN LIMITATION".
 Cactus::cctk_run_title = "Geodesic test circ_orbit_amr_small"
 Cactus::cctk_full_warnings         = "yes"
 
 Cactus::terminate        = "iteration"
-Cactus::cctk_itlast      =  32
+Cactus::cctk_itlast      =  225
 Time::timestep_method    = "given"
 Time::timestep           =  0.1
 
@@ -94,7 +99,7 @@ CarpetRegrid2::num_levels_1          = 2
 CarpetRegrid2::position_x_1          = 0.0
 CarpetRegrid2::position_y_1          = 0.0
 CarpetRegrid2::position_z_1          = 0.0
-CarpetRegrid2::radius_1[1]           = 16.0
+CarpetRegrid2::radius_1[1]           = 14.0
 
 Geodesic::geodesic_amr_levels        = 2
 
@@ -134,7 +139,15 @@ Geodesic::initial_radius         = 35.0
 Geodesic::Exact                  = "no"
 Geodesic::rverbose               = "no"
 Geodesic::gverbose               = "no"
-Geodesic::step                   = 100.0
+# step = 5 rather than 100, and 225 Cactus steps rather than 32: 225 dumps of 5 M
+# each is t = 1125, i.e. 5.98 revolutions (the orbit period measured from the dumps is
+# 188.2 M with Exact = yes, 187.5 M for the l27 sampler), so 37.5 samples per
+# revolution, which is what makes the x-y trace close into a circle
+# (the polyline is 0.35% off a true circle) rather than the aliased star polygon a
+# 32-sample dump (2.2 samples per revolution) draws.  The dump is one block per
+# Cactus iteration, so the Cactus steps are what buy the roundness; 225 is the count
+# that keeps the whole component inside the 2 min review budget.
+Geodesic::step                   = 5.0
 Geodesic::particle_n_total       = 1
 Geodesic::particle_n             = 1
 

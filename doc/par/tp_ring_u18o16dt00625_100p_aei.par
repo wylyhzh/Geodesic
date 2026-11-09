@@ -14,7 +14,8 @@
 # be ruled out; if it dies at the same t, the threshold is finer still.
 # shift_limit raised to 1e300 so the PunctureTracker check cannot abort the run
 # and the real end point is read off NaNChecker / the dump.
-# Cost: 188^3 x 2248 = 1.49e10 point-steps -> 6-8.5 h on 4 ranks x 21 threads.
+# Cost: 188^3 grid points (187^3 cells) x 2248 = 1.49e10 point-steps ->
+#      6-8.5 h on 4 ranks x 21 threads.
 # =============================================================================
 Cactus::cctk_run_title = "tp_ring_u18o16dt00625_100p_aei"
 Cactus::cctk_full_warnings = "no"
