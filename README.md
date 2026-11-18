@@ -18,6 +18,9 @@ A parallel test-particle geodesic tracker thorn for the
   exploratory scans and CarpetX smoke tests, see the map below); comments on
   the manuscript are welcome by mail.
 - **Licence:** GPLv2+ (see [COPYING](COPYING))
+- **Static analysis:** clang-tidy / clanker run and full triage in
+  [doc/code_quality.md](doc/code_quality.md); the check set lives in
+  [.clang-tidy](.clang-tidy)
 - **Maintainer:** Yuhua Li <liyhts@yeah.net>
 
 ## Purpose
@@ -525,6 +528,14 @@ Final default-launcher validation on 2026-11-09, after the changes above:
 runnable tests and no unrunnable tests.  Total wall clock was **69.8 s**
 at the default one OpenMP thread per rank.  The launcher also rejects a
 missing or incomplete testsuite summary instead of treating it as success.
+
+Re-run on 2026-11-13 after the static-analysis cleanups described in
+[doc/code_quality.md](doc/code_quality.md): **11 passed / 0 failed /
+tolerance-only 0**, 65.5 s summed test time (slowest `circ_orbit_amr_small`
+15.2 s, `bl_orbit_carpetx` 13.6 s).  Those changes are behaviour-preserving
+(explicit integer casts, `abort ()` after `CCTK_WARN_ABORT` in the
+out-of-memory guards, a cached `multi_amr` local, explicit `CCTK_POINTER`
+casts at the `MultiPatch_*` calls, two `default:` cases).
 
 In all three historical runs `Number passed only to set tolerance -> 0`,
 i.e. every test reproduced its reference exactly rather than merely within

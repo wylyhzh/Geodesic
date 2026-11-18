@@ -344,7 +344,7 @@ static void geodesic_halo_update(cGH *cctkGH, int map, int level)
            local index (i,j,k) in [-HW, lsh-1+HW] */
         CCTK_REAL *b = (CCTK_REAL *)malloc(pstride * sizeof(CCTK_REAL));
         if (!b)
-          CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: halo buffer allocation failed.");
+          GEODESIC_FATAL ("Geodesic: halo buffer allocation failed.");
         /* poison with NaN: halo cells that are never written (corners,
            transverse out-of-overlap strips) then read as NaN, exactly like
            g4dn's out-of-range return on a single rank, so the isfinite
@@ -392,13 +392,13 @@ static void geodesic_halo_update(cGH *cctkGH, int map, int level)
   /* ---- gather every rank's patch index box for this level ---- */
   int *bb = (int *)malloc((size_t)npr * 6 * sizeof(int));
   if (!bb)
-    CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: halo box buffer allocation failed.");
+    GEODESIC_FATAL ("Geodesic: halo box buffer allocation failed.");
   for (int d = 0; d < 3; d++)
   {
     bb[me * 6 + d]     = (int)L->lbnd[d];
     bb[me * 6 + 3 + d] = (int)L->ubnd[d];
   }
-  MPI_Allgather(bb + me * 6, 6, MPI_INT, bb, 6, MPI_INT, MPI_COMM_WORLD);
+  MPI_Allgather(bb + (size_t)me * 6, 6, MPI_INT, bb, 6, MPI_INT, MPI_COMM_WORLD);
 
   /* worst-case slab volume: HW cells thick, at most the padded local
      transverse extent wide (the e<d directions of the exchange below reach
@@ -413,7 +413,7 @@ static void geodesic_halo_update(cGH *cctkGH, int map, int level)
   CCTK_REAL *sbuf = (CCTK_REAL *)malloc(slab_max * sizeof(CCTK_REAL));
   CCTK_REAL *rbuf = (CCTK_REAL *)malloc(slab_max * sizeof(CCTK_REAL));
   if (!sbuf || !rbuf)
-    CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: halo slab buffer allocation failed.");
+    GEODESIC_FATAL ("Geodesic: halo slab buffer allocation failed.");
 
 
 
@@ -754,8 +754,8 @@ static int locate_and_cross(int m, double y[], cGH *cctkGH)
   {
     CCTK_INT patch = pm;
     int rc = MultiPatch_LocalToGlobal(cctkGH, ndims, npoints,
-                                      &patch, localp, xgp,
-                                      NULL, NULL, dadxop, NULL, NULL, NULL);
+                                      &patch, (CCTK_POINTER_TO_CONST)localp, (CCTK_POINTER)xgp,
+                                      NULL, NULL, (CCTK_POINTER)dadxop, NULL, NULL, NULL);
     if (rc != 0) return -1;
   }
 
@@ -771,8 +771,8 @@ static int locate_and_cross(int m, double y[], cGH *cctkGH)
   {
     CCTK_INT patch[1];
     int rc = MultiPatch_GlobalToLocal(cctkGH, ndims, npoints,
-                                      xgp, &patch[0], newyp,
-                                      dadxnp, NULL);
+                                      (CCTK_POINTER_TO_CONST)xgp, &patch[0], (CCTK_POINTER)newyp,
+                                      (CCTK_POINTER)dadxnp, NULL);
     if (rc != 0 || patch[0] < 0 || patch[0] >= GEODESIC_MAX_MAPS)
       return -1;   /* unknown point: outside the whole multipatch domain */
     newmap = patch[0];
@@ -1062,7 +1062,7 @@ static void p125_eval_deriv(const CCTK_REAL c[POLY125],
     double Pa = 0.0, dPa = 0.0, dRa = 0.0;
     for (b = 0; b < 5; b++)
     {
-      const CCTK_REAL *cp = c + a*25 + b*5;
+      const CCTK_REAL *cp = c + (size_t)a*25 + (size_t)b*5;
       double Q  = cp[0] + cp[1]*pz[1] + cp[2]*pz[2] + cp[3]*pz[3] + cp[4]*pz[4];
       double dQ = cp[1] + 2.0*cp[2]*pz[1] + 3.0*cp[3]*pz[2] + 4.0*cp[4]*pz[3];
       Pa  += py[b]*Q;
@@ -1488,7 +1488,7 @@ int Geodesic_cf2_fitting (int m, const double y[])
   tpoint[0] = 0;
   for (i=1; i<4; i++)
   {
-    tpoint[i] = lrint (floor ((y[i] - Geodesic_gstate.LD[pm][lvl].origin[i-1]) * Geodesic_gstate.LD[pm][lvl].inv_dx[i-1] + 0.5));
+    tpoint[i] = (CCTK_INT) lrint (floor ((y[i] - Geodesic_gstate.LD[pm][lvl].origin[i-1]) * Geodesic_gstate.LD[pm][lvl].inv_dx[i-1] + 0.5));
   }
 
   /* multi_amr gap band (no-halo path only): a particle that lies in the
@@ -2421,7 +2421,7 @@ static int aei_interp_point(int tl, double x, double y, double z,
   if (status != 0) return status;
   for (f=0;f<10;f++)
   {
-    g31[f]=outbuf[4*f];
+    g31[f]=outbuf[(size_t)f*4];
     if (dg31)
     {
       dg31[f][0]=outbuf[4*f+1];
@@ -2571,7 +2571,7 @@ static int carpetx_interp_point(double x, double y, double z,
   if (status != 0) return status;
   for (f=0; f<10; f++)
   {
-    g31[f]=outbuf[4*f];
+    g31[f]=outbuf[(size_t)f*4];
     if (dg31)
     {
       dg31[f][0]=outbuf[4*f+1];
@@ -2845,8 +2845,8 @@ static inline double fourd_tw(int lvl, double s)
     case 0: return s * (s + 1.0) / 2.0;   /* level 0 at s = +1  */
     case 1: return 1.0 - s * s;           /* level 1 at s =  0  */
     case 2: return s * (s - 1.0) / 2.0;   /* level 2 at s = -1  */
+    default: return 0.0;                  /* level outside [0,2]: no contribution */
   }
-  return 0.0;
 }
 
 /* derivative of fourd_tw with respect to the local fractional time s; the
@@ -2857,8 +2857,8 @@ static inline double fourd_tw_a(int lvl, double s)
     case 0: return (2.0 * s + 1.0) / 2.0;
     case 1: return -2.0 * s;
     case 2: return (2.0 * s - 1.0) / 2.0;
+    default: return 0.0;                  /* level outside [0,2]: no contribution */
   }
-  return 0.0;
 }
 
 
@@ -4558,7 +4558,7 @@ static void geodesic_mmpi_sync(cGH *cctkGH, const int npr, const int me, const i
     free(Geodesic_gstate.mmpi_buf);
     Geodesic_gstate.mmpi_buf = (CCTK_REAL *) calloc((size_t)npr * n, sizeof(CCTK_REAL));
     if (!Geodesic_gstate.mmpi_buf)
-      CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: MPI state buffer allocation failed.");
+      GEODESIC_FATAL ("Geodesic: MPI state buffer allocation failed.");
     Geodesic_gstate.mmpi_cap = (CCTK_INT)(npr * n);
   }
   double *full = (double *) Geodesic_gstate.mmpi_buf;
@@ -5121,7 +5121,7 @@ static void geodesic_recompute_owner_map(cGH *cctkGH, const double *bd, const in
   {
     free(gb);
     gb = (double *)calloc((size_t)nlev * 8, sizeof(double));
-    if (!gb) CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: owner-map scratch allocation failed.");
+    if (!gb) GEODESIC_FATAL ("Geodesic: owner-map scratch allocation failed.");
     s_owner_gb = gb;
     s_owner_gb_nlev = nlev;
   }
@@ -5357,6 +5357,11 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
      per-rank patches that Geodesic can see, and the interpolator is an MPI
      collective (see multi_cx below), so the owner map does not apply. */
   Geodesic_gstate.multi_amr = (CCTK_nProcs(cctkGH) > 1) && !Exact && !Geodesic_gstate.carpetx_mode;
+  /* Cached once after being set above.  The driver reads this global ~14 times
+     across function calls; a static analyser must then assume it can change
+     between the owner-map allocation and the chunk loop that uses it, and
+     reports bd as a possible null dereference. */
+  const int multi_amr = Geodesic_gstate.multi_amr;
   /* The owner map and the halo exchange are written for an arbitrary
      decomposition (both Allgather every rank's boxes and consider every rank
      pair), but only up to 4 ranks has this been checked against a
@@ -5364,7 +5369,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
      unclaimed: test/circ_orbit_grid.par at 8 ranks drops its particle at
      t ~ 10 while 1 and 2 ranks run to t = 3200.  Refuse rather than produce
      silently wrong trajectories. */
-  if (Geodesic_gstate.multi_amr && CCTK_nProcs(cctkGH) > 4)
+  if (multi_amr && CCTK_nProcs(cctkGH) > 4)
     CCTK_ERROR("Geodesic: at most 4 MPI ranks are supported with the grid "
                "samplers (Exact = no); see README, Known limitations.");
 
@@ -5387,7 +5392,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
      in the replicated multi-process modes, every rank in a single-process
      run (where MyProc is 0 anyway). */
   const int report_here =
-    !(Geodesic_gstate.multi_amr || Geodesic_gstate.multi_cx) || CCTK_MyProc(cctkGH) == 0;
+    !(multi_amr || Geodesic_gstate.multi_cx) || CCTK_MyProc(cctkGH) == 0;
 
   /* Resolve the sampler before the acquire block: the halo update below
      must know whether the sampler is a stencil (l27/local27) or pointwise.
@@ -5727,7 +5732,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
      reporting is restricted to rank 0.  With a single
      process MyProc() == 0 and this is a no-op.
      ================================================================================ */
-  if (CCTK_MyProc(cctkGH) != 0 && !Geodesic_gstate.multi_amr && !Geodesic_gstate.multi_cx)
+  if (CCTK_MyProc(cctkGH) != 0 && !multi_amr && !Geodesic_gstate.multi_cx)
     return;
 
   /* ==================== from here on: integrate particles ONCE ==================== */
@@ -5768,19 +5773,19 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
 
     Geodesic_gstate.pgeodesic = (ParticleGeodesic * ) calloc(particle_n_total, sizeof(ParticleGeodesic));
     if (!Geodesic_gstate.pgeodesic)
-      CCTK_WARN(CCTK_WARN_ABORT, "Error: calloc(pgeodesic) failed.");
+      GEODESIC_FATAL ("Error: calloc(pgeodesic) failed.");
 
     if (Geodesic_gstate.sinterp_mode == 3)
     {
       Geodesic_gstate.pool125 = (cache125 * ) calloc(particle_n_total, sizeof(cache125));
       if (!Geodesic_gstate.pool125)
-        CCTK_WARN(CCTK_WARN_ABORT, "Error: calloc(pool125) failed (metric_interp = local27).");
+        GEODESIC_FATAL ("Error: calloc(pool125) failed (metric_interp = local27).");
     }
     else if (Geodesic_gstate.sinterp_mode == 0)
     {
       Geodesic_gstate.pool27 = (cache27 * ) calloc(particle_n_total, sizeof(cache27));
       if (!Geodesic_gstate.pool27)
-        CCTK_WARN(CCTK_WARN_ABORT, "Error: calloc(pool27) failed (metric_interp = l27).");
+        GEODESIC_FATAL ("Error: calloc(pool27) failed (metric_interp = l27).");
     }
 
     Geodesic_gstate.pgeodesic_capacity = particle_n_total;
@@ -5823,7 +5828,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
      A particle in no box (possible only if a level's data is stale) is
      pinned to rank 0, level -1, and flagged outbd -- the loss policy
      then handles it, so a particle is never silently dropped. */
-  if (Geodesic_gstate.multi_amr)
+  if (multi_amr)
   {
     const int npr = CCTK_nProcs(cctkGH);
     const int me  = CCTK_MyProc(cctkGH);
@@ -5835,7 +5840,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
       Geodesic_gstate.owner_of  = (int *) malloc(particle_n_total * sizeof(int));
       Geodesic_gstate.owner_lvl = (int *) malloc(particle_n_total * sizeof(int));
       if (!Geodesic_gstate.owner_of || !Geodesic_gstate.owner_lvl)
-        CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: owner-map allocation failed.");
+        GEODESIC_FATAL ("Geodesic: owner-map allocation failed.");
       Geodesic_gstate.owner_cap = particle_n_total;
     }
 
@@ -5870,7 +5875,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
        must be covered so a particle in the gap is still claimable). */
     bd = (double *) malloc((size_t)npr * nlev * GEODESIC_OWNER_REC * sizeof(double));
     if (!bd)
-      CCTK_WARN(CCTK_WARN_ABORT, "Geodesic: box Allgather buffer allocation failed.");
+      GEODESIC_FATAL ("Geodesic: box Allgather buffer allocation failed.");
     {
       double *s0 = bd + (size_t)me * nlev * GEODESIC_OWNER_REC;
       for (int l = 0; l < nlev; l++)
@@ -5960,7 +5965,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
         const double p[3] = { particle_tx[mi], particle_ty[mi], particle_tz[mi] };
         for (int d = 0; d < 3; d++)
         {
-          const CCTK_INT tp = lrint(floor((p[d] - L0->origin[d]) * L0->inv_dx[d] + 0.5));
+          const CCTK_INT tp = (CCTK_INT) lrint(floor((p[d] - L0->origin[d]) * L0->inv_dx[d] + 0.5));
           const int ilo = (int)L0->nghostzones[d];
           const int ihi = (int)L0->lsh[d] - 1 - (int)L0->nghostzones[d];
           if (tp - W < ilo || tp + W > ihi) { straddle++; break; }
@@ -6089,7 +6094,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
        minimum.  sexact runs skip this whole block identically on all
        ranks, so no collective-communication divergence. */
 #ifdef CCTK_MPI
-    if (Geodesic_gstate.multi_amr)
+    if (multi_amr)
     {
       double sloc = (double)Geodesic_gstate.sstep, sglob = 0.0;
       MPI_Allreduce(&sloc, &sglob, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
@@ -6238,7 +6243,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
     {
       /* multi_amr: only the owning rank runs the init (re-)solve for
          this particle; the S1 Allgather below distributes the result */
-      if (Geodesic_gstate.multi_amr && Geodesic_gstate.owner_of[mi] != CCTK_MyProc(cctkGH))
+      if (multi_amr && Geodesic_gstate.owner_of[mi] != CCTK_MyProc(cctkGH))
         continue;
       double ys[8];
       ys[0] = particle_tt[mi];
@@ -6365,7 +6370,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
      state before the integration (and before the rank-0 dump seed
      below).  At it >= 1 it is a cheap consistency point: the state was
      already identical after the previous step's S3. */
-  if (Geodesic_gstate.multi_amr)
+  if (multi_amr)
     geodesic_mmpi_sync(cctkGH, CCTK_nProcs(cctkGH), CCTK_MyProc(cctkGH), particle_n_total);
 #endif
 
@@ -6412,7 +6417,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
   if (cctk_iteration == 0)
   {
 #ifdef CCTK_MPI
-    if (Geodesic_gstate.multi_amr) { free(bd); bd = NULL; }
+    if (multi_amr) { free(bd); bd = NULL; }
 #endif
     return;
   }
@@ -6449,7 +6454,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
      Non-multi_amr: one pass, each particle integrated once to the
      step end (the original behavior).
      ================================================================== */
-  if (Geodesic_gstate.multi_amr)
+  if (multi_amr)
   {
 #ifdef CCTK_MPI
     {
@@ -6659,7 +6664,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
      Each rank integrated its owned particles in place; exchange the full
      state so that the warning aggregation, the dump below, and the loss
      policy (synced again at S3) see identical data on all ranks. */
-  if (Geodesic_gstate.multi_amr)
+  if (multi_amr)
     geodesic_mmpi_sync(cctkGH, CCTK_nProcs(cctkGH), CCTK_MyProc(cctkGH), particle_n_total);
 #endif
 
@@ -6782,7 +6787,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
        maximum before reporting.  This block is reached by every rank, so
        the collective is safe. */
 #ifdef CCTK_MPI
-    if (Geodesic_gstate.multi_amr)
+    if (multi_amr)
     {
       double loc[2] = { (double)Geodesic_gstate.norm_dev_max, (double)Geodesic_gstate.norm_dev_step };
       double glob[2] = { 0.0, 0.0 };
@@ -6845,7 +6850,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
      ================================================================== */
   for (mi=0; mi<particle_n_total; mi++)
   {
-    if (Geodesic_gstate.multi_amr && Geodesic_gstate.owner_of[mi] != CCTK_MyProc(cctkGH))
+    if (multi_amr && Geodesic_gstate.owner_of[mi] != CCTK_MyProc(cctkGH))
       continue;
     if (Geodesic_gstate.pgeodesic[mi].norm_bad)
       CCTK_VInfo(CCTK_THORNSTRING,
@@ -6910,7 +6915,7 @@ void Geodesics_integrate (CCTK_ARGUMENTS)
      The owner ranks may have modified their particles' states (respawn /
      drop); exchanging them again leaves every rank with the identical
      full state for the next Cactus step. */
-  if (Geodesic_gstate.multi_amr)
+  if (multi_amr)
     geodesic_mmpi_sync(cctkGH, CCTK_nProcs(cctkGH), CCTK_MyProc(cctkGH), particle_n_total);
 #endif
 

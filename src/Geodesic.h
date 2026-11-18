@@ -87,6 +87,20 @@
 #include "cctk.h"
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
+
+/* Fatal error path.  CCTK_WARN(CCTK_WARN_ABORT, ...) never returns, but that
+   is invisible through the macro (CCTK_Warn is also used for levels which do
+   return), so compilers and static analysers keep modelling the "allocation
+   failed, carry on with a NULL pointer" path.  The trailing abort() closes
+   that off; it is unreachable as long as CCTK_WARN_ABORT stays fatal.  Used
+   for the allocation guards, where a NULL would otherwise flow into a
+   dereference. */
+#define GEODESIC_FATAL(msg)                                                \
+  do {                                                                     \
+    CCTK_WARN (CCTK_WARN_ABORT, (msg));                                    \
+    abort ();                                                              \
+  } while (0)
 
 /* -------------------- Internal revision stamp --------------------
    Geodesic changes quickly during development and the Cactus build id does

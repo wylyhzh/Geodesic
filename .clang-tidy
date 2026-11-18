@@ -1,0 +1,73 @@
+# .clang-tidy for the Geodesic thorn (2026-11-13)
+#
+# Scope: the C sources in src/.  The check set is deliberately the
+# "might be a real bug" families only -- clang-analyzer, bugprone, cert,
+# misc, performance.  readability/modernize/altera are left off: this is
+# ~7000 lines of numerical C in Cactus style, and those families bury the
+# findings that matter.
+#
+# Why each check below the line is switched off (every one of them fired
+# only on a Cactus convention or a Cactus API signature; doc/code_quality.md
+# lists the file:line for each category):
+#
+#   misc-header-include-cycle, misc-definitions-in-headers,
+#   misc-include-cleaner
+#       Cactus thorn layout: src/ reaches its own interface headers through
+#       the generated bindings, which these header-layout checks read as a
+#       cycle or as out-of-line definitions.
+#   misc-misplaced-const, misc-const-correctness
+#       Cactus array/parameter declarations: the CCTK_POINTER typedefs put
+#       const on the pointee, so the suggested rewrite does not apply.
+#   misc-unused-parameters, misc-non-private-member-variables-in-classes,
+#   misc-no-recursion
+#       Scheduled functions must keep the framework signature
+#       (CCTK_ARGUMENTS) even when a hook ignores some arguments.
+#   bugprone-casting-through-void
+#       MPI predefined handles expand through OMPI_PREDEFINED_GLOBAL, i.e.
+#       a cast through void; that is the documented MPI interface.
+#   bugprone-easily-swappable-parameters, bugprone-branch-clone,
+#   performance-unnecessary-value-param
+#       Style checks that fire on every numerical kernel in this thorn.
+#
+# cert-err33-c (unchecked return value) and cert-err34-c (sscanf/fscanf/
+# atof) stay ENABLED but are not errors: ignoring MPI/stdio return codes is
+# the prevailing Cactus convention, and the parsing sites read files this
+# thorn wrote itself.
+#
+# NOTE: clang-tidy looks for .clang-tidy next to the file being analysed,
+# and Cactus compiles from configs/<cfg>/build/<Thorn>/, which is a copy of
+# src/.  So this file is not picked up automatically -- either copy or
+# symlink it to the Cactus root, or run clang-tidy from a directory that is
+# a parent of the build tree.  doc/code_quality.md gives the exact commands.
+# (clang-tidy has no "-config=file:..."; passing the path that way is read
+# as inline YAML and fails.)
+
+Checks: >
+  clang-analyzer-*,
+  bugprone-*,
+  cert-*,
+  misc-*,
+  performance-*,
+  -misc-header-include-cycle,
+  -misc-definitions-in-headers,
+  -misc-include-cleaner,
+  -misc-misplaced-const,
+  -misc-const-correctness,
+  -misc-unused-parameters,
+  -misc-non-private-member-variables-in-classes,
+  -misc-no-recursion,
+  -bugprone-casting-through-void,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-branch-clone,
+  -performance-unnecessary-value-param
+
+WarningsAsErrors: >
+  bugprone-*,
+  clang-analyzer-core.*,
+  clang-analyzer-security.*
+
+HeaderFilterRegex: 'einsteinanalysis/Geodesic/src/.*\.h$'
+
+CheckOptions:
+  - key:   bugprone-argument-comment.Strictness
+    value: 'SkipLiterals'
