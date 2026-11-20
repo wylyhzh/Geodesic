@@ -1,8 +1,11 @@
 Cactus Code Thorn Geodesic
 Author(s)    : Yuhua Li <liyhts@yeah.net>
 Maintainer(s): Yuhua Li <liyhts@yeah.net>
-Licence      : GPLv2+.  See the COPYING file for full license terms and
-               conditions.
+Licence      : GPLv2+ for the thorn source, its documentation and the
+               parameter files.  See the COPYING file for full license
+               terms and conditions.  The companion manuscript is not
+               distributed in this repository and is not covered by this
+               licence; no licence is granted for it.
 --------------------------------------------------------------------------
 
 1. Purpose

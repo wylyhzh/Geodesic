@@ -35,12 +35,8 @@ doc/documentation.pdf
 # (any PDF under doc/ gets converted to EPS by make -ThornDocHTML)
 doc/*.eps
 
-# manuscript LaTeX build artifacts (the .bbl files are kept in-tree)
-paper/*.aux
-paper/*.log
-paper/*.out
-paper/*.blg
-paper_zh/*.aux
-paper_zh/*.log
-paper_zh/*.out
-paper_zh/*.blg
+# manuscript: kept out of the repository (and therefore out of the GitHub
+# releases and their Zenodo archives) while the arXiv submission is under
+# moderation.  The sources stay on disk locally; they are not distributed.
+paper/
+paper_zh/

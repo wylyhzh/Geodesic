@@ -6,18 +6,22 @@ A parallel test-particle geodesic tracker thorn for the
 - **Paper:** Yuhua Li, *Geodesic: a parallel test-particle geodesic tracker
   for the Einstein Toolkit* (2026; submitted to arXiv, gr-qc cross-listed
   with astro-ph.HE — the identifier will be filled in here once arXiv
-  announces it).  The manuscript and its figures are in [paper/](paper/)
-  (English: `pdflatex main && bibtex main && pdflatex main && pdflatex main`)
-  and [paper_zh/](paper_zh/) (Chinese: `xelatex main_zh && bibtex main_zh &&
-  xelatex main_zh && xelatex main_zh` -- ctexart, so XeLaTeX is required, and
-  it reads the figures from `../paper/figs/`); the built PDFs are
-  `paper/main.pdf` and `paper_zh/main_zh.pdf`.  They sit outside `doc/` on
-  purpose: `make Geodesic-ThornDocHTML` converts every PDF under `doc/` to
-  EPS.  The parameter files for the runs the paper quotes numbers
-  from are in [doc/par/](doc/par/) (33 of the 47 files there; the rest are
-  exploratory scans and CarpetX smoke tests, see the map below); comments on
-  the manuscript are welcome by mail.
-- **Licence:** GPLv2+ (see [COPYING](COPYING))
+  announces it).  The manuscript is a **preprint that has not been published
+  yet**, and it is **not distributed in this repository**: the sources
+  (`main.tex`, `main_zh.tex`, figures) are kept outside the repository until
+  arXiv announces the paper, so they are absent from the GitHub releases and
+  from the Zenodo archives generated from them.  A copy is available from the
+  maintainer by mail, and comments on the manuscript are welcome there.
+  Everything needed to reproduce the numbers is in the repository: the
+  parameter files for the runs the paper quotes numbers from are in
+  [doc/par/](doc/par/) (33 of the 47 files there; the rest are
+  exploratory scans and CarpetX smoke tests, see the map below).
+- **Licence:** GPLv2+ for the code, the documentation and the parameter files
+  (see [COPYING](COPYING)).  Nothing else is under the GPL: no licence at all
+  is granted for the manuscript, which stays under the author's copyright.
+- **Software archive (citable):** [10.5281/zenodo.23969258](https://doi.org/10.5281/zenodo.23969258)
+  — Zenodo archives each GitHub release automatically.  That DOI is for the
+  **software**; the paper is not published through Zenodo.
 - **Static analysis:** clang-tidy / clanker run and full triage in
   [doc/code_quality.md](doc/code_quality.md); the check set lives in
   [.clang-tidy](.clang-tidy)
